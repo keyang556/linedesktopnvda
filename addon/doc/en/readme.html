@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html><head><meta charset='utf-8'></head><body>
+<h1>LINE Desktop Accessibility Add-on for NVDA</h1>
+<h2>Overview</h2>
+<p>This add-on enhances NVDA screen reader support for the LINE desktop application on Windows. It provides improved accessibility for navigating chats, reading messages, managing contacts, and composing messages.</p>
+<h2>Features</h2>
+<ul>
+<li>Improved announcement of chat list items (chat name, last message, unread count)</li>
+<li>Better reading of individual chat messages (sender, content, timestamp)</li>
+<li>Automatic labeling of unlabeled buttons and controls</li>
+<li>Quick navigation keyboard shortcuts</li>
+<li>Support for both standard installer and Microsoft Store versions of LINE</li>
+</ul>
+<h2>Keyboard Shortcuts</h2>
+<table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NVDA+Shift+L</td>
+<td>Read the last received message in the current chat</td>
+</tr>
+<tr>
+<td>NVDA+Shift+M</td>
+<td>Move focus to the message input field</td>
+</tr>
+<tr>
+<td>NVDA+Shift+T</td>
+<td>Report the current chat/conversation name</td>
+</tr>
+<tr>
+<td>NVDA+Shift+D</td>
+<td>Log debug info about the focused control (for development)</td>
+</tr>
+</tbody>
+</table>
+<h2>Supported Versions</h2>
+<ul>
+<li>LINE desktop for Windows (standard installer or Microsoft Store version)</li>
+<li>NVDA 2024.1 or later</li>
+</ul>
+<h2>Known Limitations</h2>
+<ul>
+<li>This is an initial version. The overlay classes may need refinement based on the actual UIA tree structure of your LINE desktop version.</li>
+<li>Some UI elements may not be perfectly labeled depending on the LINE desktop version and its accessibility implementation.</li>
+<li>The debug shortcut (NVDA+Shift+D) can be used to inspect control properties and help improve the add-on.</li>
+</ul>
+<h2>Troubleshooting</h2>
+<p>If the add-on does not seem to work:</p>
+<ol>
+<li>Make sure LINE desktop is running and focused.</li>
+<li>Use NVDA+Shift+D to log debug information about the current control.</li>
+<li>Check the NVDA log (NVDA menu &gt; Tools &gt; View Log) for debug information starting with "LINE Debug UIA Info".</li>
+<li>The log information will help identify the correct UIA properties for refining the overlay classes.</li>
+</ol>
+</body></html>
