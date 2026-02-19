@@ -18,6 +18,24 @@ from NVDAObjects import NVDAObject
 import UIAHandler
 import ctypes
 import comtypes
+import re
+
+# Regex pattern to remove spurious spaces between CJK characters.
+# Windows OCR inserts spaces between every CJK character.
+_CJK_SPACE_RE = re.compile(
+	r'(?<=[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F])\ '
+	r'(?=[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u3000-\u303F\uFF00-\uFFEF])',
+)
+
+def _removeCJKSpaces(text):
+	"""Remove spaces between CJK characters inserted by Windows OCR.
+
+	'可 能 因 為' → '可能因為'
+	Spaces between Latin characters are preserved.
+	"""
+	if not text:
+		return text
+	return _CJK_SPACE_RE.sub('', text)
 
 # Global variable to track the last focused object
 # This is needed because api.getFocusObject() sometimes returns the main Window
@@ -269,6 +287,127 @@ def _extractTextFromUIAElement(element):
 	return texts
 
 
+def _ocrReadElementText(rawElement, appModuleRef=None):
+	"""Perform OCR on a raw UIA element's bounding rect and speak the result.
+
+	This is used as a fallback when all UIA text extraction strategies
+	return empty. LINE's Qt6 renders text via GPU, so OCR is the only
+	way to read it.
+
+	The OCR is asynchronous — result is spoken via wx.CallAfter on main thread.
+	"""
+	try:
+		rect = rawElement.CurrentBoundingRectangle
+		left = int(rect.left)
+		top = int(rect.top)
+		width = int(rect.right - rect.left)
+		height = int(rect.bottom - rect.top)
+
+		if width <= 0 or height <= 0:
+			return
+
+		import screenBitmap
+		sb = screenBitmap.ScreenBitmap(width, height)
+		pixels = sb.captureImage(left, top, width, height)
+
+		from contentRecog import uwpOcr
+		langs = uwpOcr.getLanguages()
+		if not langs:
+			return
+
+		# Pick language: prefer Traditional Chinese
+		ocrLang = None
+		for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
+			if candidate in langs:
+				ocrLang = candidate
+				break
+		if not ocrLang:
+			for lang in langs:
+				if lang.startswith("zh"):
+					ocrLang = lang
+					break
+		if not ocrLang:
+			ocrLang = langs[0]
+
+		recognizer = uwpOcr.UwpOcr(language=ocrLang)
+		resizeFactor = recognizer.getResizeFactor(width, height)
+
+		class _ImgInfo:
+			def __init__(self, w, h, factor, sLeft, sTop):
+				self.recogWidth = w * factor
+				self.recogHeight = h * factor
+				self.resizeFactor = factor
+				self._screenLeft = sLeft
+				self._screenTop = sTop
+
+			def convertXToScreen(self, x):
+				return self._screenLeft + int(x / self.resizeFactor)
+
+			def convertYToScreen(self, y):
+				return self._screenTop + int(y / self.resizeFactor)
+
+			def convertWidthToScreen(self, width):
+				return int(width / self.resizeFactor)
+
+			def convertHeightToScreen(self, height):
+				return int(height / self.resizeFactor)
+
+		imgInfo = _ImgInfo(width, height, resizeFactor, left, top)
+
+		if resizeFactor > 1:
+			sb2 = screenBitmap.ScreenBitmap(
+				width * resizeFactor,
+				height * resizeFactor
+			)
+			ocrPixels = sb2.captureImage(
+				left, top,
+				width, height
+			)
+		else:
+			ocrPixels = pixels
+
+		# Store references to prevent garbage collection during async OCR
+		_ocrReadElementText._recognizer = recognizer
+		_ocrReadElementText._pixels = ocrPixels
+		_ocrReadElementText._imgInfo = imgInfo
+
+		def _onOcrResult(result):
+			"""Handle OCR result on background thread, dispatch to main."""
+			import wx
+			def _handleOnMain():
+				try:
+					if isinstance(result, Exception):
+						log.debug(f"LINE OCR error: {result}")
+						return
+					# LinesWordsResult has .text with the full recognized string
+					ocrText = getattr(result, 'text', '') or ''
+					ocrText = _removeCJKSpaces(ocrText.strip())
+					if ocrText:
+						log.info(f"LINE OCR nav result: {ocrText!r}")
+						speech.cancelSpeech()
+						ui.message(ocrText)
+					else:
+						log.debug("LINE OCR: no text found in element")
+				except Exception as e:
+					log.debug(f"LINE OCR result handler error: {e}")
+				finally:
+					_ocrReadElementText._recognizer = None
+					_ocrReadElementText._pixels = None
+					_ocrReadElementText._imgInfo = None
+			wx.CallAfter(_handleOnMain)
+
+		try:
+			recognizer.recognize(ocrPixels, imgInfo, _onOcrResult)
+			log.debug(f"LINE OCR started for element at ({left},{top}) {width}x{height}")
+		except Exception as e:
+			log.debug(f"LINE OCR recognize error: {e}")
+			_ocrReadElementText._recognizer = None
+			_ocrReadElementText._pixels = None
+			_ocrReadElementText._imgInfo = None
+	except Exception:
+		log.debug("_ocrReadElementText failed", exc_info=True)
+
+
 def _findSelectedItemInList(handler, focusedElement):
 	"""Walk up from focusedElement to find a parent List, then find the selected item.
 	
@@ -412,14 +551,18 @@ def _queryAndSpeakUIAFocus():
 			announcement = " ".join(textParts)
 			if roleName:
 				announcement = f"{announcement} {roleName}"
+			_lastAnnouncedUIAName = announcement
+			speech.cancelSpeech()
+			ui.message(announcement)
 		elif roleName:
-			announcement = roleName
+			# UIA text is empty — announce role immediately, then try OCR
+			_lastAnnouncedUIAName = roleName
+			speech.cancelSpeech()
+			ui.message(roleName)
+			# Kick off async OCR to read the actual text content
+			_ocrReadElementText(targetElement)
 		else:
 			return
-		
-		_lastAnnouncedUIAName = announcement
-		speech.cancelSpeech()
-		ui.message(announcement)
 		
 	except Exception:
 		log.debugWarning("_queryAndSpeakUIAFocus failed", exc_info=True)
@@ -650,34 +793,33 @@ class AppModule(appModuleHandler.AppModule):
 
 		# --- Toolbar/sidebar buttons without labels ---
 		elif role == controlTypes.Role.BUTTON:
-			if not obj.name or not obj.name.strip():
+			try:
+				btnName = obj.name
+				if not btnName or not btnName.strip():
+					clsList.insert(0, LineToolbarButton)
+			except Exception:
 				clsList.insert(0, LineToolbarButton)
 
 	def event_NVDAObject_init(self, obj):
 		"""Log object initialization at debug level."""
-		try:
-			log.debug(
-				f"LINE obj init: role={obj.role}, "
-				f"class={obj.windowClassName}, name={obj.name!r}"
-			)
-		except Exception:
-			pass
+		# Intentionally minimal — accessing obj.name here triggers cross-process
+		# COM calls for EVERY object, which can crash LINE's Qt6 UIA provider.
+		pass
 
 	def event_gainFocus(self, obj, nextHandler):
 		"""Handle focus changes with enhanced text extraction."""
 		global lastFocusedObject
 		
-		# Update lastFocusedObject only if it's a specific element, not the generic window
-		# This prevents the "focus bounce" (ListItem -> Window) from hiding the ListItem
-		if obj.role not in (
-			controlTypes.Role.WINDOW,
-			controlTypes.Role.APPLICATION,
-			controlTypes.Role.PANE,
-		):
-			lastFocusedObject = obj
-		
 		try:
-			log.info(f"LINE focus: role={obj.role}, name={obj.name!r}, class={obj.windowClassName}")
+			# Update lastFocusedObject only if it's a specific element, not the generic window
+			# This prevents the "focus bounce" (ListItem -> Window) from hiding the ListItem
+			role = obj.role
+			if role not in (
+				controlTypes.Role.WINDOW,
+				controlTypes.Role.APPLICATION,
+				controlTypes.Role.PANE,
+			):
+				lastFocusedObject = obj
 		except Exception:
 			pass
 
@@ -903,12 +1045,26 @@ class AppModule(appModuleHandler.AppModule):
 							resizeFactor = recognizer.getResizeFactor(width, height)
 							
 							class _ImgInfo:
-								def __init__(self, w, h, factor):
+								def __init__(self, w, h, factor, sLeft, sTop):
 									self.recogWidth = w * factor
 									self.recogHeight = h * factor
 									self.resizeFactor = factor
-							
-							imgInfo = _ImgInfo(width, height, resizeFactor)
+									self._screenLeft = sLeft
+									self._screenTop = sTop
+
+								def convertXToScreen(self, x):
+									return self._screenLeft + int(x / self.resizeFactor)
+
+								def convertYToScreen(self, y):
+									return self._screenTop + int(y / self.resizeFactor)
+
+								def convertWidthToScreen(self, width):
+									return int(width / self.resizeFactor)
+
+								def convertHeightToScreen(self, height):
+									return int(height / self.resizeFactor)
+
+							imgInfo = _ImgInfo(width, height, resizeFactor, left, top)
 							
 							if resizeFactor > 1:
 								sb2 = screenBitmap.ScreenBitmap(
@@ -917,8 +1073,7 @@ class AppModule(appModuleHandler.AppModule):
 								)
 								ocrPixels = sb2.captureImage(
 									left, top,
-									width * resizeFactor,
-									height * resizeFactor
+									width, height
 								)
 							else:
 								ocrPixels = pixels
@@ -943,20 +1098,14 @@ class AppModule(appModuleHandler.AppModule):
 									try:
 										if isinstance(result, Exception):
 											ocrMsg = f"OCR error: {result}"
-										elif hasattr(result, 'textLines'):
-											ocrTexts = []
-											for line in result.textLines:
-												lineText = " ".join(
-													w.text for w in line.words
-												)
-												if lineText.strip():
-													ocrTexts.append(lineText.strip())
-											if ocrTexts:
-												ocrMsg = "OCR: " + " | ".join(ocrTexts)
+										else:
+											# LinesWordsResult has .text with the full recognized string
+											ocrText = getattr(result, 'text', '') or ''
+											ocrText = _removeCJKSpaces(ocrText.strip())
+											if ocrText:
+												ocrMsg = f"OCR: {ocrText}"
 											else:
 												ocrMsg = "OCR: (no text found)"
-										else:
-											ocrMsg = f"OCR raw: {result}"
 										
 										log.info(f"LINE Debug OCR result: {ocrMsg}")
 										ui.message(ocrMsg)
