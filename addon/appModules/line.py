@@ -1144,6 +1144,485 @@ class AppModule(appModuleHandler.AppModule):
 			suffix = " (OCR pending...)" if ocrStarted else ""
 			ui.message(f"Copied.{suffix} {debug_output}")
 
+	def _collectAllElements(self, rootElement, handler):
+		"""Collect all UIA elements from the tree using multiple strategies.
+		
+		LINE's Qt6 UIA implementation often doesn't respond to FindAll
+		with specific conditions. This method tries several approaches.
+		"""
+		allElements = []
+		
+		# Strategy 1: FindAll with TrueCondition (finds everything)
+		try:
+			trueCondition = handler.clientObject.CreateTrueCondition()
+			elements = rootElement.FindAll(
+				UIAHandler.TreeScope_Descendants, trueCondition
+			)
+			if elements and elements.Length > 0:
+				log.info(f"LINE: FindAll(TrueCondition) found {elements.Length} elements")
+				for i in range(elements.Length):
+					try:
+						allElements.append(elements.GetElement(i))
+					except Exception:
+						pass
+				return allElements
+		except Exception as e:
+			log.debug(f"LINE: FindAll(TrueCondition) failed: {e}")
+		
+		# Strategy 2: Use RawViewWalker to traverse the tree
+		try:
+			walker = handler.clientObject.RawViewWalker
+			if walker:
+				self._walkTree(walker, rootElement, allElements, maxDepth=10)
+				log.info(f"LINE: RawViewWalker found {len(allElements)} elements")
+		except Exception as e:
+			log.debug(f"LINE: RawViewWalker failed: {e}")
+		
+		return allElements
+	
+	def _walkTree(self, walker, parent, result, maxDepth=10, currentDepth=0):
+		"""Recursively walk the UIA tree using a TreeWalker."""
+		if currentDepth >= maxDepth or len(result) > 500:
+			return
+		try:
+			child = walker.GetFirstChildElement(parent)
+			while child:
+				result.append(child)
+				self._walkTree(walker, child, result, maxDepth, currentDepth + 1)
+				try:
+					child = walker.GetNextSiblingElement(child)
+				except Exception:
+					break
+		except Exception:
+			pass
+	
+	def _findButtonByKeywords(self, elements, includeKeywords, excludeKeywords=None):
+		"""Search a list of UIA elements for an element matching keywords.
+		
+		LINE Qt6 does not use standard Button ControlType, so we search
+		ALL elements regardless of their type.
+		
+		Returns the matching element or None.
+		"""
+		if excludeKeywords is None:
+			excludeKeywords = []
+		
+		# First pass: log all elements with non-empty names for diagnostics
+		for el in elements:
+			try:
+				ctType = 0
+				autoId = ""
+				name = ""
+				try:
+					ctType = el.CurrentControlType
+				except Exception:
+					pass
+				try:
+					autoId = el.CurrentAutomationId or ""
+				except Exception:
+					pass
+				try:
+					name = el.CurrentName or ""
+				except Exception:
+					pass
+				if name or autoId:
+					log.debug(
+						f"LINE elem: ct={ctType}, autoId={autoId!r}, name={name!r}"
+					)
+			except Exception:
+				pass
+		
+		# Second pass: search for matching keywords
+		for el in elements:
+			try:
+				
+				# Get properties
+				autoId = ""
+				try:
+					autoId = el.CurrentAutomationId or ""
+				except Exception:
+					pass
+				
+				name = ""
+				try:
+					name = el.CurrentName or ""
+				except Exception:
+					pass
+				
+				helpText = ""
+				try:
+					helpText = str(el.GetCurrentPropertyValue(30048) or "")
+				except Exception:
+					pass
+				
+				className = ""
+				try:
+					className = el.CurrentClassName or ""
+				except Exception:
+					pass
+				
+				combined = f"{autoId} {name} {helpText} {className}".lower()
+				
+				# Skip if any exclude keyword matches
+				excluded = False
+				for exkw in excludeKeywords:
+					if exkw.lower() in combined:
+						excluded = True
+						break
+				if excluded:
+					continue
+				
+				# Check include keywords
+				for keyword in includeKeywords:
+					if keyword.lower() in combined:
+						log.info(
+							f"LINE: found matching element: "
+							f"ctType={ctType}, autoId={autoId!r}, "
+							f"name={name!r}, help={helpText!r}, class={className!r}"
+						)
+						return el
+			except Exception:
+				continue
+		
+		return None
+	
+	def _invokeElement(self, element, actionName):
+		"""Invoke a UIA element using InvokePattern or mouse click fallback."""
+		import ctypes
+		
+		# Try InvokePattern
+		try:
+			invokePattern = element.GetCurrentPattern(10000)  # InvokePattern
+			if invokePattern:
+				invokePattern.QueryInterface(
+					comtypes.gen.UIAutomationClient.IUIAutomationInvokePattern
+				).Invoke()
+				ui.message(actionName)
+				return True
+		except Exception as e:
+			log.debug(f"LINE: InvokePattern failed: {e}")
+		
+		# Fallback: click the button center
+		try:
+			rect = element.CurrentBoundingRectangle
+			cx = int((rect.left + rect.right) / 2)
+			cy = int((rect.top + rect.bottom) / 2)
+			
+			if cx > 0 and cy > 0:
+				ctypes.windll.user32.SetCursorPos(cx, cy)
+				ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
+				import time
+				time.sleep(0.05)
+				ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+				ui.message(actionName)
+				return True
+		except Exception as e:
+			log.debug(f"LINE: click fallback failed: {e}")
+		
+		return False
+	
+	def _clickAtPosition(self, x, y):
+		"""Perform a mouse click at the given screen coordinates."""
+		import ctypes
+		import time
+		
+		ctypes.windll.user32.SetCursorPos(int(x), int(y))
+		time.sleep(0.05)
+		ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
+		time.sleep(0.05)
+		ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+	
+	def _getHeaderIconPosition(self):
+		"""Get the screen position of the phone icon in the LINE chat header.
+		
+		LINE's Qt6 UI does not expose header toolbar buttons via UIA.
+		We use the window geometry to calculate where the icons are.
+		
+		The chat header has icons from right to left:
+		  Index 0: More options (⋮ three dots menu)
+		  Index 1: Notes/Keep (📝)
+		  Index 2: Phone/Voice call (📞)
+		  Index 3: Search (🔍)
+		
+		Returns:
+			(phoneX, phoneY, winRight) tuple, or None if window not found.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			log.debug("LINE: no foreground window for header click")
+			return None
+		
+		# Get complete window rect
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winLeft = rect.left
+		winTop = rect.top
+		winRight = rect.right
+		winWidth = winRight - winLeft
+		
+		log.info(
+			f"LINE: window rect=({winLeft},{winTop},{winRight},{rect.bottom}), "
+			f"width={winWidth}"
+		)
+		
+		# Vertical center of the header icons (below title bar)
+		iconY = winTop + 83
+		
+		# Horizontal: phone icon is 3rd from right (index 2)
+		iconSpacing = 40
+		firstIconOffset = 23
+		iconX = winRight - firstIconOffset - (2 * iconSpacing)
+		
+		# Verify position is within window bounds
+		if iconX < winLeft or iconX > winRight:
+			log.warning(f"LINE: icon position {iconX} outside window bounds")
+			return None
+		
+		return (iconX, iconY, winRight)
+	
+	def _makeCallByType(self, callType):
+		"""Click phone icon, wait for popup menu, then click voice or video.
+		
+		Full flow (3 steps):
+		  1. Click phone icon → popup menu appears (wait 500ms)
+		  2. Click voice/video menu item → confirmation dialog appears (wait 800ms)
+		  3. OCR the confirmation dialog, announce it, auto-click "開始"
+		
+		From the screenshot, clicking the phone icon shows a popup menu:
+		  - 語音通話 (voice call): 1st item
+		  - 視訊通話 (video call): 2nd item
+		
+		The confirmation dialog is centered on the window with:
+		  - Text: "確定要與XXX進行語音通話？"
+		  - "開始" button (green, left) and "取消" button (gray, right)
+		"""
+		import ctypes
+		import ctypes.wintypes
+		
+		pos = self._getHeaderIconPosition()
+		if not pos:
+			return False
+		
+		phoneX, phoneY, winRight = pos
+		
+		# Get full window rect for dialog position calculation
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		winRect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(winRect))
+		winLeft = winRect.left
+		winTop = winRect.top
+		winW = winRect.right - winRect.left
+		winH = winRect.bottom - winRect.top
+		
+		log.info(f"LINE: clicking phone icon at ({phoneX}, {phoneY})")
+		self._clickAtPosition(phoneX, phoneY)
+		
+		# Menu item positions (from screenshot analysis):
+		#   Voice call: roughly at (winRight - 60, phoneY + 35)
+		#   Video call: roughly at (winRight - 60, phoneY + 75)
+		menuX = winRight - 60
+		if callType == "voice":
+			menuY = phoneY + 35
+		else:
+			menuY = phoneY + 75
+		
+		log.info(
+			f"LINE: will click menu item '{callType}' at ({menuX}, {menuY})"
+		)
+		
+		appModRef = self
+		
+		def _clickMenuItem():
+			try:
+				appModRef._clickAtPosition(menuX, menuY)
+				log.info("LINE: menu item clicked, waiting for confirmation dialog...")
+				# Step 3: Handle confirmation dialog after 800ms
+				core.callLater(800, _handleConfirmDialog)
+			except Exception as e:
+				log.warning(f"LINE: menu click failed: {e}")
+				ui.message("選單點擊失敗")
+		
+		def _handleConfirmDialog():
+			"""OCR the confirmation dialog, announce it, and auto-click 開始."""
+			try:
+				# The confirmation dialog is centered on the LINE window
+				# Dialog is ~420px wide, ~130px tall
+				dialogW = 420
+				dialogH = 140
+				winCenterX = winLeft + winW // 2
+				winCenterY = winTop + winH // 2
+				dialogLeft = winCenterX - dialogW // 2
+				dialogTop = winCenterY - dialogH // 2
+				
+				log.info(
+					f"LINE: OCR confirmation dialog area: "
+					f"({dialogLeft},{dialogTop}) {dialogW}x{dialogH}"
+				)
+				
+				# OCR the dialog area
+				import screenBitmap
+				sb = screenBitmap.ScreenBitmap(dialogW, dialogH)
+				pixels = sb.captureImage(
+					dialogLeft, dialogTop, dialogW, dialogH
+				)
+				
+				from contentRecog import uwpOcr
+				langs = uwpOcr.getLanguages()
+				ocrLang = None
+				for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
+					if candidate in langs:
+						ocrLang = candidate
+						break
+				if not ocrLang:
+					for lang in langs:
+						if lang.startswith("zh"):
+							ocrLang = lang
+							break
+				if not ocrLang and langs:
+					ocrLang = langs[0]
+				
+				if not ocrLang:
+					log.warning("LINE: no OCR language for confirmation dialog")
+					_clickStart()
+					return
+				
+				recognizer = uwpOcr.UwpOcr(language=ocrLang)
+				resizeFactor = recognizer.getResizeFactor(dialogW, dialogH)
+				
+				if resizeFactor > 1:
+					sb2 = screenBitmap.ScreenBitmap(
+						dialogW * resizeFactor,
+						dialogH * resizeFactor
+					)
+					ocrPixels = sb2.captureImage(
+						dialogLeft, dialogTop,
+						dialogW, dialogH
+					)
+				else:
+					ocrPixels = pixels
+				
+				# Keep references alive during async OCR
+				appModRef._callOcrRecognizer = recognizer
+				appModRef._callOcrPixels = ocrPixels
+				
+				class _ImgInfo:
+					def __init__(self, w, h, factor, sLeft, sTop):
+						self.recogWidth = w * factor
+						self.recogHeight = h * factor
+						self.resizeFactor = factor
+						self._screenLeft = sLeft
+						self._screenTop = sTop
+					def convertXToScreen(self, x):
+						return self._screenLeft + int(x / self.resizeFactor)
+					def convertYToScreen(self, y):
+						return self._screenTop + int(y / self.resizeFactor)
+					def convertWidthToScreen(self, width):
+						return int(width / self.resizeFactor)
+					def convertHeightToScreen(self, height):
+						return int(height / self.resizeFactor)
+				
+				imgInfo = _ImgInfo(
+					dialogW, dialogH, resizeFactor, dialogLeft, dialogTop
+				)
+				appModRef._callOcrImgInfo = imgInfo
+				
+				def _onOcrResult(result):
+					import wx
+					def _handleOnMain():
+						try:
+							ocrText = ""
+							if not isinstance(result, Exception):
+								ocrText = getattr(result, 'text', '') or ''
+								ocrText = _removeCJKSpaces(ocrText.strip())
+							
+							if ocrText:
+								log.info(f"LINE: confirmation dialog OCR: {ocrText}")
+								ui.message(ocrText)
+							else:
+								log.info("LINE: confirmation dialog OCR empty")
+								if callType == "voice":
+									ui.message("語音通話確認")
+								else:
+									ui.message("視訊通話確認")
+							
+							# Auto-click "開始" after a short delay for speech
+							core.callLater(300, _clickStart)
+						except Exception as e:
+							log.warning(
+								f"LINE: dialog OCR handler error: {e}",
+								exc_info=True
+							)
+							_clickStart()
+						finally:
+							appModRef._callOcrRecognizer = None
+							appModRef._callOcrPixels = None
+							appModRef._callOcrImgInfo = None
+					wx.CallAfter(_handleOnMain)
+				
+				recognizer.recognize(ocrPixels, imgInfo, _onOcrResult)
+				
+			except Exception as e:
+				log.warning(f"LINE: dialog handling error: {e}", exc_info=True)
+				# Even if OCR fails, try to click "開始"
+				_clickStart()
+		
+		def _clickStart():
+			"""Click the 開始 (Start) button on the confirmation dialog."""
+			try:
+				# "開始" button is at roughly left-center of the dialog
+				# Dialog is centered on window; the button is ~35% from left,
+				# and ~75% from top of the dialog area
+				winCenterX = winLeft + winW // 2
+				winCenterY = winTop + winH // 2
+				startBtnX = winCenterX - 65  # left side of dialog
+				startBtnY = winCenterY + 25  # lower portion of dialog
+				
+				log.info(f"LINE: clicking 開始 at ({startBtnX}, {startBtnY})")
+				appModRef._clickAtPosition(startBtnX, startBtnY)
+				
+				if callType == "voice":
+					ui.message("已開始語音通話")
+				else:
+					ui.message("已開始視訊通話")
+			except Exception as e:
+				log.warning(f"LINE: click 開始 failed: {e}", exc_info=True)
+				ui.message("無法點擊開始按鈕")
+		
+		# Step 1: Wait 500ms for popup menu, then click menu item
+		core.callLater(500, _clickMenuItem)
+		return True
+	
+	@script(
+		description="撥打語音通話",
+		gesture="kb:NVDA+shift+c",
+		category="LINE Desktop",
+	)
+	def script_makeCall(self, gesture):
+		"""Click the phone icon, then auto-select voice call from the popup menu."""
+		try:
+			if not self._makeCallByType("voice"):
+				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+		except Exception as e:
+			log.warning(f"LINE makeCall error: {e}", exc_info=True)
+			ui.message(f"通話功能錯誤: {e}")
+	
+	@script(
+		description="撥打視訊通話",
+		gesture="kb:NVDA+shift+v",
+		category="LINE Desktop",
+	)
+	def script_makeVideoCall(self, gesture):
+		"""Click the phone icon, then auto-select video call from the popup menu."""
+		try:
+			if not self._makeCallByType("video"):
+				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+		except Exception as e:
+			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
+			ui.message(f"視訊通話功能錯誤: {e}")
+
 	def script_navigateAndTrack(self, gesture):
 		"""Pass navigation key to LINE, then poll UIA focused element.
 		
