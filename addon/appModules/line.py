@@ -46,6 +46,9 @@ lastFocusedObject = None
 _lastAnnouncedUIAElement = None
 _lastAnnouncedUIAName = None
 
+# Flag to suppress addon while a file dialog is open
+_suppressAddon = False
+
 
 def _getTextViaUIAFindAll(obj, maxElements=30):
 	"""Use raw UIA FindAll to get text from descendants.
@@ -296,6 +299,10 @@ def _ocrReadElementText(rawElement, appModuleRef=None):
 
 	The OCR is asynchronous — result is spoken via wx.CallAfter on main thread.
 	"""
+	# Skip OCR if addon is suppressed (e.g. file dialog is open)
+	if _suppressAddon:
+		log.debug("LINE OCR: suppressed (addon paused)")
+		return
 	try:
 		rect = rawElement.CurrentBoundingRectangle
 		left = int(rect.left)
@@ -489,6 +496,8 @@ def _queryAndSpeakUIAFocus():
 	NormalizeElementBuildCache — those cause cross-process COM
 	calls that crash LINE's Qt6 process.
 	"""
+	if _suppressAddon:
+		return
 	global _lastAnnouncedUIAElement, _lastAnnouncedUIAName
 	try:
 		handler = UIAHandler.handler
@@ -712,6 +721,8 @@ class AppModule(appModuleHandler.AppModule):
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		"""Apply custom overlay classes based on role and hierarchy."""
+		if _suppressAddon:
+			return
 		if not isinstance(obj, UIA):
 			return
 
@@ -830,6 +841,9 @@ class AppModule(appModuleHandler.AppModule):
 		
 		Qt6 apps sometimes fire elementSelected instead of focus for list items.
 		"""
+		if _suppressAddon:
+			nextHandler()
+			return
 		try:
 			log.info(
 				f"LINE UIA_elementSelected: role={obj.role}, "
@@ -852,6 +866,9 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_UIA_notification(self, obj, nextHandler, **kwargs):
 		"""Handle UIA notification events."""
+		if _suppressAddon:
+			nextHandler()
+			return
 		try:
 			log.info(
 				f"LINE UIA_notification: role={obj.role}, "
@@ -863,6 +880,9 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_stateChange(self, obj, nextHandler):
 		"""Track state changes for potentially focusable elements."""
+		if _suppressAddon:
+			nextHandler()
+			return
 		try:
 			if isinstance(obj, UIA) and obj.role == controlTypes.Role.LISTITEM:
 				if controlTypes.State.SELECTED in obj.states:
@@ -876,6 +896,9 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_nameChange(self, obj, nextHandler):
 		"""Track name changes which may indicate content update."""
+		if _suppressAddon:
+			nextHandler()
+			return
 		try:
 			log.debug(
 				f"LINE nameChange: role={obj.role}, "
@@ -1720,9 +1743,70 @@ class AppModule(appModuleHandler.AppModule):
 					f"LINE: clicking '檔案' menu item at ({fileMenuX}, {fileMenuY})"
 				)
 				appModRef._clickAtPosition(fileMenuX, fileMenuY)
+				# Suppress entire addon while the file dialog is open
+				global _suppressAddon
+				_suppressAddon = True
+				log.info("LINE: OCR suppressed, waiting for file dialog...")
+				# Start polling for file dialog to close
+				core.callLater(1000, _pollFileDialog)
 			except Exception as e:
 				log.warning(f"LINE: file menu click failed: {e}")
 				ui.message("選單點擊失敗")
+
+		def _pollFileDialog():
+			"""Poll to detect when the file dialog closes, then resume addon.
+
+			We enumerate all #32770 windows and check if any belong to LINE's
+			process. Using FindWindowW("#32770", None) is wrong because it finds
+			ANY #32770 window in the system (e.g. battery warning dialogs).
+			"""
+			global _suppressAddon
+			import ctypes
+			import ctypes.wintypes
+
+			lineProcessId = appModRef.processID
+
+			try:
+				foundOurDialog = False
+
+				# Callback for EnumWindows
+				WNDENUMPROC = ctypes.WINFUNCTYPE(
+					ctypes.wintypes.BOOL,
+					ctypes.wintypes.HWND,
+					ctypes.wintypes.LPARAM,
+				)
+
+				def _enumCallback(hwnd, lParam):
+					nonlocal foundOurDialog
+					# Get the class name of this window
+					buf = ctypes.create_unicode_buffer(256)
+					ctypes.windll.user32.GetClassNameW(
+						hwnd, buf, 256
+					)
+					if buf.value == "#32770":
+						# Check if this dialog belongs to LINE's process
+						pid = ctypes.wintypes.DWORD()
+						ctypes.windll.user32.GetWindowThreadProcessId(
+							hwnd, ctypes.byref(pid)
+						)
+						if pid.value == lineProcessId:
+							foundOurDialog = True
+							return False  # stop enumeration
+					return True  # continue enumeration
+
+				ctypes.windll.user32.EnumWindows(
+					WNDENUMPROC(_enumCallback), 0
+				)
+
+				if foundOurDialog:
+					log.debug("LINE: file dialog still open, polling...")
+					core.callLater(500, _pollFileDialog)
+				else:
+					_suppressAddon = False
+					log.info("LINE: file dialog closed, addon resumed")
+			except Exception as e:
+				log.warning(f"LINE: file dialog poll error: {e}")
+				_suppressAddon = False
 
 		# Step 2: Wait 500ms for popup menu, then click "檔案"
 		core.callLater(500, _clickFileMenuItem)
@@ -1750,6 +1834,9 @@ class AppModule(appModuleHandler.AppModule):
 		waits briefly for LINE to process it, then queries the UIA
 		focused element directly and announces it.
 		"""
+		if _suppressAddon:
+			gesture.send()
+			return
 		global _lastAnnouncedUIAElement
 		# Reset tracking so we always announce after navigation
 		_lastAnnouncedUIAElement = None
