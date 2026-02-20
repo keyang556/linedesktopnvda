@@ -1623,6 +1623,125 @@ class AppModule(appModuleHandler.AppModule):
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(f"視訊通話功能錯誤: {e}")
 
+	def _getAttachmentButtonPosition(self):
+		"""Get the screen position of the attachment (📎) button in the chat input area.
+
+		LINE's Qt6 UI does not expose the attachment button via UIA.
+		We use the window geometry to calculate where the 📎 button is.
+
+		From screenshot analysis:
+		  - Left icon sidebar: ~70px
+		  - Search/contact list panel: ~460px
+		  - Total sidebar width: ~530px
+		  - The 📎 icon is the first icon in the bottom toolbar of the chat area,
+		    roughly 50px to the right of the sidebar boundary.
+		  - The bottom toolbar is ~25px from the window bottom.
+
+		Returns:
+			(btnX, btnY) tuple, or None if window not found.
+		"""
+		import ctypes
+		import ctypes.wintypes
+
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			log.debug("LINE: no foreground window for attachment button")
+			return None
+
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winLeft = rect.left
+		winTop = rect.top
+		winRight = rect.right
+		winBottom = rect.bottom
+		winWidth = winRight - winLeft
+
+		log.info(
+			f"LINE: window rect=({winLeft},{winTop},{winRight},{winBottom}), "
+			f"width={winWidth}"
+		)
+
+		# From screenshot calibration:
+		# The sidebar (icon bar + contact list) is about 530px wide.
+		# The 📎 attachment icon is the first button in the bottom toolbar,
+		# approximately 50px to the right of the sidebar boundary.
+		# The bottom toolbar row is about 25px from the window bottom.
+		btnX = winLeft + 580  # sidebar (~530px) + ~50px into chat area
+		btnY = winBottom - 25  # bottom toolbar row
+
+		# Verify position is within window bounds
+		if btnX < winLeft or btnX > winRight:
+			log.warning(f"LINE: attachment button position {btnX} outside window bounds")
+			return None
+
+		return (btnX, btnY)
+
+	def _openFilePicker(self):
+		"""Click the "+" attachment button, wait for popup, then click "檔案".
+
+		Full flow (2 steps):
+		  1. Click "+" button → attachment popup menu appears (wait 500ms)
+		  2. Click "檔案" (File) menu item → Windows file dialog opens
+
+		The popup menu typically contains items like:
+		  - 照片/影片 (Photos/Videos)
+		  - 檔案 (File)
+		  - 聯絡資訊 (Contact)
+		  - etc.
+
+		"檔案" is usually the 2nd item in the menu.
+		"""
+		import ctypes
+		import ctypes.wintypes
+
+		pos = self._getAttachmentButtonPosition()
+		if not pos:
+			return False
+
+		btnX, btnY = pos
+
+		log.info(f"LINE: clicking attachment '+' button at ({btnX}, {btnY})")
+		ui.message("開啟附加檔案...")
+		self._clickAtPosition(btnX, btnY)
+
+		appModRef = self
+
+		def _clickFileMenuItem():
+			try:
+				# After clicking 📎, a popup menu appears above the button.
+				# From the screenshot, the popup menu shows items stacked vertically
+				# above the 📎 icon. Menu items are roughly 45px tall.
+				# "檔案" (File) is typically listed among the items.
+				# We click at the center of the popup, somewhat above the icon.
+				fileMenuX = btnX + 40  # center of popup menu horizontally
+				fileMenuY = btnY - 85  # target "檔案" item in the popup
+
+				log.info(
+					f"LINE: clicking '檔案' menu item at ({fileMenuX}, {fileMenuY})"
+				)
+				appModRef._clickAtPosition(fileMenuX, fileMenuY)
+			except Exception as e:
+				log.warning(f"LINE: file menu click failed: {e}")
+				ui.message("選單點擊失敗")
+
+		# Step 2: Wait 500ms for popup menu, then click "檔案"
+		core.callLater(500, _clickFileMenuItem)
+		return True
+
+	@script(
+		description="開啟附加檔案選擇視窗",
+		gesture="kb:NVDA+shift+t",
+		category="LINE Desktop",
+	)
+	def script_openFilePicker(self, gesture):
+		"""Click the attachment '+' button, then select '檔案' to open file picker."""
+		try:
+			if not self._openFilePicker():
+				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+		except Exception as e:
+			log.warning(f"LINE openFilePicker error: {e}", exc_info=True)
+			ui.message(f"附加檔案功能錯誤: {e}")
+
 	def script_navigateAndTrack(self, gesture):
 		"""Pass navigation key to LINE, then poll UIA focused element.
 		

@@ -2,41 +2,39 @@
 
 ## Overview
 
-This add-on enhances NVDA screen reader support for the LINE desktop application on Windows. It provides improved accessibility for navigating chats, reading messages, managing contacts, and composing messages.
+This add-on enhances NVDA screen reader support for the LINE desktop application on Windows (Qt6 version). It provides accessibility enhancements for navigating chats, reading messages, and making calls using OCR and coordinate-based automation.
+
+> [!IMPORTANT]
+> This add-on uses OCR (Optical Character Recognition) for some features. It may not be 100% accurate.
 
 ## Features
 
-* Improved announcement of chat list items (chat name, last message, unread count)
-* Better reading of individual chat messages (sender, content, timestamp)
-* Automatic labeling of unlabeled buttons and controls
-* Quick navigation keyboard shortcuts
-* Support for both standard installer and Microsoft Store versions of LINE
+* Improved navigation for chat lists and message input fields.
+* **Voice and Video Calls**: Initiate calls directly from a chat window.
+* **OCR Support**: Automatically attempts to read text that isn't exposed via standard accessibility APIs.
+* **Debug Tools**: Shortcuts to inspect the UI structure for troubleshooting.
+
+## Usage Tips
+
+* **Establishing Connection**: Before using this add-on to message someone for the first time, send them at least one message via your phone or the Chrome extension. Having a chat history makes it much easier for the add-on to locate elements correctly.
+* **Sending Messages**: 
+    1. Search for the friend's name. Try to use a search term that returns only one result to avoid mistakes.
+    2. In the message list/sidebar, use `Shift+Tab` to reach the edit field.
+    3. Type your message and press `Enter`.
+* **Verification**: Always verify the chat history and the recipient's name before sending messages or making calls.
+* **Limitations**: Currently, you cannot answer incoming calls via this add-on.
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|---|---|
-| NVDA+Shift+L | Read the last received message in the current chat |
-| NVDA+Shift+M | Move focus to the message input field |
-| NVDA+Shift+T | Report the current chat/conversation name |
-| NVDA+Shift+D | Log debug info about the focused control (for development) |
+| Shortcut | Category | Action |
+|---|---|---|
+| **NVDA+Shift+C** | LINE Desktop | Start a Voice Call |
+| **NVDA+Shift+V** | LINE Desktop | Start a Video Call |
+| **NVDA+Shift+T** | LINE Desktop | Open Attachment File Picker |
+| **NVDA+Shift+K** | LINE Desktop | Debug: Inspect UIA and OCR (Copy to clipboard) |
+| **NVDA+Shift+J** | Global | Report focused app and process info |
 
 ## Supported Versions
 
-* LINE desktop for Windows (standard installer or Microsoft Store version)
-* NVDA 2024.1 or later
-
-## Known Limitations
-
-* This is an initial version. The overlay classes may need refinement based on the actual UIA tree structure of your LINE desktop version.
-* Some UI elements may not be perfectly labeled depending on the LINE desktop version and its accessibility implementation.
-* The debug shortcut (NVDA+Shift+D) can be used to inspect control properties and help improve the add-on.
-
-## Troubleshooting
-
-If the add-on does not seem to work:
-
-1. Make sure LINE desktop is running and focused.
-2. Use NVDA+Shift+D to log debug information about the current control.
-3. Check the NVDA log (NVDA menu > Tools > View Log) for debug information starting with "LINE Debug UIA Info".
-4. The log information will help identify the correct UIA properties for refining the overlay classes.
+* LINE desktop for Windows (Standard or Microsoft Store version).
+* NVDA 2022.1 or later.

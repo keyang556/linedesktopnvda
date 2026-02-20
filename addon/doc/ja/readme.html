@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html><head><meta charset='utf-8'></head><body>
+<h1>LINE デスクトップ版 NVDA アドオン</h1>
+<h2>概要</h2>
+<p>このアドオンは、Windows 版 LINE デスクトップアプリ（Qt6 バージョン）の NVDA スクリーンリーダーサポートを強化します。OCR（文字認識）と座標ベースの自動化技術を使用して、チャットリストの移動、メッセージの読み上げ、通話機能のアクセシビリティを向上させます。</p>
+<blockquote>
+<p>[!IMPORTANT]
+このアドオンは一部の機能に OCR（文字認識）を使用しているため、認識結果が完全に正確ではない場合があります。</p>
+</blockquote>
+<h2>特徴</h2>
+<ul>
+<li>チャットリストやメッセージ入力欄のナビゲーションを改善。</li>
+<li><strong>音声・ビデオ通話</strong>：チャット画面から直接通話を開始できます。</li>
+<li><strong>OCR サポート</strong>：標準的なアクセシビリティ API では取得できないテキストを自動的に認識しようとします。</li>
+<li><strong>デバッグツール</strong>：UI 構造を確認し、トラブルシューティングに役立つショートカットを提供します。</li>
+</ul>
+<h2>使用上のヒントと注意点</h2>
+<ul>
+<li><strong>接続の確立</strong>：このアドオンを使用して初めてメッセージを送信する前に、一度スマートフォンまたは Chrome 版でメッセージを送信しておくことをお勧めします。チャット履歴があることで、アドオンが UI 要素を特定しやすくなります。</li>
+<li><strong>メッセージの送信</strong>：<ol>
+<li>友達の名前を検索します。間違いを避けるため、検索結果が 1 つになるようなキーワードを使用してください。</li>
+<li>メッセージリストやサイドバーで <code>Shift+Tab</code> を押し、編集エリアに移動します。</li>
+<li>メッセージを入力して <code>Enter</code> キーを押すと送信されます。</li>
+</ol>
+</li>
+<li><strong>確認</strong>：メッセージの送信や通話を行う前に、必ずチャット履歴を確認し、送信先が正しいか確かめてください。</li>
+<li><strong>通話の制限</strong>：現在は発信のみをサポートしており、着信に応答することはできません。</li>
+</ul>
+<h2>キーボードショートカット</h2>
+<table>
+<thead>
+<tr>
+<th>ショートカット</th>
+<th>カテゴリ</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NVDA+Shift+C</strong></td>
+<td>LINE Desktop</td>
+<td>音声通話を開始</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+V</strong></td>
+<td>LINE Desktop</td>
+<td>ビデオ通話を開始</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+T</strong></td>
+<td>LINE Desktop</td>
+<td>添付ファイル選択ウィンドウを開く</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+K</strong></td>
+<td>LINE Desktop</td>
+<td>デバッグ：UIA と OCR を確認（クリップボードにコピー）</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+J</strong></td>
+<td>グローバル</td>
+<td>フォーカスされているアプリとプロセス情報を報告</td>
+</tr>
+</tbody>
+</table>
+<h2>対応バージョン</h2>
+<ul>
+<li>Windows 版 LINE デスクトップ (通常版または Microsoft Store 版)。</li>
+<li>NVDA 2022.1 以降。</li>
+</ul>
+</body></html>

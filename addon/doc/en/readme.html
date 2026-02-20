@@ -2,59 +2,70 @@
 <html><head><meta charset='utf-8'></head><body>
 <h1>LINE Desktop Accessibility Add-on for NVDA</h1>
 <h2>Overview</h2>
-<p>This add-on enhances NVDA screen reader support for the LINE desktop application on Windows. It provides improved accessibility for navigating chats, reading messages, managing contacts, and composing messages.</p>
+<p>This add-on enhances NVDA screen reader support for the LINE desktop application on Windows (Qt6 version). It provides accessibility enhancements for navigating chats, reading messages, and making calls using OCR and coordinate-based automation.</p>
+<blockquote>
+<p>[!IMPORTANT]
+This add-on uses OCR (Optical Character Recognition) for some features. It may not be 100% accurate.</p>
+</blockquote>
 <h2>Features</h2>
 <ul>
-<li>Improved announcement of chat list items (chat name, last message, unread count)</li>
-<li>Better reading of individual chat messages (sender, content, timestamp)</li>
-<li>Automatic labeling of unlabeled buttons and controls</li>
-<li>Quick navigation keyboard shortcuts</li>
-<li>Support for both standard installer and Microsoft Store versions of LINE</li>
+<li>Improved navigation for chat lists and message input fields.</li>
+<li><strong>Voice and Video Calls</strong>: Initiate calls directly from a chat window.</li>
+<li><strong>OCR Support</strong>: Automatically attempts to read text that isn't exposed via standard accessibility APIs.</li>
+<li><strong>Debug Tools</strong>: Shortcuts to inspect the UI structure for troubleshooting.</li>
+</ul>
+<h2>Usage Tips</h2>
+<ul>
+<li><strong>Establishing Connection</strong>: Before using this add-on to message someone for the first time, send them at least one message via your phone or the Chrome extension. Having a chat history makes it much easier for the add-on to locate elements correctly.</li>
+<li><strong>Sending Messages</strong>: <ol>
+<li>Search for the friend's name. Try to use a search term that returns only one result to avoid mistakes.</li>
+<li>In the message list/sidebar, use <code>Shift+Tab</code> to reach the edit field.</li>
+<li>Type your message and press <code>Enter</code>.</li>
+</ol>
+</li>
+<li><strong>Verification</strong>: Always verify the chat history and the recipient's name before sending messages or making calls.</li>
+<li><strong>Limitations</strong>: Currently, you cannot answer incoming calls via this add-on.</li>
 </ul>
 <h2>Keyboard Shortcuts</h2>
 <table>
 <thead>
 <tr>
 <th>Shortcut</th>
+<th>Category</th>
 <th>Action</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>NVDA+Shift+L</td>
-<td>Read the last received message in the current chat</td>
+<td><strong>NVDA+Shift+C</strong></td>
+<td>LINE Desktop</td>
+<td>Start a Voice Call</td>
 </tr>
 <tr>
-<td>NVDA+Shift+M</td>
-<td>Move focus to the message input field</td>
+<td><strong>NVDA+Shift+V</strong></td>
+<td>LINE Desktop</td>
+<td>Start a Video Call</td>
 </tr>
 <tr>
-<td>NVDA+Shift+T</td>
-<td>Report the current chat/conversation name</td>
+<td><strong>NVDA+Shift+T</strong></td>
+<td>LINE Desktop</td>
+<td>Open Attachment File Picker</td>
 </tr>
 <tr>
-<td>NVDA+Shift+D</td>
-<td>Log debug info about the focused control (for development)</td>
+<td><strong>NVDA+Shift+K</strong></td>
+<td>LINE Desktop</td>
+<td>Debug: Inspect UIA and OCR (Copy to clipboard)</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+J</strong></td>
+<td>Global</td>
+<td>Report focused app and process info</td>
 </tr>
 </tbody>
 </table>
 <h2>Supported Versions</h2>
 <ul>
-<li>LINE desktop for Windows (standard installer or Microsoft Store version)</li>
-<li>NVDA 2024.1 or later</li>
+<li>LINE desktop for Windows (Standard or Microsoft Store version).</li>
+<li>NVDA 2022.1 or later.</li>
 </ul>
-<h2>Known Limitations</h2>
-<ul>
-<li>This is an initial version. The overlay classes may need refinement based on the actual UIA tree structure of your LINE desktop version.</li>
-<li>Some UI elements may not be perfectly labeled depending on the LINE desktop version and its accessibility implementation.</li>
-<li>The debug shortcut (NVDA+Shift+D) can be used to inspect control properties and help improve the add-on.</li>
-</ul>
-<h2>Troubleshooting</h2>
-<p>If the add-on does not seem to work:</p>
-<ol>
-<li>Make sure LINE desktop is running and focused.</li>
-<li>Use NVDA+Shift+D to log debug information about the current control.</li>
-<li>Check the NVDA log (NVDA menu &gt; Tools &gt; View Log) for debug information starting with "LINE Debug UIA Info".</li>
-<li>The log information will help identify the correct UIA properties for refining the overlay classes.</li>
-</ol>
 </body></html>
