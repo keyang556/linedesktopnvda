@@ -50,6 +50,32 @@ _lastAnnouncedUIAName = None
 _suppressAddon = False
 
 
+def _getDpiScale(hwnd=None):
+	"""Get DPI scale factor for the given window (or foreground window).
+
+	Uses GetDpiForWindow (Win10 1607+), falls back to GetDpiForSystem.
+	Returns float: 1.0 = 100%, 1.25 = 125%, 1.5 = 150%, 2.0 = 200%, etc.
+	"""
+	import ctypes
+	if hwnd is None:
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+	dpi = 96
+	try:
+		# GetDpiForWindow is available on Windows 10 1607+
+		dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
+	except Exception:
+		try:
+			dpi = ctypes.windll.user32.GetDpiForSystem()
+		except Exception:
+			dpi = 96
+	if dpi <= 0:
+		dpi = 96
+	scale = dpi / 96.0
+	log.debug(f"LINE: DPI={dpi}, scale={scale:.2f}")
+	return scale
+
+
+
 def _getTextViaUIAFindAll(obj, maxElements=30):
 	"""Use raw UIA FindAll to get text from descendants.
 
@@ -1360,6 +1386,8 @@ class AppModule(appModuleHandler.AppModule):
 		
 		LINE's Qt6 UI does not expose header toolbar buttons via UIA.
 		We use the window geometry to calculate where the icons are.
+		All pixel offsets are scaled by system DPI so positions adapt to
+		different display scaling settings (100%–300%).
 		
 		The chat header has icons from right to left:
 		  Index 0: More options (⋮ three dots menu)
@@ -1378,6 +1406,8 @@ class AppModule(appModuleHandler.AppModule):
 			log.debug("LINE: no foreground window for header click")
 			return None
 		
+		scale = _getDpiScale(hwnd)
+		
 		# Get complete window rect
 		rect = ctypes.wintypes.RECT()
 		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -1388,16 +1418,20 @@ class AppModule(appModuleHandler.AppModule):
 		
 		log.info(
 			f"LINE: window rect=({winLeft},{winTop},{winRight},{rect.bottom}), "
-			f"width={winWidth}"
+			f"width={winWidth}, dpiScale={scale:.2f}"
 		)
 		
-		# Vertical center of the header icons (below title bar)
-		iconY = winTop + 83
-		
-		# Horizontal: phone icon is 3rd from right (index 2)
-		iconSpacing = 40
-		firstIconOffset = 23
+		# Reference values at 96 DPI (100% scaling), scaled by DPI factor.
+		# Back-calculated from working values at 150%: 83/1.5≈55, 40/1.5≈27, 23/1.5≈15
+		iconY = winTop + int(55 * scale)
+		iconSpacing = int(27 * scale)
+		firstIconOffset = int(15 * scale)
 		iconX = winRight - firstIconOffset - (2 * iconSpacing)
+		
+		log.info(
+			f"LINE: header icon pos: iconX={iconX}, iconY={iconY}, "
+			f"spacing={iconSpacing}, offset={firstIconOffset}"
+		)
 		
 		# Verify position is within window bounds
 		if iconX < winLeft or iconX > winRight:
@@ -1443,14 +1477,14 @@ class AppModule(appModuleHandler.AppModule):
 		log.info(f"LINE: clicking phone icon at ({phoneX}, {phoneY})")
 		self._clickAtPosition(phoneX, phoneY)
 		
-		# Menu item positions (from screenshot analysis):
-		#   Voice call: roughly at (winRight - 60, phoneY + 35)
-		#   Video call: roughly at (winRight - 60, phoneY + 75)
-		menuX = winRight - 60
+		# Menu item positions — DPI-scaled from 96 DPI reference values.
+		# Reference: menuX offset=40, voice menuY offset=23, video menuY offset=50
+		scale = _getDpiScale()
+		menuX = winRight - int(40 * scale)
 		if callType == "voice":
-			menuY = phoneY + 35
+			menuY = phoneY + int(23 * scale)
 		else:
-			menuY = phoneY + 75
+			menuY = phoneY + int(50 * scale)
 		
 		log.info(
 			f"LINE: will click menu item '{callType}' at ({menuX}, {menuY})"
@@ -1472,9 +1506,11 @@ class AppModule(appModuleHandler.AppModule):
 			"""OCR the confirmation dialog, announce it, and auto-click 開始."""
 			try:
 				# The confirmation dialog is centered on the LINE window
-				# Dialog is ~420px wide, ~130px tall
-				dialogW = 420
-				dialogH = 140
+				# Dialog dimensions — DPI-scaled from 96 DPI reference.
+				# Reference: 420/1.5≈280, 140/1.5≈93
+				cScale = _getDpiScale()
+				dialogW = int(280 * cScale)
+				dialogH = int(93 * cScale)
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
 				dialogLeft = winCenterX - dialogW // 2
@@ -1595,13 +1631,13 @@ class AppModule(appModuleHandler.AppModule):
 		def _clickStart():
 			"""Click the 開始 (Start) button on the confirmation dialog."""
 			try:
-				# "開始" button is at roughly left-center of the dialog
-				# Dialog is centered on window; the button is ~35% from left,
-				# and ~75% from top of the dialog area
+				# "開始" button position — DPI-scaled from 96 DPI reference.
+				# Reference: xOffset=65/1.5≈43, yOffset=25/1.5≈17
+				sScale = _getDpiScale()
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
-				startBtnX = winCenterX - 65  # left side of dialog
-				startBtnY = winCenterY + 25  # lower portion of dialog
+				startBtnX = winCenterX - int(43 * sScale)
+				startBtnY = winCenterY + int(17 * sScale)
 				
 				log.info(f"LINE: clicking 開始 at ({startBtnX}, {startBtnY})")
 				appModRef._clickAtPosition(startBtnX, startBtnY)
@@ -1679,18 +1715,17 @@ class AppModule(appModuleHandler.AppModule):
 		winBottom = rect.bottom
 		winWidth = winRight - winLeft
 
+		scale = _getDpiScale(hwnd)
+
 		log.info(
 			f"LINE: window rect=({winLeft},{winTop},{winRight},{winBottom}), "
-			f"width={winWidth}"
+			f"width={winWidth}, dpiScale={scale:.2f}"
 		)
 
-		# From screenshot calibration:
-		# The sidebar (icon bar + contact list) is about 530px wide.
-		# The 📎 attachment icon is the first button in the bottom toolbar,
-		# approximately 50px to the right of the sidebar boundary.
-		# The bottom toolbar row is about 25px from the window bottom.
-		btnX = winLeft + 580  # sidebar (~530px) + ~50px into chat area
-		btnY = winBottom - 25  # bottom toolbar row
+		# Attachment button position — DPI-scaled from 96 DPI reference.
+		# Reference: 580/1.5≈387, 25/1.5≈17
+		btnX = winLeft + int(387 * scale)
+		btnY = winBottom - int(17 * scale)
 
 		# Verify position is within window bounds
 		if btnX < winLeft or btnX > winRight:
@@ -1735,9 +1770,10 @@ class AppModule(appModuleHandler.AppModule):
 				# From the screenshot, the popup menu shows items stacked vertically
 				# above the 📎 icon. Menu items are roughly 45px tall.
 				# "檔案" (File) is typically listed among the items.
-				# We click at the center of the popup, somewhat above the icon.
-				fileMenuX = btnX + 40  # center of popup menu horizontally
-				fileMenuY = btnY - 85  # target "檔案" item in the popup
+				# DPI-scaled popup menu offsets. Reference: 40/1.5≈27, 85/1.5≈57
+				fScale = _getDpiScale()
+				fileMenuX = btnX + int(27 * fScale)
+				fileMenuY = btnY - int(57 * fScale)
 
 				log.info(
 					f"LINE: clicking '檔案' menu item at ({fileMenuX}, {fileMenuY})"

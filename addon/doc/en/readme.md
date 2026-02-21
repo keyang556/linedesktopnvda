@@ -34,6 +34,14 @@ This add-on enhances NVDA screen reader support for the LINE desktop application
 | **NVDA+Shift+K** | LINE Desktop | Debug: Inspect UIA and OCR (Copy to clipboard) |
 | **NVDA+Shift+J** | Global | Report focused app and process info |
 
+## Community & Support
+
+* **LINE User Group**: [Join the Group](https://line.me/R/ti/g/BKQ2dZtTjx)
+  Join our LINE group for feature suggestions, troubleshooting, and discussions with the development team.
+* **Source Code & Issue Tracker**: [GitHub Repository](https://github.com/keyang556/linedesktopnvda)
+  Feel free to open an Issue for feature requests or bug reports. Pull Requests are always welcome for code contributions.
+* **Contact Developer**: [Contact via LINE](https://line.me/ti/p/3GigC88lAt)
+
 ## Supported Versions
 
 * LINE desktop for Windows (Standard or Microsoft Store version).

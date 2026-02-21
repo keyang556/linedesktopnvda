@@ -1,0 +1,32 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: lineDesktop 1.0.0\n"
+"Report-Msgid-Bugs-To: nvda-translations@groups.io\n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2026-02-21 13:20+0800\n"
+"Last-Translator: 張可揚 <lindsay714322@gmail.com>\n"
+"Language-Team: ภาษาไทย <lindsay714322@gmail.com>\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#. Translators: Summary/title for this add-on
+#. to be shown on installation and add-on information found in add-on store
+msgid "LINE Desktop Accessibility"
+msgstr "การเข้าถึง LINE บนเดสก์ท็อป"
+
+#. Translators: Long description to be shown for this add-on on add-on information from add-on store
+msgid ""
+"Enhances NVDA accessibility support for the LINE desktop application on "
+"Windows.\n"
+"Provides improved navigation for chat lists, messages, contacts, and message "
+"input."
+msgstr ""
+"เพิ่มประสิทธิภาพการรองรับการเข้าถึงของ NVDA สำหรับแอปพลิเคชัน LINE บนเดสก์ท็อปใน Windows\n"
+"ให้การนำทางที่ดียิ่งขึ้นสำหรับรายการแชท ข้อความ รายชื่อติดต่อ และการป้อนข้อความ"
+
+#. Translators: what's new content for the add-on version to be shown in the add-on store
+msgid "Initial release with LINE desktop accessibility support."
+msgstr "การเปิดตัวเริ่มต้นพร้อมการรองรับการเข้าถึง LINE บนเดสก์ท็อป"

@@ -34,6 +34,14 @@
 | **NVDA+Shift+K** | LINE Desktop | 除錯：檢查 UIA 與 OCR (內容將複製到剪貼簿) |
 | **NVDA+Shift+J** | 全域 | 回報目前焦點所在的應用程式與程序資訊 |
 
+## 社群與支援
+
+* **LINE 使用者交流群組**：[加入群組](https://line.me/R/ti/g/BKQ2dZtTjx)
+  歡迎加入群組以提出功能建議、回報使用問題，或與開發團隊進行討論。
+* **原始碼與問題追蹤**：[GitHub 專案](https://github.com/keyang556/linedesktopnvda)
+  若有功能建議或發現錯誤，歡迎開啟 Issue；若有意願貢獻程式碼，非常歡迎提交 Pull Request。
+* **聯繫開發者**：[聯絡張可揚 (LINE)](https://line.me/ti/p/3GigC88lAt)
+
 ## 支援版本
 
 * LINE 電腦版 for Windows (標準安裝包或 Microsoft Store 版本)。

@@ -34,6 +34,14 @@
 | **NVDA+Shift+K** | LINE Desktop | デバッグ：UIA と OCR を確認（クリップボードにコピー） |
 | **NVDA+Shift+J** | グローバル | フォーカスされているアプリとプロセス情報を報告 |
 
+## コミュニティとサポート
+
+* **LINE ユーザーグループ**: [グループに参加](https://line.me/R/ti/g/BKQ2dZtTjx)
+  機能の提案、使用上の問題に関する質問、開発チームとのディスカッションのために、ぜひグループにご参加ください。
+* **ソースコードと課題追跡**: [GitHub リポジトリ](https://github.com/keyang556/linedesktopnvda)
+  機能の提案やバグの報告は Issue を作成してください。コードの貢献については Pull Request を歓迎します。
+* **開発者への連絡**: [LINE で連絡](https://line.me/ti/p/3GigC88lAt)
+
 ## 対応バージョン
 
 * Windows 版 LINE デスクトップ (通常版または Microsoft Store 版)。
