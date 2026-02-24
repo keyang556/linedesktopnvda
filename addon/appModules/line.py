@@ -1654,6 +1654,829 @@ class AppModule(appModuleHandler.AppModule):
 		core.callLater(500, _clickMenuItem)
 		return True
 	
+	# ── Incoming call handling ──────────────────────────────────────────
+	
+	def _findIncomingCallWindow(self):
+		"""Find LINE's incoming call window by enumerating all top-level windows.
+		
+		LINE incoming calls may appear in:
+		- The same process as the main LINE window
+		- A separate child process (e.g. LineCall)
+		
+		We search ALL visible windows for call-related keywords, then
+		verify ownership via executable name.
+		
+		Returns the HWND of the call window, or None.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		import os
+		
+		lineProcessId = self.processID
+		callHwnd = None
+		
+		# Keywords to match in window titles (case-insensitive)
+		_CALL_KEYWORDS = [
+			"來電", "通話", "linecall", "call", "ringing",
+			"着信", "สาย",
+		]
+		
+		# Executable names that belong to LINE
+		_LINE_EXES = {"line.exe", "line_app.exe", "linecall.exe", "linelauncher.exe"}
+		
+		WNDENUMPROC = ctypes.WINFUNCTYPE(
+			ctypes.wintypes.BOOL,
+			ctypes.wintypes.HWND,
+			ctypes.wintypes.LPARAM,
+		)
+		
+		def _getExeName(pid):
+			"""Get the executable name for a process ID."""
+			try:
+				PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+				hProc = ctypes.windll.kernel32.OpenProcess(
+					PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+				)
+				if not hProc:
+					return ""
+				try:
+					buf = ctypes.create_unicode_buffer(260)
+					size = ctypes.wintypes.DWORD(260)
+					ok = ctypes.windll.kernel32.QueryFullProcessImageNameW(
+						hProc, 0, buf, ctypes.byref(size)
+					)
+					if ok:
+						return os.path.basename(buf.value).lower()
+					return ""
+				finally:
+					ctypes.windll.kernel32.CloseHandle(hProc)
+			except Exception:
+				return ""
+		
+		# Determine main window HWND to skip
+		mainHwnd = None
+		try:
+			mainHwnd = self.windowHandle
+		except Exception:
+			pass
+		
+		# ── Pass 1: search ALL visible windows by title ──────────────
+		allWindows = []
+		
+		def _enumAll(hwnd, lParam):
+			if not ctypes.windll.user32.IsWindowVisible(hwnd):
+				return True
+			buf = ctypes.create_unicode_buffer(512)
+			ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
+			title = buf.value or ""
+			pid = ctypes.wintypes.DWORD()
+			ctypes.windll.user32.GetWindowThreadProcessId(
+				hwnd, ctypes.byref(pid)
+			)
+			allWindows.append((hwnd, title, pid.value))
+			return True
+		
+		ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enumAll), 0)
+		
+		log.debug(
+			f"LINE: _findIncomingCallWindow scanning {len(allWindows)} "
+			f"visible windows, mainHwnd={mainHwnd}, linePID={lineProcessId}"
+		)
+		
+		for hwnd, title, pid in allWindows:
+			if hwnd == mainHwnd:
+				continue
+			titleLower = title.lower()
+			for kw in _CALL_KEYWORDS:
+				if kw.lower() in titleLower:
+					# Verify this window belongs to LINE
+					if pid == lineProcessId:
+						log.info(
+							f"LINE: found call window (same process) "
+							f"hwnd={hwnd}, title={title!r}, pid={pid}"
+						)
+						callHwnd = hwnd
+						break
+					# Check if it's a LINE child process
+					exeName = _getExeName(pid)
+					if exeName in _LINE_EXES:
+						log.info(
+							f"LINE: found call window (child process) "
+							f"hwnd={hwnd}, title={title!r}, pid={pid}, "
+							f"exe={exeName}"
+						)
+						callHwnd = hwnd
+						break
+					else:
+						log.debug(
+							f"LINE: title matched but exe mismatch: "
+							f"hwnd={hwnd}, title={title!r}, exe={exeName}"
+						)
+			if callHwnd:
+				break
+		
+		# ── Pass 2: OCR fallback on non-main LINE windows ───────────
+		if not callHwnd:
+			fgHwnd = ctypes.windll.user32.GetForegroundWindow()
+			skipHwnds = set()
+			if mainHwnd:
+				skipHwnds.add(mainHwnd)
+			if fgHwnd:
+				fgPid = ctypes.wintypes.DWORD()
+				ctypes.windll.user32.GetWindowThreadProcessId(
+					fgHwnd, ctypes.byref(fgPid)
+				)
+				if fgPid.value == lineProcessId:
+					skipHwnds.add(fgHwnd)
+			
+			candidateHwnds = []
+			for hwnd, title, pid in allWindows:
+				if hwnd in skipHwnds:
+					continue
+				# Check both same-process and child-process windows
+				isLine = (pid == lineProcessId)
+				if not isLine:
+					exeName = _getExeName(pid)
+					isLine = exeName in _LINE_EXES
+				if not isLine:
+					continue
+				rect = ctypes.wintypes.RECT()
+				ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+				w = rect.right - rect.left
+				h = rect.bottom - rect.top
+				if w > 50 and h > 30:
+					candidateHwnds.append((hwnd, rect))
+			
+			log.debug(
+				f"LINE: OCR fallback has {len(candidateHwnds)} candidates"
+			)
+			
+			for hwnd, rect in candidateHwnds:
+				try:
+					ocrText = self._ocrWindowArea(
+						hwnd, sync=True, timeout=2.0
+					)
+					if ocrText:
+						ocrLower = ocrText.lower()
+						checkRegion = (
+							ocrLower[:150] if len(ocrLower) > 200
+							else ocrLower
+						)
+						for kw in _CALL_KEYWORDS:
+							if kw.lower() in checkRegion:
+								log.info(
+									f"LINE: found call window via OCR "
+									f"hwnd={hwnd}, text={ocrText!r}"
+								)
+								callHwnd = hwnd
+								break
+					if callHwnd:
+						break
+				except Exception as e:
+					log.debug(
+						f"LINE: OCR probe on hwnd={hwnd} failed: {e}"
+					)
+		
+		if not callHwnd:
+			log.debug("LINE: no incoming call window found")
+		
+		return callHwnd
+	
+	def _ocrWindowArea(self, hwnd, region=None, sync=False, timeout=3.0):
+		"""OCR a window (or part of it) and return the recognized text.
+		
+		Args:
+			hwnd: Window handle to capture.
+			region: Optional (left, top, width, height) tuple in screen
+				coordinates.  If None, uses the full window rect.
+			sync: If True, block until OCR completes (up to timeout).
+			timeout: Max seconds to wait when sync=True.
+		
+		Returns:
+			The OCR text string, or empty string on failure.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		import threading
+		
+		if not region:
+			rect = ctypes.wintypes.RECT()
+			ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+			left = rect.left
+			top = rect.top
+			width = rect.right - rect.left
+			height = rect.bottom - rect.top
+		else:
+			left, top, width, height = region
+		
+		if width <= 0 or height <= 0:
+			return ""
+		
+		try:
+			import screenBitmap
+			from contentRecog import uwpOcr
+			
+			sb = screenBitmap.ScreenBitmap(width, height)
+			pixels = sb.captureImage(left, top, width, height)
+			
+			langs = uwpOcr.getLanguages()
+			ocrLang = None
+			for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
+				if candidate in langs:
+					ocrLang = candidate
+					break
+			if not ocrLang:
+				for lang in langs:
+					if lang.startswith("zh"):
+						ocrLang = lang
+						break
+			if not ocrLang and langs:
+				ocrLang = langs[0]
+			if not ocrLang:
+				log.warning("LINE: no OCR language available")
+				return ""
+			
+			recognizer = uwpOcr.UwpOcr(language=ocrLang)
+			resizeFactor = recognizer.getResizeFactor(width, height)
+			
+			if resizeFactor > 1:
+				sb2 = screenBitmap.ScreenBitmap(
+					width * resizeFactor, height * resizeFactor
+				)
+				ocrPixels = sb2.captureImage(left, top, width, height)
+			else:
+				ocrPixels = pixels
+			
+			class _ImgInfo:
+				def __init__(self, w, h, factor, sLeft, sTop):
+					self.recogWidth = w * factor
+					self.recogHeight = h * factor
+					self.resizeFactor = factor
+					self._screenLeft = sLeft
+					self._screenTop = sTop
+				def convertXToScreen(self, x):
+					return self._screenLeft + int(x / self.resizeFactor)
+				def convertYToScreen(self, y):
+					return self._screenTop + int(y / self.resizeFactor)
+				def convertWidthToScreen(self, w):
+					return int(w / self.resizeFactor)
+				def convertHeightToScreen(self, h):
+					return int(h / self.resizeFactor)
+			
+			imgInfo = _ImgInfo(width, height, resizeFactor, left, top)
+			
+			if sync:
+				resultHolder = [None]
+				event = threading.Event()
+				
+				# Keep references alive
+				self._inCallOcrRecognizer = recognizer
+				self._inCallOcrPixels = ocrPixels
+				self._inCallOcrImgInfo = imgInfo
+				
+				def _onResult(result):
+					resultHolder[0] = result
+					event.set()
+				
+				recognizer.recognize(ocrPixels, imgInfo, _onResult)
+				event.wait(timeout=timeout)
+				
+				self._inCallOcrRecognizer = None
+				self._inCallOcrPixels = None
+				self._inCallOcrImgInfo = None
+				
+				result = resultHolder[0]
+				if result is None or isinstance(result, Exception):
+					return ""
+				text = getattr(result, 'text', '') or ''
+				return _removeCJKSpaces(text.strip())
+			else:
+				# Async — not used for incoming call detection
+				return ""
+		except Exception as e:
+			log.debug(f"LINE: _ocrWindowArea failed: {e}", exc_info=True)
+			return ""
+	
+	def _getCallButtonElements(self, hwnd):
+		"""Collect UIA elements from the call window and log their properties.
+		
+		Returns (allElements, handler, rootEl) tuple, or ([], None, None).
+		"""
+		import ctypes
+		import ctypes.wintypes
+		
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winW = rect.right - rect.left
+		winH = rect.bottom - rect.top
+		
+		log.info(
+			f"LINE: call window rect=({rect.left},{rect.top},"
+			f"{rect.right},{rect.bottom}), size={winW}x{winH}"
+		)
+		
+		try:
+			handler = UIAHandler.handler
+			if not handler or not handler.clientObject:
+				return ([], None, None)
+			
+			rootEl = None
+			try:
+				rootEl = handler.clientObject.ElementFromHandle(hwnd)
+			except Exception:
+				pass
+			if not rootEl:
+				return ([], None, None)
+			
+			allElements = self._collectAllElements(rootEl, handler)
+			
+			# Log ALL elements with detailed info for debugging
+			for i, el in enumerate(allElements):
+				try:
+					ct = 0
+					name = ""
+					autoId = ""
+					elRectStr = "?"
+					try:
+						ct = el.CurrentControlType
+					except Exception:
+						pass
+					try:
+						name = el.CurrentName or ""
+					except Exception:
+						pass
+					try:
+						autoId = el.CurrentAutomationId or ""
+					except Exception:
+						pass
+					try:
+						elRect = el.CurrentBoundingRectangle
+						elRectStr = (
+							f"({elRect.left},{elRect.top},"
+							f"{elRect.right},{elRect.bottom})"
+						)
+					except Exception:
+						pass
+					# Check InvokePattern support
+					hasInvoke = False
+					try:
+						pat = el.GetCurrentPattern(10000)
+						hasInvoke = pat is not None
+					except Exception:
+						pass
+					log.info(
+						f"LINE call elem[{i}]: ct={ct}, "
+						f"name={name!r}, autoId={autoId!r}, "
+						f"rect={elRectStr}, invoke={hasInvoke}"
+					)
+				except Exception:
+					log.debug(f"LINE call elem[{i}]: error reading")
+			
+			return (allElements, handler, rootEl)
+		except Exception as e:
+			log.debug(f"LINE: call element collection failed: {e}")
+			return ([], None, None)
+	
+	def _findCallButtonByRect(self, hwnd, allElements, side="right"):
+		"""Find a button-like element by its position in the call window.
+		
+		LINE's call window has button-like elements with no names.
+		We identify them by bounding rectangle position:
+		  - 'right' side = answer button (green)
+		  - 'left' side = decline button (red)
+		
+		IMPORTANT: Only considers elements whose center is INSIDE the
+		window rect.  LINE's Qt6 window exposes border/frame elements
+		that are OUTSIDE the window bounds and must be filtered out.
+		
+		Returns (element, centerX, centerY) or None.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winW = rect.right - rect.left
+		winH = rect.bottom - rect.top
+		winCenterX = rect.left + winW // 2
+		
+		# Collect elements with valid bounding rects INSIDE the window
+		candidates = []
+		outsideCount = 0
+		for el in allElements:
+			try:
+				elRect = el.CurrentBoundingRectangle
+				elW = elRect.right - elRect.left
+				elH = elRect.bottom - elRect.top
+				elCX = (elRect.left + elRect.right) // 2
+				elCY = (elRect.top + elRect.bottom) // 2
+				
+				# CRITICAL: element center must be INSIDE the window
+				if (elCX < rect.left or elCX > rect.right or
+						elCY < rect.top or elCY > rect.bottom):
+					outsideCount += 1
+					continue
+				
+				# Filter: must be visible, reasonably sized (like a button)
+				if elW < 10 or elH < 10:
+					continue
+				# Skip elements that span the full window width
+				if elW > winW * 0.8:
+					continue
+				# Skip root / container elements
+				if elW > winW * 0.6 and elH > winH * 0.6:
+					continue
+				
+				candidates.append((el, elRect, elCX, elCY, elW, elH))
+			except Exception:
+				continue
+		
+		if outsideCount:
+			log.info(
+				f"LINE: filtered out {outsideCount} border elements "
+				f"outside window rect"
+			)
+		
+		if not candidates:
+			log.info("LINE: no button candidates INSIDE window")
+			return None
+		
+		log.info(
+			f"LINE: {len(candidates)} button candidates found, "
+			f"looking for '{side}' button"
+		)
+		
+		if side == "right":
+			rightCandidates = [
+				c for c in candidates if c[2] > winCenterX
+			]
+			if rightCandidates:
+				rightCandidates.sort(key=lambda c: c[2], reverse=True)
+				best = rightCandidates[0]
+				log.info(
+					f"LINE: selected right button at "
+					f"({best[2]},{best[3]}), size={best[4]}x{best[5]}"
+				)
+				return (best[0], best[2], best[3])
+		else:
+			leftCandidates = [
+				c for c in candidates if c[2] < winCenterX
+			]
+			if leftCandidates:
+				leftCandidates.sort(key=lambda c: c[2])
+				best = leftCandidates[0]
+				log.info(
+					f"LINE: selected left button at "
+					f"({best[2]},{best[3]}), size={best[4]}x{best[5]}"
+				)
+				return (best[0], best[2], best[3])
+		
+		# Fallback: any candidate sorted by position
+		if candidates:
+			if side == "right":
+				candidates.sort(key=lambda c: c[2], reverse=True)
+			else:
+				candidates.sort(key=lambda c: c[2])
+			best = candidates[0]
+			log.info(
+				f"LINE: fallback button at "
+				f"({best[2]},{best[3]}), size={best[4]}x{best[5]}"
+			)
+			return (best[0], best[2], best[3])
+		
+		return None
+	
+	def _ocrFindButtonKeyword(self, hwnd, keywords):
+		"""Use OCR to check if any keyword appears in the call window.
+		
+		Returns True if a keyword is found, False otherwise.
+		Note: NVDA's uwpOcr result only provides flat text,
+		not per-word positions, so we just confirm presence.
+		"""
+		try:
+			ocrText = self._ocrWindowArea(hwnd, sync=True, timeout=3.0)
+			if not ocrText:
+				log.info("LINE: OCR returned no text for call window")
+				return False
+			
+			ocrTextLower = ocrText.lower()
+			log.info(
+				f"LINE: OCR call window text: '{ocrText}'"
+			)
+			for kw in keywords:
+				if kw.lower() in ocrTextLower:
+					log.info(f"LINE: OCR found keyword '{kw}'")
+					return True
+			
+			log.info("LINE: OCR no keyword match")
+			return False
+		except Exception as e:
+			log.debug(
+				f"LINE: _ocrFindButtonKeyword failed: {e}",
+				exc_info=True
+			)
+			return False
+	
+	def _answerIncomingCall(self, hwnd):
+		"""Answer an incoming call by clicking the answer (green) button.
+		
+		Multi-strategy approach:
+		  1. Bring the call window to the foreground
+		  2. Try UIA keyword search for answer button
+		  3. Try UIA bounding-rect analysis (buttons inside window)
+		  4. OCR: find "接聽" text and click its position
+		  5. Fallback: click at proportional position inside window
+		"""
+		import ctypes
+		import ctypes.wintypes
+		import time
+		
+		# Step 0: Bring call window to foreground
+		try:
+			ctypes.windll.user32.SetForegroundWindow(hwnd)
+			time.sleep(0.3)
+		except Exception:
+			pass
+		
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winW = rect.right - rect.left
+		winH = rect.bottom - rect.top
+		
+		allElements, handler, rootEl = self._getCallButtonElements(hwnd)
+		
+		# Strategy 1: UIA keyword search
+		if allElements:
+			answerEl = self._findButtonByKeywords(
+				allElements,
+				["接聽", "accept", "answer", "応答", "รับสาย", "接受"],
+				excludeKeywords=["拒絕", "decline", "reject"]
+			)
+			if answerEl:
+				if self._invokeElement(answerEl, "已接聽"):
+					return True
+		
+		# Strategy 2: UIA bounding-rect analysis (inside window only)
+		# In LINE's call popup, answer (green) is on the LEFT
+		if allElements:
+			result = self._findCallButtonByRect(
+				hwnd, allElements, side="left"
+			)
+			if result:
+				el, cx, cy = result
+				invoked = False
+				try:
+					pat = el.GetCurrentPattern(10000)
+					if pat:
+						import comtypes
+						pat.QueryInterface(
+							comtypes.gen.UIAutomationClient
+							.IUIAutomationInvokePattern
+						).Invoke()
+						invoked = True
+						log.info("LINE: answered via InvokePattern")
+				except Exception as e:
+					log.debug(f"LINE: InvokePattern failed: {e}")
+				
+				if not invoked:
+					log.info(
+						f"LINE: clicking answer button at ({cx}, {cy})"
+					)
+					self._clickAtPosition(cx, cy)
+				
+				ui.message("已接聽")
+				return True
+		
+		# Strategy 3: OCR confirms call window, then click at position
+		log.info("LINE: trying OCR to confirm call window")
+		ocrConfirmed = self._ocrFindButtonKeyword(
+			hwnd,
+			["接聽", "accept", "answer", "応答", "รับสาย",
+			 "拒絕", "decline", "reject", "來電"]
+		)
+		
+		# Strategy 4: Click at position inside the window
+		# Screenshot layout: [avatar][caller text][red reject ~80%][green answer ~92%]
+		# Answer (green phone) is the RIGHTMOST button
+		if winH > 200:
+			# Full call window — answer button
+			answerX = rect.left + int(winW * 0.65)
+			answerY = rect.top + int(winH * 0.75)
+		else:
+			# Small notification popup (e.g. 456x99)
+			# Answer button is at far right edge
+			answerX = rect.left + int(winW * 0.92)
+			answerY = rect.top + int(winH * 0.35)
+		
+		log.info(
+			f"LINE: clicking answer (fallback) at "
+			f"({answerX}, {answerY}), winRect=({rect.left},"
+			f"{rect.top},{rect.right},{rect.bottom})"
+		)
+		self._clickAtPosition(answerX, answerY)
+		ui.message("已接聽")
+		return True
+	
+	def _rejectIncomingCall(self, hwnd):
+		"""Reject an incoming call by clicking the decline (red) button.
+		
+		Multi-strategy approach (mirrors _answerIncomingCall):
+		  1. Bring the call window to the foreground
+		  2. Try UIA keyword search for decline button
+		  3. Try UIA bounding-rect analysis (buttons inside window)
+		  4. OCR: find "拒絕" text and click its position
+		  5. Fallback: click at proportional position inside window
+		"""
+		import ctypes
+		import ctypes.wintypes
+		import time
+		
+		# Step 0: Bring call window to foreground
+		try:
+			ctypes.windll.user32.SetForegroundWindow(hwnd)
+			time.sleep(0.3)
+		except Exception:
+			pass
+		
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winW = rect.right - rect.left
+		winH = rect.bottom - rect.top
+		
+		allElements, handler, rootEl = self._getCallButtonElements(hwnd)
+		
+		# Strategy 1: UIA keyword search
+		if allElements:
+			rejectEl = self._findButtonByKeywords(
+				allElements,
+				["拒絕", "decline", "reject", "拒否", "ปฏิเสธ"],
+				excludeKeywords=["接聽", "accept", "answer"]
+			)
+			if rejectEl:
+				if self._invokeElement(rejectEl, "已拒絕"):
+					return True
+		
+		# Strategy 2: UIA bounding-rect analysis (inside window only)
+		# In LINE's call popup, reject (red) is on the RIGHT
+		if allElements:
+			result = self._findCallButtonByRect(
+				hwnd, allElements, side="right"
+			)
+			if result:
+				el, cx, cy = result
+				invoked = False
+				try:
+					pat = el.GetCurrentPattern(10000)
+					if pat:
+						import comtypes
+						pat.QueryInterface(
+							comtypes.gen.UIAutomationClient
+							.IUIAutomationInvokePattern
+						).Invoke()
+						invoked = True
+						log.info("LINE: rejected via InvokePattern")
+				except Exception as e:
+					log.debug(f"LINE: InvokePattern failed: {e}")
+				
+				if not invoked:
+					log.info(
+						f"LINE: clicking reject button at ({cx}, {cy})"
+					)
+					self._clickAtPosition(cx, cy)
+				
+				ui.message("已拒絕")
+				return True
+		
+		# Strategy 3: OCR confirms call window, then click at position
+		log.info("LINE: trying OCR to confirm call window")
+		ocrConfirmed = self._ocrFindButtonKeyword(
+			hwnd,
+			["拒絕", "decline", "reject", "拒否", "ปฏิเสธ",
+			 "接聽", "accept", "answer", "來電"]
+		)
+		
+		# Strategy 4: Click at position inside the window
+		# Screenshot layout: [avatar][caller text][red reject ~80%][green answer ~92%]
+		# Reject (red phone) is second from right
+		if winH > 200:
+			# Full call window — decline button
+			rejectX = rect.left + int(winW * 0.35)
+			rejectY = rect.top + int(winH * 0.75)
+		else:
+			# Small notification popup
+			# Reject button is second from right
+			rejectX = rect.left + int(winW * 0.80)
+			rejectY = rect.top + int(winH * 0.35)
+		
+		log.info(
+			f"LINE: clicking reject (fallback) at "
+			f"({rejectX}, {rejectY}), winRect=({rect.left},"
+			f"{rect.top},{rect.right},{rect.bottom})"
+		)
+		self._clickAtPosition(rejectX, rejectY)
+		ui.message("已拒絕")
+		return True
+	
+	def _getCallerInfo(self, hwnd):
+		"""OCR the call window to extract and announce the caller's name."""
+		import ctypes
+		import ctypes.wintypes
+		
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		
+		ocrText = self._ocrWindowArea(hwnd, sync=True, timeout=3.0)
+		if ocrText:
+			# Clean up: remove "來電" and other system labels to extract
+			# just the caller name
+			callerName = ocrText
+			for removeKw in ["來電", "着信", "ringing", "incoming call",
+							 "สายเรียกเข้า"]:
+				callerName = callerName.replace(removeKw, "")
+			callerName = callerName.strip()
+			if callerName:
+				ui.message(f"來電：{callerName}")
+			else:
+				ui.message(f"來電（OCR: {ocrText}）")
+			log.info(f"LINE: caller info OCR: {ocrText!r}")
+		else:
+			ui.message("無法辨識來電者")
+			log.info("LINE: caller info OCR returned empty")
+	
+	# ── Incoming call scripts ──────────────────────────────────────────
+	# Note: gesture bindings are registered in the GlobalPlugin
+	# (lineDesktopHelper.py) so they work even when LINE isn't focused.
+	
+	def script_answerCall(self, gesture):
+		"""Answer an incoming LINE call."""
+		try:
+			hwnd = self._findIncomingCallWindow()
+			if hwnd:
+				self._answerIncomingCall(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE answerCall error: {e}", exc_info=True)
+			ui.message(f"接聽功能錯誤: {e}")
+	
+	def script_rejectCall(self, gesture):
+		"""Reject an incoming LINE call."""
+		try:
+			hwnd = self._findIncomingCallWindow()
+			if hwnd:
+				self._rejectIncomingCall(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
+			ui.message(f"拒絕功能錯誤: {e}")
+	
+	def script_checkCaller(self, gesture):
+		"""Announce who is calling."""
+		try:
+			hwnd = self._findIncomingCallWindow()
+			if hwnd:
+				self._getCallerInfo(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
+			ui.message(f"來電查看功能錯誤: {e}")
+
+	def script_focusCallWindow(self, gesture):
+		"""Find the LineCall window, bring it to foreground, and OCR its content."""
+		import ctypes
+		import ctypes.wintypes
+
+		hwnd = self._findIncomingCallWindow()
+		if not hwnd:
+			ui.message("未偵測到通話視窗")
+			return
+
+		# Bring the call window to the foreground
+		try:
+			ctypes.windll.user32.SetForegroundWindow(hwnd)
+		except Exception:
+			pass
+
+		# Give the window time to come to foreground, then OCR it
+		def _announceCallWindow():
+			try:
+				ocrText = self._ocrWindowArea(hwnd, sync=True, timeout=3.0)
+				if ocrText:
+					speech.cancelSpeech()
+					ui.message(ocrText)
+					log.info(f"LINE: call window OCR: {ocrText!r}")
+				else:
+					ui.message("通話視窗（無法辨識內容）")
+			except Exception as e:
+				log.warning(f"LINE: call window OCR error: {e}", exc_info=True)
+				ui.message("通話視窗")
+
+		core.callLater(300, _announceCallWindow)
+
+	# ── Outgoing call scripts ──────────────────────────────────────────
+
 	@script(
 		description="撥打語音通話",
 		gesture="kb:NVDA+shift+c",
@@ -1682,185 +2505,69 @@ class AppModule(appModuleHandler.AppModule):
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(f"視訊通話功能錯誤: {e}")
 
-	def _getAttachmentButtonPosition(self):
-		"""Get the screen position of the attachment (📎) button in the chat input area.
+	def _pollFileDialog(self):
+		"""Poll to detect when the file dialog closes, then resume addon.
 
-		LINE's Qt6 UI does not expose the attachment button via UIA.
-		We use the window geometry to calculate where the 📎 button is.
-
-		From screenshot analysis:
-		  - Left icon sidebar: ~70px
-		  - Search/contact list panel: ~460px
-		  - Total sidebar width: ~530px
-		  - The 📎 icon is the first icon in the bottom toolbar of the chat area,
-		    roughly 50px to the right of the sidebar boundary.
-		  - The bottom toolbar is ~25px from the window bottom.
-
-		Returns:
-			(btnX, btnY) tuple, or None if window not found.
+		We enumerate all #32770 windows and check if any belong to LINE's
+		process. Using FindWindowW("#32770", None) is wrong because it finds
+		ANY #32770 window in the system (e.g. battery warning dialogs).
 		"""
+		global _suppressAddon
 		import ctypes
 		import ctypes.wintypes
 
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			log.debug("LINE: no foreground window for attachment button")
-			return None
+		lineProcessId = self.processID
 
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		winLeft = rect.left
-		winTop = rect.top
-		winRight = rect.right
-		winBottom = rect.bottom
-		winWidth = winRight - winLeft
-
-		scale = _getDpiScale(hwnd)
-
-		log.info(
-			f"LINE: window rect=({winLeft},{winTop},{winRight},{winBottom}), "
-			f"width={winWidth}, dpiScale={scale:.2f}"
-		)
-
-		# Attachment button position — DPI-scaled from 96 DPI reference.
-		# Reference: 580/1.5≈387, 25/1.5≈17
-		btnX = winLeft + int(387 * scale)
-		btnY = winBottom - int(17 * scale)
-
-		# Verify position is within window bounds
-		if btnX < winLeft or btnX > winRight:
-			log.warning(f"LINE: attachment button position {btnX} outside window bounds")
-			return None
-
-		return (btnX, btnY)
-
-	def _openFilePicker(self):
-		"""Click the "+" attachment button, wait for popup, then click "檔案".
-
-		Full flow (2 steps):
-		  1. Click "+" button → attachment popup menu appears (wait 500ms)
-		  2. Click "檔案" (File) menu item → Windows file dialog opens
-
-		The popup menu typically contains items like:
-		  - 照片/影片 (Photos/Videos)
-		  - 檔案 (File)
-		  - 聯絡資訊 (Contact)
-		  - etc.
-
-		"檔案" is usually the 2nd item in the menu.
-		"""
-		import ctypes
-		import ctypes.wintypes
-
-		pos = self._getAttachmentButtonPosition()
-		if not pos:
-			return False
-
-		btnX, btnY = pos
-
-		log.info(f"LINE: clicking attachment '+' button at ({btnX}, {btnY})")
-		ui.message("開啟附加檔案...")
-		self._clickAtPosition(btnX, btnY)
-
-		appModRef = self
-
-		def _clickFileMenuItem():
-			try:
-				# After clicking 📎, a popup menu appears above the button.
-				# From the screenshot, the popup menu shows items stacked vertically
-				# above the 📎 icon. Menu items are roughly 45px tall.
-				# "檔案" (File) is typically listed among the items.
-				# DPI-scaled popup menu offsets. Reference: 40/1.5≈27, 85/1.5≈57
-				fScale = _getDpiScale()
-				fileMenuX = btnX + int(27 * fScale)
-				fileMenuY = btnY - int(57 * fScale)
-
-				log.info(
-					f"LINE: clicking '檔案' menu item at ({fileMenuX}, {fileMenuY})"
-				)
-				appModRef._clickAtPosition(fileMenuX, fileMenuY)
-				# Suppress entire addon while the file dialog is open
-				global _suppressAddon
-				_suppressAddon = True
-				log.info("LINE: OCR suppressed, waiting for file dialog...")
-				# Start polling for file dialog to close
-				core.callLater(1000, _pollFileDialog)
-			except Exception as e:
-				log.warning(f"LINE: file menu click failed: {e}")
-				ui.message("選單點擊失敗")
-
-		def _pollFileDialog():
-			"""Poll to detect when the file dialog closes, then resume addon.
-
-			We enumerate all #32770 windows and check if any belong to LINE's
-			process. Using FindWindowW("#32770", None) is wrong because it finds
-			ANY #32770 window in the system (e.g. battery warning dialogs).
-			"""
-			global _suppressAddon
-			import ctypes
-			import ctypes.wintypes
-
-			lineProcessId = appModRef.processID
-
-			try:
-				foundOurDialog = False
-
-				# Callback for EnumWindows
-				WNDENUMPROC = ctypes.WINFUNCTYPE(
-					ctypes.wintypes.BOOL,
-					ctypes.wintypes.HWND,
-					ctypes.wintypes.LPARAM,
-				)
-
-				def _enumCallback(hwnd, lParam):
-					nonlocal foundOurDialog
-					# Get the class name of this window
-					buf = ctypes.create_unicode_buffer(256)
-					ctypes.windll.user32.GetClassNameW(
-						hwnd, buf, 256
-					)
-					if buf.value == "#32770":
-						# Check if this dialog belongs to LINE's process
-						pid = ctypes.wintypes.DWORD()
-						ctypes.windll.user32.GetWindowThreadProcessId(
-							hwnd, ctypes.byref(pid)
-						)
-						if pid.value == lineProcessId:
-							foundOurDialog = True
-							return False  # stop enumeration
-					return True  # continue enumeration
-
-				ctypes.windll.user32.EnumWindows(
-					WNDENUMPROC(_enumCallback), 0
-				)
-
-				if foundOurDialog:
-					log.debug("LINE: file dialog still open, polling...")
-					core.callLater(500, _pollFileDialog)
-				else:
-					_suppressAddon = False
-					log.info("LINE: file dialog closed, addon resumed")
-			except Exception as e:
-				log.warning(f"LINE: file dialog poll error: {e}")
-				_suppressAddon = False
-
-		# Step 2: Wait 500ms for popup menu, then click "檔案"
-		core.callLater(500, _clickFileMenuItem)
-		return True
-
-	@script(
-		description="開啟附加檔案選擇視窗",
-		gesture="kb:NVDA+shift+t",
-		category="LINE Desktop",
-	)
-	def script_openFilePicker(self, gesture):
-		"""Click the attachment '+' button, then select '檔案' to open file picker."""
 		try:
-			if not self._openFilePicker():
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+			foundOurDialog = False
+
+			# Callback for EnumWindows
+			WNDENUMPROC = ctypes.WINFUNCTYPE(
+				ctypes.wintypes.BOOL,
+				ctypes.wintypes.HWND,
+				ctypes.wintypes.LPARAM,
+			)
+
+			def _enumCallback(hwnd, lParam):
+				nonlocal foundOurDialog
+				# Get the class name of this window
+				buf = ctypes.create_unicode_buffer(256)
+				ctypes.windll.user32.GetClassNameW(
+					hwnd, buf, 256
+				)
+				if buf.value == "#32770":
+					# Check if this dialog belongs to LINE's process
+					pid = ctypes.wintypes.DWORD()
+					ctypes.windll.user32.GetWindowThreadProcessId(
+						hwnd, ctypes.byref(pid)
+					)
+					if pid.value == lineProcessId:
+						foundOurDialog = True
+						return False  # stop enumeration
+				return True  # continue enumeration
+
+			ctypes.windll.user32.EnumWindows(
+				WNDENUMPROC(_enumCallback), 0
+			)
+
+			if foundOurDialog:
+				log.debug("LINE: file dialog still open, polling...")
+				core.callLater(500, self._pollFileDialog)
+			else:
+				_suppressAddon = False
+				log.info("LINE: file dialog closed, addon resumed")
 		except Exception as e:
-			log.warning(f"LINE openFilePicker error: {e}", exc_info=True)
-			ui.message(f"附加檔案功能錯誤: {e}")
+			log.warning(f"LINE: file dialog poll error: {e}")
+			_suppressAddon = False
+
+	def script_openFileDialog(self, gesture):
+		"""Pass Ctrl+O to LINE, suppress addon while file dialog is open."""
+		global _suppressAddon
+		_suppressAddon = True
+		log.info("LINE: Ctrl+O pressed, addon suppressed, waiting for file dialog...")
+		gesture.send()
+		# Start polling for file dialog to close after a short delay
+		core.callLater(1000, self._pollFileDialog)
 
 	def script_navigateAndTrack(self, gesture):
 		"""Pass navigation key to LINE, then poll UIA focused element.
@@ -1888,4 +2595,5 @@ class AppModule(appModuleHandler.AppModule):
 		"kb:downArrow": "navigateAndTrack",
 		"kb:leftArrow": "navigateAndTrack",
 		"kb:rightArrow": "navigateAndTrack",
+		"kb:control+o": "openFileDialog",
 	}

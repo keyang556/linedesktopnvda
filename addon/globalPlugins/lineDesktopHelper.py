@@ -7,6 +7,14 @@ from scriptHandler import script
 from logHandler import log
 
 
+def _getLineAppModule():
+	"""Find and return the LINE appModule instance, or None."""
+	for app in appModuleHandler.runningTable.values():
+		if app and getattr(app, 'appName', '').lower() in ('line', 'line_app'):
+			return app
+	return None
+
+
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	"""Global plugin to ensure the LINE appModule is loaded
 	for all known LINE desktop executable variants.
@@ -24,6 +32,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		"LINE",
 		"Line",
 		"LINE_APP",
+		"LineCall",
 	]
 
 	def __init__(self, *args, **kwargs):
@@ -66,3 +75,85 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		)
 		log.info(f"LINE Debug Focus Info: {msg}")
 		ui.message(msg)
+
+	# ── Incoming call global shortcuts ─────────────────────────────
+
+	@script(
+		description="LINE: 接聽來電",
+		gesture="kb:NVDA+windows+a",
+		category="LINE Desktop",
+	)
+	def script_answerCall(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			hwnd = lineApp._findIncomingCallWindow()
+			if hwnd:
+				lineApp._answerIncomingCall(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE answerCall error: {e}", exc_info=True)
+			ui.message(f"接聽功能錯誤: {e}")
+
+	@script(
+		description="LINE: 拒絕來電",
+		gesture="kb:NVDA+windows+d",
+		category="LINE Desktop",
+	)
+	def script_rejectCall(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			hwnd = lineApp._findIncomingCallWindow()
+			if hwnd:
+				lineApp._rejectIncomingCall(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
+			ui.message(f"拒絕功能錯誤: {e}")
+
+	@script(
+		description="LINE: 查看來電者",
+		gesture="kb:NVDA+windows+s",
+		category="LINE Desktop",
+	)
+	def script_checkCaller(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			hwnd = lineApp._findIncomingCallWindow()
+			if hwnd:
+				lineApp._getCallerInfo(hwnd)
+			else:
+				ui.message("未偵測到來電")
+		except Exception as e:
+			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
+			ui.message(f"來電查看功能錯誤: {e}")
+
+	@script(
+		description="LINE: 跳到通話視窗",
+		gesture="kb:NVDA+windows+f",
+		category="LINE Desktop",
+	)
+	def script_focusCallWindow(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			lineApp.script_focusCallWindow(gesture)
+		except Exception as e:
+			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
+			ui.message(f"跳到通話視窗功能錯誤: {e}")

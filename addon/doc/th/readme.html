@@ -11,6 +11,7 @@
 <ul>
 <li><strong>ปรับปรุงระบบการนำทาง</strong>: สำหรับรายการแชทและช่องกรอกข้อความ</li>
 <li><strong>การโทรด้วยเสียงและวิดีโอ</strong>: สามารถกดโทรออกได้โดยตรงจากหน้าต่างแชท</li>
+<li><strong>การจัดการสายเรียกเข้า</strong>: รับสาย ปฏิเสธสาย หรือตรวจสอบข้อมูลผู้โทร</li>
 <li><strong>รองรับระบบ OCR</strong>: พยายามอ่านข้อความที่ระบบการเข้าถึงมาตรฐาน (Accessibility APIs) เข้าไม่ถึงโดยอัตโนมัติ</li>
 <li><strong>เครื่องมือช่วยเหลือ (Debug Tools)</strong>: มีคีย์ลัดสำหรับตรวจสอบโครงสร้าง UI เพื่อใช้ในการแก้ไขปัญหา</li>
 </ul>
@@ -24,7 +25,6 @@
 </ol>
 </li>
 <li><strong>การตรวจสอบ</strong>: ควรตรวจสอบประวัติการแชทและชื่อผู้รับให้แน่ใจทุกครั้งก่อนจะส่งข้อความหรือกดโทรออก</li>
-<li><strong>ข้อจำกัด</strong>: ปัจจุบันส่วนเสริมนี้ยัง<strong>ไม่สามารถ</strong>ใช้กดรับสายเรียกเข้าได้</li>
 </ul>
 <h2>คีย์ลัด (Keyboard Shortcuts)</h2>
 <table>
@@ -47,9 +47,24 @@
 <td>เริ่มการโทรด้วยวิดีโอ (Video Call)</td>
 </tr>
 <tr>
-<td><strong>NVDA+Shift+T</strong></td>
+<td><strong>NVDA+Windows+A</strong></td>
 <td>LINE Desktop</td>
-<td>เปิดหน้าต่างเลือกไฟล์แนบ (Attachment)</td>
+<td>รับสายเรียกเข้า</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+D</strong></td>
+<td>LINE Desktop</td>
+<td>ปฏิเสธสายเรียกเข้า</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+S</strong></td>
+<td>LINE Desktop</td>
+<td>ตรวจสอบข้อมูลผู้โทร</td>
+</tr>
+<tr>
+<td><strong>Control+O</strong></td>
+<td>LINE Desktop</td>
+<td>เปิดไฟล์ (หยุดส่วนเสริมชั่วคราวจนกว่าจะเลือกไฟล์เสร็จ)</td>
 </tr>
 <tr>
 <td><strong>NVDA+Shift+K</strong></td>

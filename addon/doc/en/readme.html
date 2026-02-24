@@ -1,68 +1,38 @@
 <!DOCTYPE html>
 <html><head><meta charset='utf-8'></head><body>
 <h1>LINE Desktop Accessibility Add-on for NVDA</h1>
-<h2>Overview</h2>
-<p>This add-on enhances NVDA screen reader support for the LINE desktop application on Windows (Qt6 version). It provides accessibility enhancements for navigating chats, reading messages, and making calls using OCR and coordinate-based automation.</p>
-<blockquote>
-<p>[!IMPORTANT]
-This add-on uses OCR (Optical Character Recognition) for some features. It may not be 100% accurate.</p>
-</blockquote>
-<h2>Features</h2>
+<p>This project provides an NVDA screen reader add-on designed to improve the accessibility of the LINE Desktop application on Windows.</p>
+<h2>Documentation / 文件 / ドキュメント</h2>
+<p>Detailed documentation is available in the following languages:</p>
 <ul>
-<li>Improved navigation for chat lists and message input fields.</li>
-<li><strong>Voice and Video Calls</strong>: Initiate calls directly from a chat window.</li>
-<li><strong>OCR Support</strong>: Automatically attempts to read text that isn't exposed via standard accessibility APIs.</li>
-<li><strong>Debug Tools</strong>: Shortcuts to inspect the UI structure for troubleshooting.</li>
+<li><a href="./addon/doc/en/readme.md">English (English)</a></li>
+<li><a href="./addon/doc/zh_TW/readme.md">繁體中文 (Traditional Chinese)</a></li>
+<li><a href="./addon/doc/ja/readme.md">日本語 (Japanese)</a></li>
 </ul>
-<h2>Usage Tips</h2>
-<ul>
-<li><strong>Establishing Connection</strong>: Before using this add-on to message someone for the first time, send them at least one message via your phone or the Chrome extension. Having a chat history makes it much easier for the add-on to locate elements correctly.</li>
-<li><strong>Sending Messages</strong>: <ol>
-<li>Search for the friend's name. Try to use a search term that returns only one result to avoid mistakes.</li>
-<li>In the message list/sidebar, use <code>Shift+Tab</code> to reach the edit field.</li>
-<li>Type your message and press <code>Enter</code>.</li>
-</ol>
-</li>
-<li><strong>Verification</strong>: Always verify the chat history and the recipient's name before sending messages or making calls.</li>
-<li><strong>Limitations</strong>: Currently, you cannot answer incoming calls via this add-on.</li>
-</ul>
-<h2>Keyboard Shortcuts</h2>
-<table>
-<thead>
-<tr>
-<th>Shortcut</th>
-<th>Category</th>
-<th>Action</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>NVDA+Shift+C</strong></td>
-<td>LINE Desktop</td>
-<td>Start a Voice Call</td>
-</tr>
-<tr>
-<td><strong>NVDA+Shift+V</strong></td>
-<td>LINE Desktop</td>
-<td>Start a Video Call</td>
-</tr>
-<tr>
-<td><strong>NVDA+Shift+T</strong></td>
-<td>LINE Desktop</td>
-<td>Open Attachment File Picker</td>
-</tr>
-<tr>
-<td><strong>NVDA+Shift+K</strong></td>
-<td>LINE Desktop</td>
-<td>Debug: Inspect UIA and OCR (Copy to clipboard)</td>
-</tr>
-<tr>
-<td><strong>NVDA+Shift+J</strong></td>
-<td>Global</td>
-<td>Report focused app and process info</td>
-</tr>
-</tbody>
-</table>
+<hr />
+<h2>快速摘要 (Quick Summary)</h2>
+<h3>Traditional Chinese (繁體中文)</h3>
+<p>此附加元件增強了 LINE 電腦版的無障礙支援，包含：
+- 改善聊天清單與訊息輸入框的導覽。
+- 支援語音與視訊通話快速鍵 (<code>NVDA+Shift+C/V</code>)。
+- 支援來電接聽與拒絕 (<code>NVDA+Windows+A/D</code>)。
+- 使用 OCR 技術輔助讀取介面文字。
+- <strong>注意</strong>：OCR 並非 100% 準確。</p>
+<h3>English</h3>
+<p>This add-on enhances LINE Desktop accessibility, featuring:
+- Improved navigation for chat lists and message input.
+- Shortcuts for voice and video calls (<code>NVDA+Shift+C/V</code>).
+- Answer/reject incoming calls (<code>NVDA+Windows+A/D</code>).
+- OCR-assisted text reading for the Qt6 interface.
+- <strong>Note</strong>: OCR is not perfectly accurate.</p>
+<h3>Japanese (日本語)</h3>
+<p>このアドオンは LINE デスクトップ版のアクセシビリティを向上させます：
+- チャットリストとメッセージ入力欄の操作性を改善。
+- 音声・ビデオ通話のショートカット (<code>NVDA+Shift+C/V</code>)。
+- 着信への応答・拒否 (<code>NVDA+Windows+A/D</code>)。
+- OCR 技術によるインターフェース文字の読み上げ補助。
+- <strong>注意</strong>: OCR は完全に正確ではありません。</p>
+<hr />
 <h2>Community &amp; Support</h2>
 <ul>
 <li><strong>LINE User Group</strong>: <a href="https://line.me/R/ti/g/BKQ2dZtTjx">Join the Group</a>
@@ -71,9 +41,8 @@ This add-on uses OCR (Optical Character Recognition) for some features. It may n
   Feel free to open an Issue for feature requests or bug reports. Pull Requests are always welcome for code contributions.</li>
 <li><strong>Contact Developer</strong>: <a href="https://line.me/ti/p/3GigC88lAt">Contact via LINE</a></li>
 </ul>
-<h2>Supported Versions</h2>
-<ul>
-<li>LINE desktop for Windows (Standard or Microsoft Store version).</li>
-<li>NVDA 2022.1 or later.</li>
-</ul>
+<hr />
+<h2>Development</h2>
+<p>Copyright (C) 2026 LINE Desktop NVDA Add-on Contributors.
+Distributed under the terms of the GNU General Public License, version 2 or later.</p>
 </body></html>
