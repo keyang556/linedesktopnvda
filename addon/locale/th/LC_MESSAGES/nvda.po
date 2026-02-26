@@ -30,3 +30,23 @@ msgstr ""
 #. Translators: what's new content for the add-on version to be shown in the add-on store
 msgid "Initial release with LINE desktop accessibility support."
 msgstr "การเปิดตัวเริ่มต้นพร้อมการรองรับการเข้าถึง LINE บนเดสก์ท็อป"
+
+#. Translators: Label for the email input field on the LINE login screen
+msgid "Email"
+msgstr "อีเมล"
+
+#. Translators: Label for the password input field on the LINE login screen
+msgid "Password"
+msgstr "รหัสผ่าน"
+
+#. Translators: Generic label for a login field when position cannot be determined
+msgid "Login field"
+msgstr "ช่องเข้าสู่ระบบ"
+
+#. Translators: Label for the LINE message input field
+msgid "Message input"
+msgstr "ช่องป้อนข้อความ"
+
+#. Translators: Label for the search chat rooms field in LINE
+msgid "Search chat rooms"
+msgstr "ค้นหาห้องแชท"

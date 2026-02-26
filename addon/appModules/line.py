@@ -17,14 +17,40 @@ from NVDAObjects.IAccessible import IAccessible
 from NVDAObjects import NVDAObject
 import UIAHandler
 import ctypes
+import ctypes.wintypes
 import comtypes
 import re
+import time
+import addonHandler
+
+addonHandler.initTranslation()
 
 # Regex pattern to remove spurious spaces between CJK characters.
 # Windows OCR inserts spaces between every CJK character.
+# Covers: CJK Unified (\u4E00-\u9FFF), CJK Radicals (\u2E80-\u2FFF),
+#         CJK Compatibility (\u3200-\u33FF), CJK Ext-A (\u3400-\u4DBF),
+#         Hiragana (\u3040-\u309F), Katakana (\u30A0-\u30FF),
+#         Fullwidth (\uFF00-\uFFEF), CJK Compatibility Ideographs (\uF900-\uFAFF),
+#         CJK Compatibility Forms (\uFE30-\uFE4F), CJK Symbols (\u3000-\u303F),
+#         Bopomofo (\u3100-\u312F, \u31A0-\u31BF)
+_CJK_CHAR = (
+	'['
+	'\u2E80-\u2FFF'   # CJK Radicals
+	'\u3000-\u303F'   # CJK Symbols and Punctuation
+	'\u3040-\u309F'   # Hiragana
+	'\u30A0-\u30FF'   # Katakana
+	'\u3100-\u312F'   # Bopomofo
+	'\u31A0-\u31BF'   # Bopomofo Extended
+	'\u3200-\u33FF'   # CJK Compatibility
+	'\u3400-\u4DBF'   # CJK Unified Ext A
+	'\u4E00-\u9FFF'   # CJK Unified Ideographs
+	'\uF900-\uFAFF'   # CJK Compatibility Ideographs
+	'\uFE30-\uFE4F'   # CJK Compatibility Forms
+	'\uFF00-\uFFEF'   # Fullwidth Forms
+	']'
+)
 _CJK_SPACE_RE = re.compile(
-	r'(?<=[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F])\ '
-	r'(?=[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u3000-\u303F\uFF00-\uFFEF])',
+	r'(?<=' + _CJK_CHAR + r') (?=' + _CJK_CHAR + r')'
 )
 
 def _removeCJKSpaces(text):
@@ -45,9 +71,18 @@ lastFocusedObject = None
 # Track the last UIA element we announced, to avoid re-announcing the same thing
 _lastAnnouncedUIAElement = None
 _lastAnnouncedUIAName = None
+_lastOCRElement = None
 
 # Flag to suppress addon while a file dialog is open
 _suppressAddon = False
+
+# Recursion guard to prevent infinite _get_name → _getDeepText → _get_name loops
+# Uses UIA runtime IDs (stable across Python wrapper recreation) instead of id(self)
+_nameRecursionGuard = set()
+
+# Thread-level recursion depth counter as ultimate safety net
+_nameRecursionDepth = 0
+_MAX_NAME_RECURSION_DEPTH = 5
 
 
 def _getDpiScale(hwnd=None):
@@ -151,21 +186,46 @@ def _getTextFromDisplay(obj):
 	return ""
 
 
+def _getObjectNameDirect(obj):
+	"""Get an object's name WITHOUT triggering _get_name overrides.
+
+	This prevents the infinite recursion where _get_name → _getDeepText
+	→ child.name → child._get_name → _getDeepText (depth resets to 0).
+
+	We access the raw UIA element's CurrentName directly when possible.
+	"""
+	# Prefer raw UIA name (bypasses Python _get_name completely)
+	if hasattr(obj, 'UIAElement') and obj.UIAElement is not None:
+		try:
+			name = obj.UIAElement.CurrentName
+			if name and name.strip():
+				return name.strip()
+		except Exception:
+			pass
+	# Fallback: try the base NVDAObject.name (skip overlay _get_name)
+	try:
+		name = UIA.name.fget(obj) if isinstance(obj, UIA) else obj.name
+		if name and name.strip():
+			return name.strip()
+	except Exception:
+		pass
+	return ""
+
+
 def _getDeepText(obj, maxDepth=3, _depth=0):
 	"""Recursively collect non-empty text from an object and its children.
 
 	Falls back to _getTextViaUIAFindAll if childCount is 0.
+	Uses _getObjectNameDirect to avoid triggering _get_name overrides
+	which would cause infinite recursion.
 	"""
 	if _depth > maxDepth or obj is None:
 		return []
 	texts = []
-	# Get this object's name
-	try:
-		name = obj.name
-		if name and name.strip():
-			texts.append(name.strip())
-	except Exception:
-		pass
+	# Get this object's name directly (bypassing _get_name overrides)
+	name = _getObjectNameDirect(obj)
+	if name:
+		texts.append(name)
 	# Try children via NVDA's normal enumeration
 	childCount = 0
 	try:
@@ -316,6 +376,7 @@ def _extractTextFromUIAElement(element):
 	return texts
 
 
+
 def _ocrReadElementText(rawElement, appModuleRef=None):
 	"""Perform OCR on a raw UIA element's bounding rect and speak the result.
 
@@ -364,6 +425,9 @@ def _ocrReadElementText(rawElement, appModuleRef=None):
 
 		recognizer = uwpOcr.UwpOcr(language=ocrLang)
 		resizeFactor = recognizer.getResizeFactor(width, height)
+		# 確保至少 2x 放大，提高小字辨識精度
+		if resizeFactor < 2:
+			resizeFactor = 2
 
 		class _ImgInfo:
 			def __init__(self, w, h, factor, sLeft, sTop):
@@ -510,6 +574,145 @@ def _findSelectedItemInList(handler, focusedElement):
 	return None
 
 
+def _detectEditFieldLabel(element, handler):
+	"""Detect the type of a raw UIA edit element and return an appropriate label.
+
+	Checks for:
+	1. Login context (>=2 sibling edit controls) → 'Email' / 'Password'
+	2. Search field (placeholder text or position in left sidebar) → 'Search chat rooms'
+	3. Message input (placeholder text or position in right/bottom area) → 'Message input'
+
+	Returns the label string, or '' if the field cannot be identified.
+	"""
+	try:
+		# Walk up to find the parent element
+		walker = handler.clientObject.RawViewWalker
+		parentEl = walker.GetParentElement(element)
+		if not parentEl:
+			return ""
+
+		# Count sibling edit fields (UIA ControlType 50004 = Edit)
+		editCondition = handler.clientObject.CreatePropertyCondition(
+			30003,  # UIA_ControlTypePropertyId
+			50004   # UIA_EditControlTypeId
+		)
+		editElements = parentEl.FindAll(
+			UIAHandler.TreeScope_Children,
+			editCondition
+		)
+		editCount = editElements.Length if editElements else 0
+
+		# --- Login context: >=2 sibling edit fields ---
+		if editCount >= 2:
+			try:
+				myRect = element.CurrentBoundingRectangle
+				myTop = myRect.top
+			except Exception:
+				# Translators: Generic label for a login field when position cannot be determined
+				return _("Login field")
+
+			editTops = []
+			for i in range(editCount):
+				try:
+					siblingRect = editElements.GetElement(i).CurrentBoundingRectangle
+					editTops.append(siblingRect.top)
+				except Exception:
+					continue
+
+			if len(editTops) >= 2:
+				if myTop <= min(editTops):
+					# Translators: Label for the email input field on the LINE login screen
+					return _("Email")
+				else:
+					# Translators: Label for the password input field on the LINE login screen
+					return _("Password")
+
+			# Translators: Generic label for a login field when position cannot be determined
+			return _("Login field")
+
+		# --- Single edit field: detect search vs message input ---
+		# Strategy 1: Try reading UIA Name or Value for placeholder/content clues
+		placeholder = ""
+		try:
+			name = element.CurrentName
+			if name and name.strip() and name.strip().lower() not in ("line",):
+				placeholder = name.strip().lower()
+		except Exception:
+			pass
+		if not placeholder:
+			# Try UIA ValueValue (30045) for placeholder text
+			try:
+				val = element.GetCurrentPropertyValue(30045)
+				if val and isinstance(val, str) and val.strip():
+					placeholder = val.strip().lower()
+			except Exception:
+				pass
+		if not placeholder:
+			# Try FullDescription (30159)
+			try:
+				desc = element.GetCurrentPropertyValue(30159)
+				if desc and isinstance(desc, str) and desc.strip():
+					placeholder = desc.strip().lower()
+			except Exception:
+				pass
+
+		# Check placeholder text for search keywords
+		SEARCH_KEYWORDS = ("搜尋", "search", "検索", "ค้นหา", "찾기")
+		MESSAGE_KEYWORDS = ("輸入訊息", "message", "メッセージ", "ข้อความ", "입력")
+		if placeholder:
+			if any(kw in placeholder for kw in SEARCH_KEYWORDS):
+				# Translators: Label for the search chat rooms field in LINE
+				return _("Search chat rooms")
+			if any(kw in placeholder for kw in MESSAGE_KEYWORDS):
+				# Translators: Label for the LINE message input field
+				return _("Message input")
+
+		# Strategy 2: Use horizontal position relative to the LINE window
+		# Search field is in the left sidebar, message input is in the right chat area
+		try:
+			myRect = element.CurrentBoundingRectangle
+			myLeft = myRect.left
+			myTop = myRect.top
+			myBottom = myRect.bottom
+
+			# Get the LINE window bounds
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
+			wndRect = ctypes.wintypes.RECT()
+			ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
+			wndWidth = wndRect.right - wndRect.left
+			wndHeight = wndRect.bottom - wndRect.top
+
+			if wndWidth > 0 and wndHeight > 0:
+				# Relative position of the edit field within the window
+				relativeX = (myLeft - wndRect.left) / wndWidth
+				relativeY = (myTop - wndRect.top) / wndHeight
+				relativeBottom = (myBottom - wndRect.top) / wndHeight
+
+				log.debug(
+					f"LINE edit field position: relX={relativeX:.2f}, "
+					f"relY={relativeY:.2f}, relBottom={relativeBottom:.2f}"
+				)
+
+				# Search field: in the left sidebar (< 50% of window width)
+				# and near the top of the window
+				if relativeX < 0.5 and relativeY < 0.3:
+					# Translators: Label for the search chat rooms field in LINE
+					return _("Search chat rooms")
+
+				# Message input: in the right area (>= 50% of window width)
+				# and near the bottom of the window
+				if relativeX >= 0.5 or relativeBottom > 0.7:
+					# Translators: Label for the LINE message input field
+					return _("Message input")
+		except Exception:
+			log.debug("_detectEditFieldLabel position detection failed", exc_info=True)
+
+		return ""
+	except Exception:
+		log.debug("_detectEditFieldLabel failed", exc_info=True)
+		return ""
+
+
 def _queryAndSpeakUIAFocus():
 	"""Query UIA for the currently focused element and speak it.
 	
@@ -569,6 +772,14 @@ def _queryAndSpeakUIAFocus():
 		except Exception:
 			ct = 0
 		
+		# For edit fields, try to detect field labels (login / search / message input)
+		if ct == 50004:  # Edit control
+			label = _detectEditFieldLabel(targetElement, handler)
+			if label:
+				# Filter out generic app name from text parts
+				textParts = [t for t in textParts if t.strip() not in ("LINE", "line")]
+				textParts.insert(0, label)
+		
 		controlTypeNames = {
 			50000: "按鈕", 50004: "編輯", 50005: "超連結",
 			50007: "清單項目", 50008: "清單", 50011: "項目",
@@ -590,12 +801,21 @@ def _queryAndSpeakUIAFocus():
 			speech.cancelSpeech()
 			ui.message(announcement)
 		elif roleName:
-			# UIA text is empty — announce role immediately, then try OCR
 			_lastAnnouncedUIAName = roleName
 			speech.cancelSpeech()
 			ui.message(roleName)
-			# Kick off async OCR to read the actual text content
-			_ocrReadElementText(targetElement)
+			# 只對清單項目（訊息）嘗試 OCR 讀取，
+			# 不對編輯框、按鈕等非訊息元素進行操作
+			if ct == 50007:  # ListItem
+				# 避免對同一元素重複觸發 OCR
+				global _lastOCRElement
+				try:
+					rid = str(targetElement.GetRuntimeId())
+				except Exception:
+					rid = None
+				if not rid or rid != _lastOCRElement:
+					_lastOCRElement = rid
+					_ocrReadElementText(targetElement)
 		else:
 			return
 		
@@ -611,19 +831,42 @@ class LineChatListItem(UIA):
 	"""
 
 	def _get_name(self):
-		# First try the native name
-		name = super().name
-		if name and name.strip():
-			return name
-		# Try deep text (includes UIA FindAll fallback)
-		texts = _getDeepText(self, maxDepth=4)
-		if texts:
-			return " - ".join(texts)
-		# Last resort: read from display
-		displayText = _getTextFromDisplay(self)
-		if displayText:
-			return displayText
-		return ""
+		# Prevent infinite recursion using global depth counter
+		global _nameRecursionDepth
+		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+			return super().name or ""
+		# Also guard using UIA runtime ID (stable across Python wrapper recreation)
+		guardKey = None
+		try:
+			if hasattr(self, 'UIAElement') and self.UIAElement:
+				rid = self.UIAElement.GetRuntimeId()
+				guardKey = ("LineChatListItem", str(rid))
+		except Exception:
+			guardKey = ("LineChatListItem", id(self))
+		if guardKey and guardKey in _nameRecursionGuard:
+			return super().name or ""
+		if guardKey:
+			_nameRecursionGuard.add(guardKey)
+		_nameRecursionDepth += 1
+		try:
+			# First try the native name
+			name = super().name
+			if name and name.strip():
+				return name
+			# Try deep text (includes UIA FindAll fallback)
+			# _getDeepText now uses _getObjectNameDirect to avoid re-entering _get_name
+			texts = _getDeepText(self, maxDepth=4)
+			if texts:
+				return " - ".join(texts)
+			# Last resort: read from display
+			displayText = _getTextFromDisplay(self)
+			if displayText:
+				return displayText
+			return ""
+		finally:
+			_nameRecursionDepth -= 1
+			if guardKey:
+				_nameRecursionGuard.discard(guardKey)
 
 	def event_gainFocus(self):
 		super().event_gainFocus()
@@ -633,16 +876,36 @@ class LineChatMessage(UIA):
 	"""Overlay class for individual chat messages."""
 
 	def _get_name(self):
-		name = super().name
-		if name and name.strip():
-			return name
-		texts = _getDeepText(self, maxDepth=3)
-		if texts:
-			return ": ".join(texts)
-		displayText = _getTextFromDisplay(self)
-		if displayText:
-			return displayText
-		return ""
+		global _nameRecursionDepth
+		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+			return super().name or ""
+		guardKey = None
+		try:
+			if hasattr(self, 'UIAElement') and self.UIAElement:
+				rid = self.UIAElement.GetRuntimeId()
+				guardKey = ("LineChatMessage", str(rid))
+		except Exception:
+			guardKey = ("LineChatMessage", id(self))
+		if guardKey and guardKey in _nameRecursionGuard:
+			return super().name or ""
+		if guardKey:
+			_nameRecursionGuard.add(guardKey)
+		_nameRecursionDepth += 1
+		try:
+			name = super().name
+			if name and name.strip():
+				return name
+			texts = _getDeepText(self, maxDepth=3)
+			if texts:
+				return ": ".join(texts)
+			displayText = _getTextFromDisplay(self)
+			if displayText:
+				return displayText
+			return ""
+		finally:
+			_nameRecursionDepth -= 1
+			if guardKey:
+				_nameRecursionGuard.discard(guardKey)
 
 	def _get_description(self):
 		desc = super().description
@@ -662,24 +925,155 @@ class LineMessageInput(UIA):
 			name = ""
 		if not name or not name.strip():
 			# Translators: Label for the LINE message input field
-			return "Message input"
+			return _("Message input")
 		return name
+
+
+class LineSearchField(UIA):
+	"""Overlay class for the search/filter field in the sidebar."""
+
+	def _get_name(self):
+		try:
+			name = super().name
+		except Exception:
+			log.debugWarning(
+				"Error in LineSearchField._get_name", exc_info=True
+			)
+			name = ""
+		if not name or not name.strip() or name.strip().lower() in ("line",):
+			# Translators: Label for the search chat rooms field in LINE
+			return _("Search chat rooms")
+		return name
+
+
+class LineLoginEditField(UIA):
+	"""Overlay class for login window edit fields (email / password).
+
+	The LINE login window has two unlabelled edit fields.
+	We identify them via display-model / OCR placeholder text,
+	or fall back to vertical position (upper = email, lower = password).
+	"""
+
+	def _get_name(self):
+		# If UIA already provides a meaningful name (not just the app name), use it.
+		try:
+			name = super().name
+			if name and name.strip():
+				# Filter out generic names that are just the app/window name
+				if name.strip() not in ("LINE", "line"):
+					return name
+		except Exception:
+			pass
+
+		# Strategy 1: read display / placeholder text to identify field type
+		label = self._detectFieldLabel()
+		if label:
+			return label
+
+		# Strategy 2: use vertical position among sibling edit fields
+		label = self._detectByPosition()
+		if label:
+			return label
+
+		# Translators: Generic label for a login field when position cannot be determined
+		return _("Login field")
+
+	def _detectFieldLabel(self):
+		"""Read placeholder / visible text via display model to guess field type."""
+		try:
+			text = _getTextFromDisplay(self)
+			if text:
+				t = text.lower()
+				if any(kw in t for kw in (
+					"email", "mail", "電子郵件",
+					"メール", "อีเมล",
+				)):
+					# Translators: Label for the email input field on the LINE login screen
+					return _("Email")
+				if any(kw in t for kw in (
+					"password", "密碼", "パスワード", "รหัสผ่าน",
+				)):
+					# Translators: Label for the password input field on the LINE login screen
+					return _("Password")
+		except Exception:
+			log.debugWarning("LineLoginEditField._detectFieldLabel error", exc_info=True)
+		return ""
+
+	def _detectByPosition(self):
+		"""Use vertical position among siblings to guess email vs password."""
+		try:
+			if not hasattr(self, 'UIAElement') or self.UIAElement is None:
+				return ""
+			rect = self.UIAElement.CurrentBoundingRectangle
+			myTop = rect.top
+
+			parent = self.parent
+			if not parent:
+				return ""
+
+			# Gather top-coordinates of sibling edit fields
+			editTops = []
+			try:
+				for child in parent.children:
+					try:
+						if child.role in (
+							controlTypes.Role.EDITABLETEXT,
+							controlTypes.Role.DOCUMENT,
+						):
+							if hasattr(child, 'UIAElement') and child.UIAElement:
+								cr = child.UIAElement.CurrentBoundingRectangle
+								editTops.append(cr.top)
+					except Exception:
+						continue
+			except Exception:
+				pass
+
+			if len(editTops) >= 2:
+				if myTop <= min(editTops):
+					# Translators: Label for the email input field on the LINE login screen
+					return _("Email")
+				else:
+					# Translators: Label for the password input field on the LINE login screen
+					return _("Password")
+		except Exception:
+			log.debugWarning("LineLoginEditField._detectByPosition error", exc_info=True)
+		return ""
 
 
 class LineContactItem(UIA):
 	"""Overlay class for contact list items."""
 
 	def _get_name(self):
-		name = super().name
-		if name and name.strip():
-			return name
-		texts = _getDeepText(self, maxDepth=3)
-		if texts:
-			return " - ".join(texts)
-		displayText = _getTextFromDisplay(self)
-		if displayText:
-			return displayText
-		return ""
+		global _nameRecursionDepth
+		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+			return super().name or ""
+		guardKey = None
+		try:
+			if hasattr(self, 'UIAElement') and self.UIAElement:
+				rid = self.UIAElement.GetRuntimeId()
+				guardKey = ("LineContactItem", str(rid))
+		except Exception:
+			guardKey = ("LineContactItem", id(self))
+		if guardKey and guardKey in _nameRecursionGuard:
+			return super().name or ""
+		if guardKey:
+			_nameRecursionGuard.add(guardKey)
+		_nameRecursionDepth += 1
+		try:
+			name = super().name
+			if name and name.strip():
+				return name
+			texts = _getDeepText(self, maxDepth=3)
+			if texts:
+				return " - ".join(texts)
+			displayText = _getTextFromDisplay(self)
+			if displayText:
+				return displayText
+			return ""
+		finally:
+			_nameRecursionDepth -= 1
+			if guardKey:
+				_nameRecursionGuard.discard(guardKey)
 
 
 class LineGenericList(UIA):
@@ -795,11 +1189,16 @@ class AppModule(appModuleHandler.AppModule):
 				f"automationId={automationId!r}, children={obj.childCount}"
 			)
 
-		# --- Message input area ---
+		# --- Editable text fields ---
 		elif role in (
 			controlTypes.Role.EDITABLETEXT, controlTypes.Role.DOCUMENT
 		):
-			if automationId and any(
+			# Check if this is a login-window edit field first
+			if self._isLoginEditField(obj):
+				clsList.insert(0, LineLoginEditField)
+			elif self._isSearchField(obj):
+				clsList.insert(0, LineSearchField)
+			elif automationId and any(
 				kw in automationId.lower() for kw in (
 					"input", "compose", "message", "send",
 					"chat", "editor", "textbox", "edit",
@@ -836,6 +1235,39 @@ class AppModule(appModuleHandler.AppModule):
 					clsList.insert(0, LineToolbarButton)
 			except Exception:
 				clsList.insert(0, LineToolbarButton)
+
+	def _isLoginEditField(self, obj):
+		"""Detect if an edit field belongs to the login window.
+
+		The login window typically has 2 sibling edit fields (email + password),
+		while the chat window has only 1 (message input).
+
+		Uses raw UIA FindAll instead of parent.children to avoid triggering
+		chooseNVDAObjectOverlayClasses recursively (which causes RecursionError).
+		"""
+		try:
+			if not hasattr(obj, 'UIAElement') or obj.UIAElement is None:
+				return False
+			parent = obj.parent
+			if not parent or not hasattr(parent, 'UIAElement') or parent.UIAElement is None:
+				return False
+			# Use raw UIA to count edit-type children without creating NVDA objects
+			handler = UIAHandler.handler
+			if handler is None:
+				return False
+			# UIA ControlType for Edit = 50004
+			editCondition = handler.clientObject.CreatePropertyCondition(
+				30003,  # UIA_ControlTypePropertyId
+				50004   # UIA_EditControlTypeId
+			)
+			editElements = parent.UIAElement.FindAll(
+				UIAHandler.TreeScope_Children,
+				editCondition
+			)
+			editCount = editElements.Length if editElements else 0
+			return editCount >= 2
+		except Exception:
+			return False
 
 	def event_NVDAObject_init(self, obj):
 		"""Log object initialization at debug level."""
@@ -2580,9 +3012,9 @@ class AppModule(appModuleHandler.AppModule):
 		if _suppressAddon:
 			gesture.send()
 			return
-		global _lastAnnouncedUIAElement
-		# Reset tracking so we always announce after navigation
-		_lastAnnouncedUIAElement = None
+		global _lastOCRElement
+		# Reset OCR dedup so new navigation always triggers OCR for new element
+		_lastOCRElement = None
 		# Pass the gesture through to LINE
 		gesture.send()
 		# After a delay, query the UIA focused element
