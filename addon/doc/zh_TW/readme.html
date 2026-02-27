@@ -10,7 +10,7 @@
 <h2>功能特色</h2>
 <ul>
 <li>改善聊天列表與訊息輸入欄位的導覽體驗。</li>
-<li><strong>語音與視訊通話</strong>：直接從聊天視窗發起通話。</li>
+<li><strong>語音與視訊通話</strong>：從好友分頁發起通話。</li>
 <li><strong>來電處理</strong>：接聽、拒絕來電，以及查看來電者資訊。</li>
 <li><strong>OCR 支援</strong>：自動嘗試讀取無法透過標準無障礙 API 存取的文字。</li>
 <li><strong>除錯工具</strong>：提供快速鍵以檢查 UI 結構，便於排除故障。</li>
@@ -22,6 +22,13 @@
 <li>搜尋好友名稱。盡可能輸入準確的關鍵字，使搜尋結果只有一個好友，以避免錯誤。</li>
 <li>在訊息清單/側邊欄，按 <code>Shift+Tab</code> 移動至編輯區。</li>
 <li>輸入訊息後按 <code>Enter</code> 傳送。</li>
+</ol>
+</li>
+<li><strong>撥打電話</strong>：
+    目前無法透過此附加元件從聊天分頁直接撥打電話。請依以下步驟操作：<ol>
+<li>按 <code>Control+1</code> 切換到好友分頁。</li>
+<li>搜尋好友名稱，選取好友並開啟聊天室。</li>
+<li>按 <code>NVDA+Windows+C</code> 撥打語音通話，或按 <code>NVDA+Windows+V</code> 撥打視訊通話。</li>
 </ol>
 </li>
 <li><strong>事前檢查</strong>：傳送訊息或撥打電話之前，請務必先檢查聊天紀錄，確認對象是否正確。</li>
@@ -37,12 +44,12 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>NVDA+Shift+C</strong></td>
+<td><strong>NVDA+Windows+C</strong></td>
 <td>LINE Desktop</td>
 <td>撥打語音通話</td>
 </tr>
 <tr>
-<td><strong>NVDA+Shift+V</strong></td>
+<td><strong>NVDA+Windows+V</strong></td>
 <td>LINE Desktop</td>
 <td>撥打視訊通話</td>
 </tr>
@@ -60,6 +67,26 @@
 <td><strong>NVDA+Windows+S</strong></td>
 <td>LINE Desktop</td>
 <td>查看來電者</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+T</strong></td>
+<td>LINE Desktop</td>
+<td>讀出目前聊天室名稱</td>
+</tr>
+<tr>
+<td><strong>Control+1</strong></td>
+<td>LINE Desktop</td>
+<td>切換到好友分頁</td>
+</tr>
+<tr>
+<td><strong>Control+2</strong></td>
+<td>LINE Desktop</td>
+<td>切換到聊天分頁</td>
+</tr>
+<tr>
+<td><strong>Control+3</strong></td>
+<td>LINE Desktop</td>
+<td>切換到加入好友分頁</td>
 </tr>
 <tr>
 <td><strong>Control+O</strong></td>

@@ -10,7 +10,7 @@
 <h2>คุณสมบัติเด่น (Features)</h2>
 <ul>
 <li><strong>ปรับปรุงระบบการนำทาง</strong>: สำหรับรายการแชทและช่องกรอกข้อความ</li>
-<li><strong>การโทรด้วยเสียงและวิดีโอ</strong>: สามารถกดโทรออกได้โดยตรงจากหน้าต่างแชท</li>
+<li><strong>การโทรด้วยเสียงและวิดีโอ</strong>: เริ่มการโทรจากแท็บเพื่อน</li>
 <li><strong>การจัดการสายเรียกเข้า</strong>: รับสาย ปฏิเสธสาย หรือตรวจสอบข้อมูลผู้โทร</li>
 <li><strong>รองรับระบบ OCR</strong>: พยายามอ่านข้อความที่ระบบการเข้าถึงมาตรฐาน (Accessibility APIs) เข้าไม่ถึงโดยอัตโนมัติ</li>
 <li><strong>เครื่องมือช่วยเหลือ (Debug Tools)</strong>: มีคีย์ลัดสำหรับตรวจสอบโครงสร้าง UI เพื่อใช้ในการแก้ไขปัญหา</li>
@@ -22,6 +22,13 @@
 <li>ค้นหาชื่อเพื่อน โดยพยายามใช้คำค้นหาที่แสดงผลลัพธ์เพียงรายการเดียวเพื่อป้องกันความผิดพลาด</li>
 <li>เมื่ออยู่ในรายการแชทหรือแถบด้านข้าง ให้กด <code>Shift+Tab</code> เพื่อไปยังช่องพิมพ์ข้อความ (Edit field)</li>
 <li>พิมพ์ข้อความแล้วกด <code>Enter</code> เพื่อส่ง</li>
+</ol>
+</li>
+<li><strong>การโทรออก</strong>:
+    ขณะนี้ไม่สามารถกดโทรออกได้โดยตรงจากแท็บแชทด้วยส่วนเสริมนี้ โปรดทำตามขั้นตอนต่อไปนี้:<ol>
+<li>กด <code>Control+1</code> เพื่อสลับไปยังแท็บเพื่อน</li>
+<li>ค้นหาชื่อเพื่อน เลือกเพื่อน และเปิดห้องแชท</li>
+<li>กด <code>NVDA+Windows+C</code> เพื่อโทรด้วยเสียง หรือกด <code>NVDA+Windows+V</code> เพื่อโทรด้วยวิดีโอ</li>
 </ol>
 </li>
 <li><strong>การตรวจสอบ</strong>: ควรตรวจสอบประวัติการแชทและชื่อผู้รับให้แน่ใจทุกครั้งก่อนจะส่งข้อความหรือกดโทรออก</li>
@@ -37,12 +44,12 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>NVDA+Shift+C</strong></td>
+<td><strong>NVDA+Windows+C</strong></td>
 <td>LINE Desktop</td>
 <td>เริ่มการโทรด้วยเสียง (Voice Call)</td>
 </tr>
 <tr>
-<td><strong>NVDA+Shift+V</strong></td>
+<td><strong>NVDA+Windows+V</strong></td>
 <td>LINE Desktop</td>
 <td>เริ่มการโทรด้วยวิดีโอ (Video Call)</td>
 </tr>
@@ -60,6 +67,26 @@
 <td><strong>NVDA+Windows+S</strong></td>
 <td>LINE Desktop</td>
 <td>ตรวจสอบข้อมูลผู้โทร</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+T</strong></td>
+<td>LINE Desktop</td>
+<td>อ่านชื่อห้องแชทปัจจุบัน</td>
+</tr>
+<tr>
+<td><strong>Control+1</strong></td>
+<td>LINE Desktop</td>
+<td>สลับไปยังแท็บเพื่อน</td>
+</tr>
+<tr>
+<td><strong>Control+2</strong></td>
+<td>LINE Desktop</td>
+<td>สลับไปยังแท็บแชท</td>
+</tr>
+<tr>
+<td><strong>Control+3</strong></td>
+<td>LINE Desktop</td>
+<td>สลับไปยังแท็บเพิ่มเพื่อน</td>
 </tr>
 <tr>
 <td><strong>Control+O</strong></td>

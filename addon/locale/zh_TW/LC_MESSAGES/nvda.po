@@ -50,3 +50,15 @@ msgstr "輸入訊息"
 #. Translators: Label for the search chat rooms field in LINE
 msgid "Search chat rooms"
 msgstr "搜尋聊天室"
+
+#. Translators: Tab name announced when pressing Control+1 in LINE
+msgid "Friends"
+msgstr "好友"
+
+#. Translators: Tab name announced when pressing Control+2 in LINE
+msgid "Chats"
+msgstr "聊天"
+
+#. Translators: Tab name announced when pressing Control+3 in LINE
+msgid "Add friends"
+msgstr "加入好友"

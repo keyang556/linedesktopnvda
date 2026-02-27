@@ -1,48 +1,121 @@
 <!DOCTYPE html>
 <html><head><meta charset='utf-8'></head><body>
 <h1>LINE Desktop Accessibility Add-on for NVDA</h1>
-<p>This project provides an NVDA screen reader add-on designed to improve the accessibility of the LINE Desktop application on Windows.</p>
-<h2>Documentation / 文件 / ドキュメント</h2>
-<p>Detailed documentation is available in the following languages:</p>
+<h2>Overview</h2>
+<p>This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). It uses OCR (Optical Character Recognition) and coordinate-based automation to improve the accessibility of chat list navigation, message reading, and making phone calls.</p>
+<blockquote>
+<p>[!IMPORTANT]
+Some features in this add-on rely on OCR (Optical Character Recognition), so the recognition results may not be 100% accurate.</p>
+</blockquote>
+<h2>Features</h2>
 <ul>
-<li><a href="./addon/doc/en/readme.md">English (English)</a></li>
-<li><a href="./addon/doc/zh_TW/readme.md">繁體中文 (Traditional Chinese)</a></li>
-<li><a href="./addon/doc/ja/readme.md">日本語 (Japanese)</a></li>
+<li>Improved navigation experience for chat lists and the message input field.</li>
+<li><strong>Voice and Video Calls</strong>: Initiate calls directly from the friends tab.</li>
+<li><strong>Incoming Call Handling</strong>: Answer and reject incoming calls, and check caller information.</li>
+<li><strong>OCR Support</strong>: Automatically attempts to read text that cannot be accessed through standard accessibility APIs.</li>
+<li><strong>Debug Tools</strong>: Provides shortcuts to inspect the UI structure, making troubleshooting easier.</li>
 </ul>
-<hr />
-<h2>快速摘要 (Quick Summary)</h2>
-<h3>Traditional Chinese (繁體中文)</h3>
-<p>此附加元件增強了 LINE 電腦版的無障礙支援，包含：
-- 改善聊天清單與訊息輸入框的導覽。
-- 支援語音與視訊通話快速鍵 (<code>NVDA+Shift+C/V</code>)。
-- 支援來電接聽與拒絕 (<code>NVDA+Windows+A/D</code>)。
-- 使用 OCR 技術輔助讀取介面文字。
-- <strong>注意</strong>：OCR 並非 100% 準確。</p>
-<h3>English</h3>
-<p>This add-on enhances LINE Desktop accessibility, featuring:
-- Improved navigation for chat lists and message input.
-- Shortcuts for voice and video calls (<code>NVDA+Shift+C/V</code>).
-- Answer/reject incoming calls (<code>NVDA+Windows+A/D</code>).
-- OCR-assisted text reading for the Qt6 interface.
-- <strong>Note</strong>: OCR is not perfectly accurate.</p>
-<h3>Japanese (日本語)</h3>
-<p>このアドオンは LINE デスクトップ版のアクセシビリティを向上させます：
-- チャットリストとメッセージ入力欄の操作性を改善。
-- 音声・ビデオ通話のショートカット (<code>NVDA+Shift+C/V</code>)。
-- 着信への応答・拒否 (<code>NVDA+Windows+A/D</code>)。
-- OCR 技術によるインターフェース文字の読み上げ補助。
-- <strong>注意</strong>: OCR は完全に正確ではありません。</p>
-<hr />
-<h2>Community &amp; Support</h2>
+<h2>Usage Tips and Reminders</h2>
 <ul>
-<li><strong>LINE User Group</strong>: <a href="https://line.me/R/ti/g/BKQ2dZtTjx">Join the Group</a>
-  Join our LINE group for feature suggestions, troubleshooting, and discussions with the development team.</li>
+<li><strong>Establish Connection</strong>: Before using this version to send a message to someone, it is recommended to send a message first using a mobile phone or the Chrome web version. Having chat history makes it easier for the add-on to locate UI elements.</li>
+<li><strong>Sending Messages</strong>:<ol>
+<li>Search for a friend's name. Enter specific keywords so the search result yields only one friend to avoid errors.</li>
+<li>In the message list or sidebar, press <code>Shift+Tab</code> to move to the edit field.</li>
+<li>Type your message and press <code>Enter</code> to send.</li>
+</ol>
+</li>
+<li><strong>Making Calls</strong>:
+    Currently, you cannot initiate calls directly from the chat tab using this add-on. Please follow these steps:<ol>
+<li>Press <code>Control+1</code> to switch to the friends tab.</li>
+<li>Search for the friend's name, select them, and open the chat room.</li>
+<li>Press <code>NVDA+Windows+C</code> to make a voice call, or <code>NVDA+Windows+V</code> to make a video call.</li>
+</ol>
+</li>
+<li><strong>Pre-check</strong>: Before sending a message or making a call, always check the chat history to ensure you are contacting the right person.</li>
+</ul>
+<h2>Keyboard Shortcuts</h2>
+<table>
+<thead>
+<tr>
+<th>Shortcut</th>
+<th>Category</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NVDA+Windows+C</strong></td>
+<td>LINE Desktop</td>
+<td>Make a voice call</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+V</strong></td>
+<td>LINE Desktop</td>
+<td>Make a video call</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+A</strong></td>
+<td>LINE Desktop</td>
+<td>Answer an incoming call</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+D</strong></td>
+<td>LINE Desktop</td>
+<td>Reject an incoming call</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+S</strong></td>
+<td>LINE Desktop</td>
+<td>Check caller information</td>
+</tr>
+<tr>
+<td><strong>NVDA+Windows+T</strong></td>
+<td>LINE Desktop</td>
+<td>Read current chat room name</td>
+</tr>
+<tr>
+<td><strong>Control+1</strong></td>
+<td>LINE Desktop</td>
+<td>Switch to friends tab</td>
+</tr>
+<tr>
+<td><strong>Control+2</strong></td>
+<td>LINE Desktop</td>
+<td>Switch to chats tab</td>
+</tr>
+<tr>
+<td><strong>Control+3</strong></td>
+<td>LINE Desktop</td>
+<td>Switch to add friends tab</td>
+</tr>
+<tr>
+<td><strong>Control+O</strong></td>
+<td>LINE Desktop</td>
+<td>Open file attachment (pauses add-on until file selection completes)</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+K</strong></td>
+<td>LINE Desktop</td>
+<td>Debug: Check UIA and OCR (contents dumped to clipboard)</td>
+</tr>
+<tr>
+<td><strong>NVDA+Shift+J</strong></td>
+<td>Global</td>
+<td>Report information about the currently focused app and process</td>
+</tr>
+</tbody>
+</table>
+<h2>Community and Support</h2>
+<ul>
+<li><strong>LINE User Group</strong>: <a href="https://line.me/R/ti/g/BKQ2dZtTjx">Join Group</a>
+  Feel free to join the group to suggest features, report issues, or discuss with the development team.</li>
 <li><strong>Source Code &amp; Issue Tracker</strong>: <a href="https://github.com/keyang556/linedesktopnvda">GitHub Repository</a>
-  Feel free to open an Issue for feature requests or bug reports. Pull Requests are always welcome for code contributions.</li>
-<li><strong>Contact Developer</strong>: <a href="https://line.me/ti/p/3GigC88lAt">Contact via LINE</a></li>
+  If you have feature suggestions or find bugs, feel free to open an Issue; if you are willing to contribute code, Pull Requests are entirely welcome.</li>
+<li><strong>Contact Developer</strong>: <a href="https://line.me/ti/p/3GigC88lAt">Contact Ken Chang (LINE)</a></li>
 </ul>
-<hr />
-<h2>Development</h2>
-<p>Copyright (C) 2026 LINE Desktop NVDA Add-on Contributors.
-Distributed under the terms of the GNU General Public License, version 2 or later.</p>
+<h2>Supported Versions</h2>
+<ul>
+<li>LINE Desktop for Windows (Standard installer or Microsoft Store version).</li>
+<li>NVDA 2022.1 or higher.</li>
+</ul>
 </body></html>

@@ -157,3 +157,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
 			ui.message(f"跳到通話視窗功能錯誤: {e}")
+
+	@script(
+		description="LINE: 讀出目前聊天室名稱",
+		gesture="kb:NVDA+windows+t",
+		category="LINE Desktop",
+	)
+	def script_readChatRoomName(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			lineApp.script_readChatRoomName(gesture)
+		except Exception as e:
+			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
+			ui.message(f"讀取聊天室名稱錯誤: {e}")

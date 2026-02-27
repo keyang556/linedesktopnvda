@@ -10,7 +10,7 @@
 ## 功能特色
 
 * 改善聊天列表與訊息輸入欄位的導覽體驗。
-* **語音與視訊通話**：直接從聊天視窗發起通話。
+* **語音與視訊通話**：從好友分頁發起通話。
 * **來電處理**：接聽、拒絕來電，以及查看來電者資訊。
 * **OCR 支援**：自動嘗試讀取無法透過標準無障礙 API 存取的文字。
 * **除錯工具**：提供快速鍵以檢查 UI 結構，便於排除故障。
@@ -22,17 +22,26 @@
     1. 搜尋好友名稱。盡可能輸入準確的關鍵字，使搜尋結果只有一個好友，以避免錯誤。
     2. 在訊息清單/側邊欄，按 `Shift+Tab` 移動至編輯區。
     3. 輸入訊息後按 `Enter` 傳送。
+* **撥打電話**：
+    目前無法透過此附加元件從聊天分頁直接撥打電話。請依以下步驟操作：
+    1. 按 `Control+1` 切換到好友分頁。
+    2. 搜尋好友名稱，選取好友並開啟聊天室。
+    3. 按 `NVDA+Windows+C` 撥打語音通話，或按 `NVDA+Windows+V` 撥打視訊通話。
 * **事前檢查**：傳送訊息或撥打電話之前，請務必先檢查聊天紀錄，確認對象是否正確。
 
 ## 鍵盤快速鍵
 
 | 快速鍵 | 類別 | 操作 |
 |---|---|---|
-| **NVDA+Shift+C** | LINE Desktop | 撥打語音通話 |
-| **NVDA+Shift+V** | LINE Desktop | 撥打視訊通話 |
+| **NVDA+Windows+C** | LINE Desktop | 撥打語音通話 |
+| **NVDA+Windows+V** | LINE Desktop | 撥打視訊通話 |
 | **NVDA+Windows+A** | LINE Desktop | 接聽來電 |
 | **NVDA+Windows+D** | LINE Desktop | 拒絕來電 |
 | **NVDA+Windows+S** | LINE Desktop | 查看來電者 |
+| **NVDA+Windows+T** | LINE Desktop | 讀出目前聊天室名稱 |
+| **Control+1** | LINE Desktop | 切換到好友分頁 |
+| **Control+2** | LINE Desktop | 切換到聊天分頁 |
+| **Control+3** | LINE Desktop | 切換到加入好友分頁 |
 | **Control+O** | LINE Desktop | 開啟附加檔案（暫停附加元件直到檔案選擇完成） |
 | **NVDA+Shift+K** | LINE Desktop | 除錯：檢查 UIA 與 OCR (內容將複製到剪貼簿) |
 | **NVDA+Shift+J** | 全域 | 回報目前焦點所在的應用程式與程序資訊 |

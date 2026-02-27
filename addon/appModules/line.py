@@ -1269,6 +1269,62 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception:
 			return False
 
+	def _isSearchField(self, obj):
+		"""Detect if an edit field is the search/filter field in the sidebar.
+
+		Checks UIA placeholder text for search keywords and falls back
+		to position-based heuristic (left sidebar, near the top).
+		"""
+		try:
+			if not hasattr(obj, 'UIAElement') or obj.UIAElement is None:
+				return False
+			el = obj.UIAElement
+
+			# Check UIA Name for search keywords
+			SEARCH_KEYWORDS = ("搜尋", "search", "検索", "ค้นหา", "찾기")
+			try:
+				name = el.CurrentName
+				if name and name.strip():
+					nameLower = name.strip().lower()
+					if any(kw in nameLower for kw in SEARCH_KEYWORDS):
+						return True
+					# If name is meaningful but not search-related, it's not a search field
+					if nameLower not in ("line",):
+						return False
+			except Exception:
+				pass
+
+			# Check UIA ValueValue (30045) for placeholder
+			try:
+				val = el.GetCurrentPropertyValue(30045)
+				if val and isinstance(val, str) and val.strip():
+					valLower = val.strip().lower()
+					if any(kw in valLower for kw in SEARCH_KEYWORDS):
+						return True
+			except Exception:
+				pass
+
+			# Position heuristic: search field is in the left sidebar and near the top
+			try:
+				rect = el.CurrentBoundingRectangle
+				hwnd = ctypes.windll.user32.GetForegroundWindow()
+				if hwnd:
+					wndRect = ctypes.wintypes.RECT()
+					ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
+					wndWidth = wndRect.right - wndRect.left
+					wndHeight = wndRect.bottom - wndRect.top
+					if wndWidth > 0 and wndHeight > 0:
+						relX = (rect.left - wndRect.left) / wndWidth
+						relY = (rect.top - wndRect.top) / wndHeight
+						# Search field: left sidebar (< 50% width) and near top (< 30% height)
+						if relX < 0.5 and relY < 0.3:
+							return True
+			except Exception:
+				pass
+		except Exception:
+			pass
+		return False
+
 	def event_NVDAObject_init(self, obj):
 		"""Log object initialization at debug level."""
 		# Intentionally minimal — accessing obj.name here triggers cross-process
@@ -1802,10 +1858,20 @@ class AppModule(appModuleHandler.AppModule):
 		
 		return False
 	
-	def _clickAtPosition(self, x, y):
-		"""Perform a mouse click at the given screen coordinates."""
+	def _clickAtPosition(self, x, y, hwnd=None):
+		"""Perform a mouse click at the given screen coordinates.
+		
+		Uses SetForegroundWindow to ensure LINE receives the click,
+		then SetCursorPos + mouse_event for the physical click.
+		If hwnd is provided, that window is brought to foreground first.
+		"""
 		import ctypes
 		import time
+		
+		if hwnd is None:
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if hwnd:
+			ctypes.windll.user32.SetForegroundWindow(hwnd)
 		
 		ctypes.windll.user32.SetCursorPos(int(x), int(y))
 		time.sleep(0.05)
@@ -1840,7 +1906,8 @@ class AppModule(appModuleHandler.AppModule):
 		
 		scale = _getDpiScale(hwnd)
 		
-		# Get complete window rect
+		# Get window rect — try DwmGetWindowAttribute first for
+		# accurate extended frame bounds (avoids DPI virtualization).
 		rect = ctypes.wintypes.RECT()
 		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
 		winLeft = rect.left
@@ -1848,13 +1915,36 @@ class AppModule(appModuleHandler.AppModule):
 		winRight = rect.right
 		winWidth = winRight - winLeft
 		
+		# Also try DWM extended frame bounds
+		dwmRect = ctypes.wintypes.RECT()
+		try:
+			DWMWA_EXTENDED_FRAME_BOUNDS = 9
+			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+				hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+				ctypes.byref(dwmRect), ctypes.sizeof(dwmRect)
+			)
+			if hr == 0:
+				log.info(
+					f"LINE: DWM frame bounds=({dwmRect.left},{dwmRect.top},"
+					f"{dwmRect.right},{dwmRect.bottom})"
+				)
+				# Use DWM bounds if different (more accurate)
+				if dwmRect.right != rect.right or dwmRect.top != rect.top:
+					log.info("LINE: using DWM bounds instead of GetWindowRect")
+					winLeft = dwmRect.left
+					winTop = dwmRect.top
+					winRight = dwmRect.right
+					winWidth = winRight - winLeft
+		except Exception:
+			pass
+		
 		log.info(
 			f"LINE: window rect=({winLeft},{winTop},{winRight},{rect.bottom}), "
 			f"width={winWidth}, dpiScale={scale:.2f}"
 		)
 		
 		# Reference values at 96 DPI (100% scaling), scaled by DPI factor.
-		# Back-calculated from working values at 150%: 83/1.5≈55, 40/1.5≈27, 23/1.5≈15
+		# Icon spacing ~27px at 96 DPI, first icon offset ~15px from right edge.
 		iconY = winTop + int(55 * scale)
 		iconSpacing = int(27 * scale)
 		firstIconOffset = int(15 * scale)
@@ -1877,7 +1967,7 @@ class AppModule(appModuleHandler.AppModule):
 		
 		Full flow (3 steps):
 		  1. Click phone icon → popup menu appears (wait 500ms)
-		  2. Click voice/video menu item → confirmation dialog appears (wait 800ms)
+		  2. Click voice/video menu item
 		  3. OCR the confirmation dialog, announce it, auto-click "開始"
 		
 		From the screenshot, clicking the phone icon shows a popup menu:
@@ -1887,6 +1977,9 @@ class AppModule(appModuleHandler.AppModule):
 		The confirmation dialog is centered on the window with:
 		  - Text: "確定要與XXX進行語音通話？"
 		  - "開始" button (green, left) and "取消" button (gray, right)
+		
+		Note: This function only works from the friends tab. Call initiation
+		from the chat tab is not currently supported.
 		"""
 		import ctypes
 		import ctypes.wintypes
@@ -1897,7 +1990,7 @@ class AppModule(appModuleHandler.AppModule):
 		
 		phoneX, phoneY, winRight = pos
 		
-		# Get full window rect for dialog position calculation
+		# Get full window rect for dialog position calculation.
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		winRect = ctypes.wintypes.RECT()
 		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(winRect))
@@ -1906,43 +1999,42 @@ class AppModule(appModuleHandler.AppModule):
 		winW = winRect.right - winRect.left
 		winH = winRect.bottom - winRect.top
 		
-		log.info(f"LINE: clicking phone icon at ({phoneX}, {phoneY})")
-		self._clickAtPosition(phoneX, phoneY)
-		
-		# Menu item positions — DPI-scaled from 96 DPI reference values.
-		# Reference: menuX offset=40, voice menuY offset=23, video menuY offset=50
 		scale = _getDpiScale()
-		menuX = winRight - int(40 * scale)
-		if callType == "voice":
-			menuY = phoneY + int(23 * scale)
-		else:
-			menuY = phoneY + int(50 * scale)
 		
 		log.info(
-			f"LINE: will click menu item '{callType}' at ({menuX}, {menuY})"
+			f"LINE: clicking phone icon at ({phoneX}, {phoneY})"
 		)
 		
 		appModRef = self
 		
+		# Step 1: Click the phone icon
+		self._clickAtPosition(phoneX, phoneY, hwnd)
+		
+		# Step 2: After delay, click the voice/video menu item
 		def _clickMenuItem():
-			try:
-				appModRef._clickAtPosition(menuX, menuY)
-				log.info("LINE: menu item clicked, waiting for confirmation dialog...")
-				# Step 3: Handle confirmation dialog after 800ms
-				core.callLater(800, _handleConfirmDialog)
-			except Exception as e:
-				log.warning(f"LINE: menu click failed: {e}")
-				ui.message("選單點擊失敗")
+			menuX = phoneX
+			if callType == "voice":
+				menuY = phoneY + int(23 * scale)
+			else:
+				menuY = phoneY + int(50 * scale)
+			
+			log.info(
+				f"LINE: clicking menu item '{callType}' at "
+				f"({menuX}, {menuY})"
+			)
+			appModRef._clickAtPosition(menuX, menuY, hwnd)
+			
+			# Step 3: After delay, handle confirmation dialog
+			core.callLater(800, _handleConfirmDialog)
+		
+		core.callLater(500, _clickMenuItem)
 		
 		def _handleConfirmDialog():
 			"""OCR the confirmation dialog, announce it, and auto-click 開始."""
 			try:
-				# The confirmation dialog is centered on the LINE window
-				# Dialog dimensions — DPI-scaled from 96 DPI reference.
-				# Reference: 420/1.5≈280, 140/1.5≈93
 				cScale = _getDpiScale()
-				dialogW = int(280 * cScale)
-				dialogH = int(93 * cScale)
+				dialogW = int(320 * cScale)
+				dialogH = int(120 * cScale)
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
 				dialogLeft = winCenterX - dialogW // 2
@@ -1953,7 +2045,6 @@ class AppModule(appModuleHandler.AppModule):
 					f"({dialogLeft},{dialogTop}) {dialogW}x{dialogH}"
 				)
 				
-				# OCR the dialog area
 				import screenBitmap
 				sb = screenBitmap.ScreenBitmap(dialogW, dialogH)
 				pixels = sb.captureImage(
@@ -1976,26 +2067,26 @@ class AppModule(appModuleHandler.AppModule):
 					ocrLang = langs[0]
 				
 				if not ocrLang:
-					log.warning("LINE: no OCR language for confirmation dialog")
+					log.warning("LINE: no OCR language for dialog")
 					_clickStart()
 					return
 				
 				recognizer = uwpOcr.UwpOcr(language=ocrLang)
-				resizeFactor = recognizer.getResizeFactor(dialogW, dialogH)
+				resizeFactor = recognizer.getResizeFactor(
+					dialogW, dialogH
+				)
+				if resizeFactor < 2:
+					resizeFactor = 2
 				
-				if resizeFactor > 1:
-					sb2 = screenBitmap.ScreenBitmap(
-						dialogW * resizeFactor,
-						dialogH * resizeFactor
-					)
-					ocrPixels = sb2.captureImage(
-						dialogLeft, dialogTop,
-						dialogW, dialogH
-					)
-				else:
-					ocrPixels = pixels
+				sb2 = screenBitmap.ScreenBitmap(
+					dialogW * resizeFactor,
+					dialogH * resizeFactor
+				)
+				ocrPixels = sb2.captureImage(
+					dialogLeft, dialogTop,
+					dialogW, dialogH
+				)
 				
-				# Keep references alive during async OCR
 				appModRef._callOcrRecognizer = recognizer
 				appModRef._callOcrPixels = ocrPixels
 				
@@ -2007,16 +2098,21 @@ class AppModule(appModuleHandler.AppModule):
 						self._screenLeft = sLeft
 						self._screenTop = sTop
 					def convertXToScreen(self, x):
-						return self._screenLeft + int(x / self.resizeFactor)
+						return self._screenLeft + int(
+							x / self.resizeFactor
+						)
 					def convertYToScreen(self, y):
-						return self._screenTop + int(y / self.resizeFactor)
+						return self._screenTop + int(
+							y / self.resizeFactor
+						)
 					def convertWidthToScreen(self, width):
 						return int(width / self.resizeFactor)
 					def convertHeightToScreen(self, height):
 						return int(height / self.resizeFactor)
 				
 				imgInfo = _ImgInfo(
-					dialogW, dialogH, resizeFactor, dialogLeft, dialogTop
+					dialogW, dialogH, resizeFactor,
+					dialogLeft, dialogTop
 				)
 				appModRef._callOcrImgInfo = imgInfo
 				
@@ -2026,24 +2122,31 @@ class AppModule(appModuleHandler.AppModule):
 						try:
 							ocrText = ""
 							if not isinstance(result, Exception):
-								ocrText = getattr(result, 'text', '') or ''
-								ocrText = _removeCJKSpaces(ocrText.strip())
+								ocrText = getattr(
+									result, 'text', ''
+								) or ''
+								ocrText = _removeCJKSpaces(
+									ocrText.strip()
+								)
+							
+							log.info(
+								f"LINE: confirmation dialog OCR: "
+								f"{ocrText!r}"
+							)
 							
 							if ocrText:
-								log.info(f"LINE: confirmation dialog OCR: {ocrText}")
 								ui.message(ocrText)
 							else:
-								log.info("LINE: confirmation dialog OCR empty")
 								if callType == "voice":
 									ui.message("語音通話確認")
 								else:
 									ui.message("視訊通話確認")
 							
-							# Auto-click "開始" after a short delay for speech
 							core.callLater(300, _clickStart)
 						except Exception as e:
 							log.warning(
-								f"LINE: dialog OCR handler error: {e}",
+								f"LINE: dialog OCR handler "
+								f"error: {e}",
 								exc_info=True
 							)
 							_clickStart()
@@ -2056,34 +2159,38 @@ class AppModule(appModuleHandler.AppModule):
 				recognizer.recognize(ocrPixels, imgInfo, _onOcrResult)
 				
 			except Exception as e:
-				log.warning(f"LINE: dialog handling error: {e}", exc_info=True)
-				# Even if OCR fails, try to click "開始"
+				log.warning(
+					f"LINE: dialog handling error: {e}",
+					exc_info=True
+				)
 				_clickStart()
 		
 		def _clickStart():
 			"""Click the 開始 (Start) button on the confirmation dialog."""
 			try:
-				# "開始" button position — DPI-scaled from 96 DPI reference.
-				# Reference: xOffset=65/1.5≈43, yOffset=25/1.5≈17
 				sScale = _getDpiScale()
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
 				startBtnX = winCenterX - int(43 * sScale)
 				startBtnY = winCenterY + int(17 * sScale)
 				
-				log.info(f"LINE: clicking 開始 at ({startBtnX}, {startBtnY})")
-				appModRef._clickAtPosition(startBtnX, startBtnY)
+				log.info(
+					f"LINE: clicking 開始 at "
+					f"({startBtnX}, {startBtnY})"
+				)
+				appModRef._clickAtPosition(startBtnX, startBtnY, hwnd)
 				
 				if callType == "voice":
 					ui.message("已開始語音通話")
 				else:
 					ui.message("已開始視訊通話")
 			except Exception as e:
-				log.warning(f"LINE: click 開始 failed: {e}", exc_info=True)
+				log.warning(
+					f"LINE: click 開始 failed: {e}",
+					exc_info=True
+				)
 				ui.message("無法點擊開始按鈕")
 		
-		# Step 1: Wait 500ms for popup menu, then click menu item
-		core.callLater(500, _clickMenuItem)
 		return True
 	
 	# ── Incoming call handling ──────────────────────────────────────────
@@ -2911,7 +3018,7 @@ class AppModule(appModuleHandler.AppModule):
 
 	@script(
 		description="撥打語音通話",
-		gesture="kb:NVDA+shift+c",
+		gesture="kb:NVDA+windows+c",
 		category="LINE Desktop",
 	)
 	def script_makeCall(self, gesture):
@@ -2925,7 +3032,7 @@ class AppModule(appModuleHandler.AppModule):
 	
 	@script(
 		description="撥打視訊通話",
-		gesture="kb:NVDA+shift+v",
+		gesture="kb:NVDA+windows+v",
 		category="LINE Desktop",
 	)
 	def script_makeVideoCall(self, gesture):
@@ -2936,6 +3043,109 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(f"視訊通話功能錯誤: {e}")
+
+	# ── Read chat room name ────────────────────────────────────────────
+
+	def _readChatRoomName(self):
+		"""OCR the chat header area to read the current chat room name.
+
+		LINE's Qt6 renders the chat room name (contact or group name)
+		in the header bar, but does not expose it via UIA.
+		We calculate the header title region from window geometry and
+		use Windows OCR to extract the text.
+
+		The header layout (left to right):
+		  - Back arrow / avatar (left side)
+		  - Chat room name (center area)
+		  - Toolbar icons on the right (search, phone, notes, menu)
+		"""
+		import ctypes
+		import ctypes.wintypes
+
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			ui.message("找不到 LINE 視窗")
+			return
+
+		scale = _getDpiScale(hwnd)
+
+		# Get window rect
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winLeft = rect.left
+		winTop = rect.top
+		winRight = rect.right
+		winWidth = winRight - winLeft
+
+		# Try DWM extended frame bounds for accuracy
+		dwmRect = ctypes.wintypes.RECT()
+		try:
+			DWMWA_EXTENDED_FRAME_BOUNDS = 9
+			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+				hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+				ctypes.byref(dwmRect), ctypes.sizeof(dwmRect)
+			)
+			if hr == 0:
+				if dwmRect.right != rect.right or dwmRect.top != rect.top:
+					winLeft = dwmRect.left
+					winTop = dwmRect.top
+					winRight = dwmRect.right
+					winWidth = winRight - winLeft
+		except Exception:
+			pass
+
+		# The chat room name is in the header area.
+		# Sidebar width is roughly 280px at 96 DPI.
+		# Header name starts after the avatar/back button (~80px from sidebar edge)
+		# and ends before the toolbar icons (~120px from right edge).
+		# The name text is vertically in the range ~30px to ~60px from the top.
+		sidebarWidth = int(280 * scale)
+		nameLeft = winLeft + sidebarWidth + int(10 * scale)
+		nameTop = winTop + int(30 * scale)
+		nameRight = winRight - int(120 * scale)
+		nameBottom = winTop + int(65 * scale)
+
+		nameW = nameRight - nameLeft
+		nameH = nameBottom - nameTop
+
+		if nameW <= 0 or nameH <= 0:
+			ui.message("無法取得聊天室標題區域")
+			return
+
+		log.info(
+			f"LINE: OCR chat room name area: "
+			f"({nameLeft},{nameTop}) {nameW}x{nameH}, scale={scale:.2f}"
+		)
+
+		# Use _ocrWindowArea with the calculated region
+		try:
+			ocrText = self._ocrWindowArea(
+				hwnd,
+				region=(nameLeft, nameTop, nameW, nameH),
+				sync=True,
+				timeout=3.0
+			)
+			ocrText = _removeCJKSpaces(ocrText.strip()) if ocrText else ""
+			if ocrText:
+				ui.message(ocrText)
+			else:
+				ui.message("無法讀取聊天室名稱")
+		except Exception as e:
+			log.warning(f"LINE: readChatRoomName OCR error: {e}", exc_info=True)
+			ui.message(f"讀取聊天室名稱錯誤: {e}")
+
+	@script(
+		description="讀出目前聊天室名稱",
+		gesture="kb:NVDA+windows+t",
+		category="LINE Desktop",
+	)
+	def script_readChatRoomName(self, gesture):
+		"""Read the current chat room name via OCR."""
+		try:
+			self._readChatRoomName()
+		except Exception as e:
+			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
+			ui.message(f"讀取聊天室名稱錯誤: {e}")
 
 	def _pollFileDialog(self):
 		"""Poll to detect when the file dialog closes, then resume addon.
@@ -3020,6 +3230,31 @@ class AppModule(appModuleHandler.AppModule):
 		# After a delay, query the UIA focused element
 		core.callLater(100, _queryAndSpeakUIAFocus)
 
+	# Map Control+number keys to LINE tab names
+	_TAB_NAMES = {
+		"1": _("Friends"),
+		"2": _("Chats"),
+		"3": _("Add friends"),
+	}
+
+	def script_switchTabAndAnnounce(self, gesture):
+		"""Pass Control+1/2/3 to LINE and announce the tab name.
+
+		LINE's built-in shortcuts: Control+1=Friends, Control+2=Chats,
+		Control+3=Add friends. This script passes the key through and
+		announces the tab being switched to.
+		"""
+		if _suppressAddon:
+			gesture.send()
+			return
+		gesture.send()
+		# Extract the number key from the gesture identifier
+		# gesture.mainKeyName gives us the key name like "1", "2", "3"
+		keyName = gesture.mainKeyName
+		tabName = self._TAB_NAMES.get(keyName, "")
+		if tabName:
+			ui.message(tabName)
+
 	__gestures = {
 		"kb:tab": "navigateAndTrack",
 		"kb:shift+tab": "navigateAndTrack",
@@ -3028,4 +3263,7 @@ class AppModule(appModuleHandler.AppModule):
 		"kb:leftArrow": "navigateAndTrack",
 		"kb:rightArrow": "navigateAndTrack",
 		"kb:control+o": "openFileDialog",
+		"kb:control+1": "switchTabAndAnnounce",
+		"kb:control+2": "switchTabAndAnnounce",
+		"kb:control+3": "switchTabAndAnnounce",
 	}
