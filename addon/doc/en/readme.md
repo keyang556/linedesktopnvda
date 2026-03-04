@@ -31,19 +31,106 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 ## Keyboard Shortcuts
 
+> [!NOTE]
+> In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, and "LINE" indicates built-in LINE Desktop shortcuts.
+
+### Calls & Incoming Calls
+
 | Shortcut | Category | Action |
 |---|---|---|
-| **NVDA+Windows+C** | LINE Desktop | Make a voice call |
-| **NVDA+Windows+V** | LINE Desktop | Make a video call |
-| **NVDA+Windows+A** | LINE Desktop | Answer an incoming call |
-| **NVDA+Windows+D** | LINE Desktop | Reject an incoming call |
-| **NVDA+Windows+S** | LINE Desktop | Check caller information |
-| **NVDA+Windows+T** | LINE Desktop | Read current chat room name |
-| **Control+1** | LINE Desktop | Switch to friends tab |
-| **Control+2** | LINE Desktop | Switch to chats tab |
-| **Control+3** | LINE Desktop | Switch to add friends tab |
-| **Control+O** | LINE Desktop | Open file attachment (pauses add-on until file selection completes) |
-| **NVDA+Shift+K** | LINE Desktop | Debug: Check UIA and OCR (contents dumped to clipboard) |
+| **NVDA+Windows+C** | Add-on | Make a voice call |
+| **NVDA+Windows+V** | Add-on | Make a video call |
+| **NVDA+Windows+A** | Add-on | Answer an incoming call |
+| **NVDA+Windows+D** | Add-on | Reject an incoming call |
+| **NVDA+Windows+S** | Add-on | Check caller information |
+| **Ctrl+Shift+A** | LINE | Toggle microphone on/off |
+| **Ctrl+Shift+V** | LINE | Toggle camera on/off |
+
+### Message Actions
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Control+C** | Add-on | Copy the current message (in message list; normal copy in edit fields) |
+| **NVDA+Windows+R** | Add-on | Reply to the current message |
+| **NVDA+Windows+Delete** | Add-on | Recall (unsend) the current message |
+| **NVDA+Windows+T** | Add-on | Read current chat room name |
+
+### Basic Shortcuts
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Ctrl+W** | LINE | Close window |
+| **Ctrl+L** | LINE | Enable lock mode |
+| **Ctrl+1** | LINE | Go to Friends tab |
+| **Ctrl+2** | LINE | Go to Chats tab |
+| **Ctrl+3** | LINE | Go to Add Friends tab |
+| **Ctrl+Shift+P** | LINE | Capture screen |
+| **Ctrl+Shift+K** | LINE | Open Keep Memo |
+| **F1** | LINE | Show shortcut key tips (Note: screen readers cannot read this content; please refer to this document instead) |
+
+### Friends & Chat List
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Ctrl+Shift+F** | LINE | Search |
+| **Ctrl+Tab** | LINE | Move to previous chat room |
+
+### Chat Room
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Shift+Enter** | LINE | New line |
+| **Ctrl+F** | LINE | Search |
+| **Ctrl+N** | LINE | Open notes |
+| **Ctrl+E** | LINE | Open sticker window |
+| **Ctrl+O** | LINE | Send file |
+| **Ctrl+K** | LINE | Open Keep Memo |
+| **Ctrl+P** | LINE | Capture screen |
+
+### Text Formatting
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Ctrl+B** | LINE | Bold |
+| **Ctrl+I** | LINE | Italic |
+| **Ctrl+Shift+X** | LINE | Strikethrough |
+| **Ctrl+Shift+C** | LINE | Red text box |
+| **Ctrl+Shift+D** | LINE | Paragraph box |
+
+### Media Player
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Ctrl+S** | LINE | Save file |
+| **Ctrl+C** | LINE | Copy file |
+| **Enter** | LINE | Full screen |
+| **Space** | LINE | Play/Pause |
+| **Ctrl+Left / Right** | LINE | Fast forward/rewind video 5 seconds |
+| **Ctrl+Up / Down** | LINE | Increase/decrease video volume |
+| **Ctrl+Shift+Plus / Ctrl+Minus** | LINE | Zoom in/out image |
+
+### Screen Capture
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Space** | LINE | Reset capture area |
+| **Ctrl+Z** | LINE | Undo |
+| **Ctrl+Shift+Z / Ctrl+Y** | LINE | Redo |
+| **Ctrl+C** | LINE | Copy |
+| **Ctrl+S** | LINE | Save |
+| **Shift** | LINE | Draw straight lines, rectangles, and circles |
+
+### Chat Room Categories
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Alt+Left / Right** | LINE | Move category |
+
+### Debug Tools
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **NVDA+Shift+K** | Add-on | Debug: Check UIA and OCR (contents dumped to clipboard) |
 | **NVDA+Shift+J** | Global | Report information about the currently focused app and process |
 
 ## Community and Support

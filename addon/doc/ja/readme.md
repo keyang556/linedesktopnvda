@@ -31,19 +31,106 @@
 
 ## キーボードショートカット
 
+> [!NOTE]
+> 「カテゴリ」列の「アドオン」はこのアドオンが提供するショートカット、「LINE」は LINE デスクトップ版内蔵のショートカットを示します。
+
+### 通話・着信
+
 | ショートカット | カテゴリ | 操作 |
 |---|---|---|
-| **NVDA+Windows+C** | LINE Desktop | 音声通話を開始 |
-| **NVDA+Windows+V** | LINE Desktop | ビデオ通話を開始 |
-| **NVDA+Windows+A** | LINE Desktop | 着信に応答 |
-| **NVDA+Windows+D** | LINE Desktop | 着信を拒否 |
-| **NVDA+Windows+S** | LINE Desktop | 発信者を確認 |
-| **NVDA+Windows+T** | LINE Desktop | 現在のチャットルーム名を読み上げ |
-| **Control+1** | LINE Desktop | 友だちタブに切り替え |
-| **Control+2** | LINE Desktop | チャットタブに切り替え |
-| **Control+3** | LINE Desktop | 友だち追加タブに切り替え |
-| **Control+O** | LINE Desktop | ファイルを開く（ダイアログが閉じるまでアドオンを一時停止） |
-| **NVDA+Shift+K** | LINE Desktop | デバッグ：UIA と OCR を確認（クリップボードにコピー） |
+| **NVDA+Windows+C** | アドオン | 音声通話を開始 |
+| **NVDA+Windows+V** | アドオン | ビデオ通話を開始 |
+| **NVDA+Windows+A** | アドオン | 着信に応答 |
+| **NVDA+Windows+D** | アドオン | 着信を拒否 |
+| **NVDA+Windows+S** | アドオン | 発信者を確認 |
+| **Ctrl+Shift+A** | LINE | マイクのオン／オフ |
+| **Ctrl+Shift+V** | LINE | カメラのオン／オフ |
+
+### メッセージ操作
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Control+C** | アドオン | 現在のメッセージをコピー（メッセージリスト内で使用、編集欄では通常のコピー） |
+| **NVDA+Windows+R** | アドオン | 現在のメッセージに返信 |
+| **NVDA+Windows+Delete** | アドオン | 現在のメッセージを取り消し（送信取り消し） |
+| **NVDA+Windows+T** | アドオン | 現在のチャットルーム名を読み上げ |
+
+### 基本操作
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Ctrl+W** | LINE | ウィンドウを閉じる |
+| **Ctrl+L** | LINE | ロックモードを有効化 |
+| **Ctrl+1** | LINE | 「友だち」タブに移動 |
+| **Ctrl+2** | LINE | 「チャット」タブに移動 |
+| **Ctrl+3** | LINE | 「友だち追加」タブに移動 |
+| **Ctrl+Shift+P** | LINE | 画面キャプチャ |
+| **Ctrl+Shift+K** | LINE | Keep メモを開く |
+| **F1** | LINE | ショートカットキーのヒントを表示（注：スクリーンリーダーではこの説明を読めないため、このドキュメントを参照してください） |
+
+### 友だち・チャットリスト
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Ctrl+Shift+F** | LINE | 検索 |
+| **Ctrl+Tab** | LINE | 前のチャットルームに移動 |
+
+### チャットルーム
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Shift+Enter** | LINE | 改行 |
+| **Ctrl+F** | LINE | 検索 |
+| **Ctrl+N** | LINE | ノートを開く |
+| **Ctrl+E** | LINE | スタンプウィンドウを開く |
+| **Ctrl+O** | LINE | ファイルを送信 |
+| **Ctrl+K** | LINE | Keep メモを開く |
+| **Ctrl+P** | LINE | 画面キャプチャ |
+
+### テキストフォーマット
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Ctrl+B** | LINE | 太字 |
+| **Ctrl+I** | LINE | 斜体 |
+| **Ctrl+Shift+X** | LINE | 取り消し線 |
+| **Ctrl+Shift+C** | LINE | 赤文字枠 |
+| **Ctrl+Shift+D** | LINE | 段落枠 |
+
+### メディアプレーヤー
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Ctrl+S** | LINE | ファイルを保存 |
+| **Ctrl+C** | LINE | ファイルをコピー |
+| **Enter** | LINE | 全画面表示 |
+| **Space** | LINE | 再生／一時停止 |
+| **Ctrl+Left / Right** | LINE | 動画を 5 秒早送り／巻き戻し |
+| **Ctrl+Up / Down** | LINE | 動画の音量を上げる／下げる |
+| **Ctrl+Shift+Plus / Ctrl+Minus** | LINE | 画像を拡大／縮小 |
+
+### 画面キャプチャ
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Space** | LINE | キャプチャ範囲をリセット |
+| **Ctrl+Z** | LINE | 元に戻す |
+| **Ctrl+Shift+Z / Ctrl+Y** | LINE | やり直し |
+| **Ctrl+C** | LINE | コピー |
+| **Ctrl+S** | LINE | 保存 |
+| **Shift** | LINE | 直線、矩形、円を描画 |
+
+### チャットルームカテゴリ
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **Alt+Left / Right** | LINE | カテゴリを移動 |
+
+### デバッグツール
+
+| ショートカット | カテゴリ | 操作 |
+|---|---|---|
+| **NVDA+Shift+K** | アドオン | デバッグ：UIA と OCR を確認（クリップボードにコピー） |
 | **NVDA+Shift+J** | グローバル | フォーカスされているアプリとプロセス情報を報告 |
 
 ## コミュニティとサポート

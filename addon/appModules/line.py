@@ -33,6 +33,12 @@ _SEND_SOUND_PATH = os.path.join(
 	"sounds", "sent.wav"
 )
 
+# Sound file to play when copy falls back to OCR (result may not be 100% accurate)
+_OCR_SOUND_PATH = os.path.join(
+	os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+	"sounds", "ocr.wav"
+)
+
 def _isImeComposing():
 	"""Check if an IME composition is currently in progress.
 
@@ -4098,12 +4104,19 @@ class AppModule(appModuleHandler.AppModule):
 			time.sleep(0.05)
 		log.debug("LINE: modifiers released, proceeding with right-click")
 
+		# The UIA element spans the full chat area width, but the
+		# actual message bubble is narrower and aligned left (received)
+		# or right (sent).  Clicking at the horizontal center often
+		# lands on empty space, producing the wrong "全選" menu.
+		# Try left-third and right-third to target the actual bubble.
+		leftThird = elLeft + (elRight - elLeft) // 3
+		rightThird = elLeft + 2 * (elRight - elLeft) // 3
 		clickPositions = [
 			(cx, clampedCenter, "center"),
+			(rightThird, clampedCenter, "right-third"),
+			(leftThird, clampedCenter, "left-third"),
 			(cx, clampedTop, "top"),
 			(cx, clampedBottom, "bottom"),
-			(elRight - 15, clampedCenter, "far-right"),
-			(elLeft + 15, clampedCenter, "far-left"),
 		]
 
 		appModRef = self
@@ -4159,6 +4172,10 @@ class AppModule(appModuleHandler.AppModule):
 										f"{copyText!r}"
 									)
 									ui.message("複製")
+									try:
+										nvwave.playWaveFile(_OCR_SOUND_PATH, asynchronous=True)
+									except Exception:
+										log.debugWarning("Failed to play OCR sound", exc_info=True)
 									if afterCallback:
 										core.callLater(
 											500, afterCallback
@@ -4446,7 +4463,10 @@ class AppModule(appModuleHandler.AppModule):
 										prefix + "  "
 									)
 									items.extend(subItems)
-								elif childH > 10:
+								elif childH >= 20:
+									# Smaller items (e.g. 16px separators)
+									# are still big enough to detect but
+									# not clickable menu items.
 									itemText = _getMenuItemText(child)
 									items.append((child, itemText))
 							except Exception:
@@ -4541,14 +4561,13 @@ class AppModule(appModuleHandler.AppModule):
 											break
 									if targetLineIdx >= 0:
 										nItems = len(menuItems)
-										nLines = len(lines)
 										if nItems > 0:
+											# Direct 1:1 mapping:
+											# separators are excluded
+											# from menuItems, so OCR
+											# line N = item N.
 											itemIdx = min(
-												int(
-													targetLineIdx
-													* nItems
-													/ nLines
-												),
+												targetLineIdx,
 												nItems - 1,
 											)
 											targetItem = (
@@ -4560,7 +4579,7 @@ class AppModule(appModuleHandler.AppModule):
 												f"via popup OCR, "
 												f"line "
 												f"{targetLineIdx}"
-												f"/{nLines} → "
+												f" → "
 												f"item {itemIdx}"
 												f"/{nItems}"
 											)
@@ -4604,9 +4623,8 @@ class AppModule(appModuleHandler.AppModule):
 						if afterCallback:
 							core.callLater(500, afterCallback)
 					else:
-						# Wrong menu (no 複製 found).
-						# Dismiss and skip to OCR for copy,
-						# or try next position for others.
+						# Wrong menu (target item not found).
+						# Dismiss the popup first.
 						log.debug(
 							f"LINE: wrong menu at [{posLabel}]"
 							f", dismissing"
@@ -4617,10 +4635,22 @@ class AppModule(appModuleHandler.AppModule):
 						KeyboardInputGesture.fromName(
 							"escape"
 						).send()
-						if actionName == "複製":
+						# For copy: if we got "全選" (2-item
+						# menu = clicked empty space), try
+						# just 1 more position then OCR.
+						# This avoids wasting ~4s on short
+						# msgs where every position misses.
+						isSelectAll = (
+							len(menuItems) <= 2
+						)
+						if (
+							actionName == "複製"
+							and isSelectAll
+							and posIdx >= 1
+						):
 							log.info(
-								"LINE: no Copy in menu, "
-								"falling back to OCR"
+								"LINE: '全選' menu seen "
+								"twice, skipping to OCR"
 							)
 							core.callLater(
 								300,
@@ -4629,7 +4659,12 @@ class AppModule(appModuleHandler.AppModule):
 								),
 							)
 						else:
-							# Non-copy, try next pos
+							log.info(
+								f"LINE: '{actionName}' "
+								f"not found at "
+								f"[{posLabel}], "
+								f"trying next position"
+							)
 							core.callLater(
 								300,
 								lambda: _attemptAtOffset(

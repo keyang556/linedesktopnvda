@@ -31,19 +31,106 @@
 
 ## 鍵盤快速鍵
 
+> [!NOTE]
+> 「類別」欄位中，「附加元件」表示此附加元件提供的快速鍵，「LINE」表示 LINE 電腦版內建的快速鍵。
+
+### 通話與來電
+
 | 快速鍵 | 類別 | 操作 |
 |---|---|---|
-| **NVDA+Windows+C** | LINE Desktop | 撥打語音通話 |
-| **NVDA+Windows+V** | LINE Desktop | 撥打視訊通話 |
-| **NVDA+Windows+A** | LINE Desktop | 接聽來電 |
-| **NVDA+Windows+D** | LINE Desktop | 拒絕來電 |
-| **NVDA+Windows+S** | LINE Desktop | 查看來電者 |
-| **NVDA+Windows+T** | LINE Desktop | 讀出目前聊天室名稱 |
-| **Control+1** | LINE Desktop | 切換到好友分頁 |
-| **Control+2** | LINE Desktop | 切換到聊天分頁 |
-| **Control+3** | LINE Desktop | 切換到加入好友分頁 |
-| **Control+O** | LINE Desktop | 開啟附加檔案（暫停附加元件直到檔案選擇完成） |
-| **NVDA+Shift+K** | LINE Desktop | 除錯：檢查 UIA 與 OCR (內容將複製到剪貼簿) |
+| **NVDA+Windows+C** | 附加元件 | 撥打語音通話 |
+| **NVDA+Windows+V** | 附加元件 | 撥打視訊通話 |
+| **NVDA+Windows+A** | 附加元件 | 接聽來電 |
+| **NVDA+Windows+D** | 附加元件 | 拒絕來電 |
+| **NVDA+Windows+S** | 附加元件 | 查看來電者 |
+| **Ctrl+Shift+A** | LINE | 開啟／關閉麥克風 |
+| **Ctrl+Shift+V** | LINE | 開啟／關閉相機 |
+
+### 訊息操作
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Control+C** | 附加元件 | 複製目前訊息（在訊息列表中使用，編輯區中則為一般複製） |
+| **NVDA+Windows+R** | 附加元件 | 回覆目前訊息 |
+| **NVDA+Windows+Delete** | 附加元件 | 收回（取消傳送）目前訊息 |
+| **NVDA+Windows+T** | 附加元件 | 讀出目前聊天室名稱 |
+
+### 基本操作
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Ctrl+W** | LINE | 關閉視窗 |
+| **Ctrl+L** | LINE | 啟用鎖定模式 |
+| **Ctrl+1** | LINE | 前往「好友」標籤 |
+| **Ctrl+2** | LINE | 前往「聊天」標籤 |
+| **Ctrl+3** | LINE | 前往「加入好友」標籤 |
+| **Ctrl+Shift+P** | LINE | 截取畫面 |
+| **Ctrl+Shift+K** | LINE | 開啟 Keep 筆記 |
+| **F1** | LINE | 顯示快捷鍵提示說明（備註：螢幕閱讀器目前讀不到這個說明內容，請直接閱讀這個說明文件） |
+
+### 好友、聊天列表
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Ctrl+Shift+F** | LINE | 搜尋 |
+| **Ctrl+Tab** | LINE | 移至上一個聊天室 |
+
+### 聊天室
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Shift+Enter** | LINE | 換行 |
+| **Ctrl+F** | LINE | 搜尋 |
+| **Ctrl+N** | LINE | 開啟記事本 |
+| **Ctrl+E** | LINE | 開啟貼圖視窗 |
+| **Ctrl+O** | LINE | 傳送檔案 |
+| **Ctrl+K** | LINE | 開啟 Keep 筆記 |
+| **Ctrl+P** | LINE | 截取畫面 |
+
+### 文字格式
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Ctrl+B** | LINE | 粗體 |
+| **Ctrl+I** | LINE | 斜體 |
+| **Ctrl+Shift+X** | LINE | 刪除線 |
+| **Ctrl+Shift+C** | LINE | 紅字框 |
+| **Ctrl+Shift+D** | LINE | 段落框 |
+
+### 媒體播放器
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Ctrl+S** | LINE | 儲存檔案 |
+| **Ctrl+C** | LINE | 複製檔案 |
+| **Enter** | LINE | 以全螢幕顯示 |
+| **Space** | LINE | 播放／暫停 |
+| **Ctrl+Left / Right** | LINE | 影片往前／向後快轉 5 秒 |
+| **Ctrl+Up / Down** | LINE | 提高／降低影片音量 |
+| **Ctrl+Shift+Plus / Ctrl+Minus** | LINE | 放大／縮小圖片 |
+
+### 截取畫面
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Space** | LINE | 重設截取畫面的範圍 |
+| **Ctrl+Z** | LINE | 復原 |
+| **Ctrl+Shift+Z / Ctrl+Y** | LINE | 取消復原 |
+| **Ctrl+C** | LINE | 複製 |
+| **Ctrl+S** | LINE | 儲存 |
+| **Shift** | LINE | 畫出直線、矩形及圓形 |
+
+### 聊天室分類
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **Alt+Left / Right** | LINE | 移動分類 |
+
+### 除錯工具
+
+| 快速鍵 | 類別 | 操作 |
+|---|---|---|
+| **NVDA+Shift+K** | 附加元件 | 除錯：檢查 UIA 與 OCR（內容將複製到剪貼簿） |
 | **NVDA+Shift+J** | 全域 | 回報目前焦點所在的應用程式與程序資訊 |
 
 ## 社群與支援
