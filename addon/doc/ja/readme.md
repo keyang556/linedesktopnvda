@@ -54,6 +54,7 @@
 |---|---|---|
 | **NVDA+Windows+C** | アドオン | 音声通話を開始 |
 | **NVDA+Windows+V** | アドオン | ビデオ通話を開始 |
+| **NVDA+Windows+O** | アドオン | その他のオプションボタンをクリック |
 | **NVDA+Windows+A** | アドオン | 着信に応答 |
 | **NVDA+Windows+D** | アドオン | 着信を拒否 |
 | **NVDA+Windows+S** | アドオン | 発信者を確認 |

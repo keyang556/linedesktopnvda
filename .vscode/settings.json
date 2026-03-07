@@ -12,5 +12,6 @@
         "../nvda/source",
         "../nvda/miscDeps/python"
     ],
-    "python.defaultInterpreterPath": "${workspaceFolder}/../nvda/.venv/scripts/python.exe"
+    "python.defaultInterpreterPath": "${workspaceFolder}/../nvda/.venv/scripts/python.exe",
+    "kiroAgent.configureMCP": "Disabled"
 }

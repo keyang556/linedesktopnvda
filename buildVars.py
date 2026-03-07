@@ -22,12 +22,16 @@ addon_info = AddonInfo(
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-on store
 	addon_description=_("""Enhances NVDA accessibility support for the LINE desktop application on Windows.
-Provides improved navigation for chat lists, messages, contacts, and message input."""),
+Provides improved navigation for chat lists, messages, contacts, and message input.
+Supports voice and video calls, incoming call handling, microphone and camera status announcements, and OCR-assisted text reading."""),
 	# version
-	addon_version="1.1.1",
+	addon_version="1.1.2",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
-	addon_changelog=_("""Initial release with LINE desktop accessibility support."""),
+	addon_changelog=_("""Improved video call handling and incoming call detection.
+Added microphone and camera status announcements during calls.
+Added Focus Call Window shortcut (NVDA+Windows+F).
+Improved message copy-read reliability."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>",
 	# URL for the add-on documentation support

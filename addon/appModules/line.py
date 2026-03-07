@@ -3042,6 +3042,65 @@ class AppModule(appModuleHandler.AppModule):
 		
 		return (iconX, iconY, winRight)
 	
+	def _clickMoreOptionsButton(self):
+		"""Click the more options (⋮) button in the chat header.
+		
+		The more options button is the rightmost icon in the header (index 0).
+		Returns True if successful, False if window not found.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			log.debug("LINE: no foreground window for more options click")
+			return False
+		
+		scale = _getDpiScale(hwnd)
+		
+		# Get window rect
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winLeft = rect.left
+		winTop = rect.top
+		winRight = rect.right
+		
+		# Try DWM extended frame bounds for accuracy
+		dwmRect = ctypes.wintypes.RECT()
+		try:
+			DWMWA_EXTENDED_FRAME_BOUNDS = 9
+			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+				hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+				ctypes.byref(dwmRect), ctypes.sizeof(dwmRect)
+			)
+			if hr == 0 and (dwmRect.right != rect.right or dwmRect.top != rect.top):
+				winLeft = dwmRect.left
+				winTop = dwmRect.top
+				winRight = dwmRect.right
+		except Exception:
+			pass
+		
+		# Calculate more options button position (rightmost icon, index 0)
+		iconY = winTop + int(55 * scale)
+		firstIconOffset = int(15 * scale)
+		moreOptionsX = winRight - firstIconOffset
+		
+		log.info(
+			f"LINE: clicking more options button at ({moreOptionsX}, {iconY}), "
+			f"dpiScale={scale:.2f}"
+		)
+		
+		# Verify position is within window bounds
+		if moreOptionsX < winLeft or moreOptionsX > winRight:
+			log.warning(f"LINE: more options position {moreOptionsX} outside window bounds")
+			return False
+		
+		# Click the button
+		self._clickAtPosition(moreOptionsX, iconY, hwnd)
+		ui.message("更多選項")
+		
+		return True
+	
 	def _makeCallByType(self, callType):
 		"""Click phone icon, wait for popup menu, then click voice or video.
 		
@@ -4250,6 +4309,20 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(f"視訊通話功能錯誤: {e}")
+	@script(
+		description="LINE: 點擊更多選項按鈕",
+		gesture="kb:NVDA+windows+o",
+		category="LINE Desktop",
+	)
+	def script_clickMoreOptions(self, gesture):
+		"""Click the more options (⋮) button in the chat header."""
+		try:
+			if not self._clickMoreOptionsButton():
+				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+		except Exception as e:
+			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
+			ui.message(f"更多選項功能錯誤: {e}")
+
 
 	# ── Read chat room name ────────────────────────────────────────────
 

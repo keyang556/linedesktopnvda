@@ -54,6 +54,7 @@
 |---|---|---|
 | **NVDA+Windows+C** | 附加元件 | 撥打語音通話 |
 | **NVDA+Windows+V** | 附加元件 | 撥打視訊通話 |
+| **NVDA+Windows+O** | 附加元件 | 按更多選項按鈕 |
 | **NVDA+Windows+A** | 附加元件 | 接聽來電 |
 | **NVDA+Windows+D** | 附加元件 | 拒絕來電 |
 | **NVDA+Windows+S** | 附加元件 | 查看來電者 |

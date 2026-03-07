@@ -75,6 +75,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# Translators: Menu item for making a video call
 				_("視訊通話(&V)") + "\tNVDA+Windows+V",
 			)
+			self._moreOptionsItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for clicking more options button
+				_("更多選項(&O)") + "\tNVDA+Windows+O",
+			)
 			self._readChatNameItem = self._lineSubMenu.Append(
 				wx.ID_ANY,
 				# Translators: Menu item for reading chat room name
@@ -111,6 +116,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onVideoCall, self._videoCallItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onMoreOptions, self._moreOptionsItem
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onReadChatName, self._readChatNameItem
@@ -191,6 +199,22 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(f"視訊通話功能錯誤: {e}")
+
+	def _onMoreOptions(self, evt):
+		wx.CallAfter(self._doMoreOptions)
+
+	def _doMoreOptions(self):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if not lineApp._clickMoreOptionsButton():
+				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+		except Exception as e:
+			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
+			ui.message(f"更多選項功能錯誤: {e}")
 
 	def _onReadChatName(self, evt):
 		wx.CallAfter(self._doReadChatName)
@@ -433,3 +457,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
 			ui.message(f"讀取聊天室名稱錯誤: {e}")
+
+	@script(
+		description="LINE: 點擊更多選項按鈕",
+		gesture="kb:NVDA+windows+o",
+		category="LINE Desktop",
+	)
+	def script_clickMoreOptions(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			lineApp.script_clickMoreOptions(gesture)
+		except Exception as e:
+			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
+			ui.message(f"更多選項功能錯誤: {e}")
