@@ -5637,6 +5637,165 @@ class AppModule(appModuleHandler.AppModule):
 		t = threading.Thread(target=_checkMicStatus, daemon=True)
 		t.start()
 
+	def script_toggleCameraAndAnnounce(self, gesture):
+		"""Pass Ctrl+Shift+V to LINE, then OCR the call window to announce camera status."""
+		# Always pass the gesture through first
+		gesture.send()
+
+		import ctypes
+		import ctypes.wintypes
+		import os
+		import threading
+
+		# LINE executable names
+		_LINE_EXES = {"line.exe", "line_app.exe", "linecall.exe", "linelauncher.exe"}
+
+		def _isLineProcess(pid):
+			"""Check if a PID belongs to a LINE process."""
+			if pid == self.processID:
+				return True
+			try:
+				PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+				hProc = ctypes.windll.kernel32.OpenProcess(
+					PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+				)
+				if hProc:
+					try:
+						buf = ctypes.create_unicode_buffer(260)
+						size = ctypes.wintypes.DWORD(260)
+						ok = ctypes.windll.kernel32.QueryFullProcessImageNameW(
+							hProc, 0, buf, ctypes.byref(size)
+						)
+						if ok:
+							exeName = os.path.basename(buf.value).lower()
+							return exeName in _LINE_EXES
+					finally:
+						ctypes.windll.kernel32.CloseHandle(hProc)
+			except Exception:
+				pass
+			return False
+
+		# ── Find the call window ──────────────────────────────────
+		hwnd = None
+		mainHwnd = None
+		try:
+			mainHwnd = self.windowHandle
+		except Exception:
+			pass
+
+		fgHwnd = ctypes.windll.user32.GetForegroundWindow()
+		if fgHwnd and fgHwnd != mainHwnd:
+			fgPid = ctypes.wintypes.DWORD()
+			ctypes.windll.user32.GetWindowThreadProcessId(
+				fgHwnd, ctypes.byref(fgPid)
+			)
+			if _isLineProcess(fgPid.value):
+				hwnd = fgHwnd
+				log.info(
+					f"LINE: camera status using foreground window "
+					f"as call window: hwnd={fgHwnd}"
+				)
+
+		# Fallback to _findIncomingCallWindow
+		if not hwnd:
+			hwnd = self._findIncomingCallWindow()
+
+		if not hwnd:
+			# Not in a call, just let the keystroke go through silently
+			return
+
+		appModRef = self
+
+		def _checkCameraStatus():
+			"""After a short delay, OCR the call window to detect camera status.
+
+			For video calls, LINE auto-hides the control bar. We move the
+			mouse into the window to trigger it to appear, then OCR.
+			"""
+			import time
+
+			try:
+				rect = ctypes.wintypes.RECT()
+				ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+				winW = rect.right - rect.left
+				winH = rect.bottom - rect.top
+
+				if winW <= 0 or winH <= 0:
+					return
+
+				# Save original mouse position
+				origPt = ctypes.wintypes.POINT()
+				ctypes.windll.user32.GetCursorPos(ctypes.byref(origPt))
+
+				# Move mouse to bottom-center of the call window.
+				# This triggers LINE's auto-hiding control bar in video calls.
+				centerX = (rect.left + rect.right) // 2
+				bottomY = rect.top + int(winH * 0.80)
+				ctypes.windll.user32.SetCursorPos(centerX, bottomY)
+
+				# Wait for controls to appear + camera toggle animation
+				time.sleep(0.8)
+
+				# Re-read window rect (may have changed)
+				ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+				winW = rect.right - rect.left
+				winH = rect.bottom - rect.top
+
+				# Attempt 1: OCR bottom 30% (standard for voice calls)
+				bottomRegion = (
+					int(rect.left),
+					int(rect.top + int(winH * 0.70)),
+					winW,
+					int(winH * 0.30),
+				)
+				ocrText = appModRef._ocrWindowArea(
+					hwnd, region=bottomRegion, sync=True, timeout=3.0
+				)
+				ocrText = ocrText.strip() if ocrText else ""
+
+				if ocrText:
+					log.info(f"LINE: camera status OCR (bottom 30%): {ocrText!r}")
+					if _announceCameraFromOcr(ocrText):
+						ctypes.windll.user32.SetCursorPos(origPt.x, origPt.y)
+						return
+
+				# Attempt 2: OCR entire window (video call controls
+				# may appear in the center or as an overlay)
+				ocrText = appModRef._ocrWindowArea(
+					hwnd, sync=True, timeout=3.0
+				)
+				ocrText = ocrText.strip() if ocrText else ""
+
+				# Restore mouse position
+				ctypes.windll.user32.SetCursorPos(origPt.x, origPt.y)
+
+				if ocrText:
+					log.info(f"LINE: camera status OCR (full window): {ocrText!r}")
+					_announceCameraFromOcr(ocrText)
+				else:
+					log.debug("LINE: camera status OCR returned empty")
+
+			except Exception as e:
+				log.debug(f"LINE: camera status check failed: {e}", exc_info=True)
+
+		def _announceCameraFromOcr(ocrText):
+			"""Detect camera on/off from OCR text and announce. Returns True if detected."""
+			import wx
+			# "關鏡頭"/"關相機"/"關閉相機" means tooltip says "turn off" → camera is ON
+			if any(kw in ocrText for kw in ["關鏡頭", "關相機", "關閉相機", "Turn off camera", "turn off camera"]):
+				wx.CallAfter(ui.message, "相機已開啟")
+				return True
+			# "開鏡頭"/"開相機"/"開啟相機" means tooltip says "turn on" → camera is OFF
+			elif any(kw in ocrText for kw in ["開鏡頭", "開相機", "開啟相機", "Turn on camera", "turn on camera"]):
+				wx.CallAfter(ui.message, "相機已關閉")
+				return True
+			else:
+				log.debug(f"LINE: camera status not detected in OCR: {ocrText!r}")
+				return False
+
+		t = threading.Thread(target=_checkCameraStatus, daemon=True)
+		t.start()
+
 	__gestures = {
 		"kb:tab": "navigateAndTrack",
 		"kb:shift+tab": "navigateAndTrack",
@@ -5650,4 +5809,5 @@ class AppModule(appModuleHandler.AppModule):
 		"kb:control+3": "switchTabAndAnnounce",
 		"kb:enter": "sendMessageAndPlaySound",
 		"kb:control+shift+a": "toggleMicAndAnnounce",
+		"kb:control+shift+v": "toggleCameraAndAnnounce",
 	}
