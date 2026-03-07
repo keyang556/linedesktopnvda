@@ -1,0 +1,14 @@
+﻿doc
+globalPlugins
+manifest.ini
+doc\en
+doc\zh_TW
+doc\style.css
+doc\en\readme.html
+doc\en\readme.md
+doc\zh_TW\readme.html
+doc\zh_TW\readme.md
+globalPlugins\scintillaIMECaretFix
+globalPlugins\scintillaIMECaretFix\__pycache__
+globalPlugins\scintillaIMECaretFix\__init__.py
+globalPlugins\scintillaIMECaretFix\__pycache__\__init__.cpython-313.opt-1.pyc
