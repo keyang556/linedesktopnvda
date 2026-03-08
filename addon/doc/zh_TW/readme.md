@@ -54,10 +54,10 @@
 |---|---|---|
 | **NVDA+Windows+C** | 附加元件 | 撥打語音通話 |
 | **NVDA+Windows+V** | 附加元件 | 撥打視訊通話 |
-| **NVDA+Windows+O** | 附加元件 | 按更多選項按鈕 |
 | **NVDA+Windows+A** | 附加元件 | 接聽來電 |
 | **NVDA+Windows+D** | 附加元件 | 拒絕來電 |
 | **NVDA+Windows+S** | 附加元件 | 查看來電者 |
+| **NVDA+Windows+F** | 附加元件 | 跳到通話視窗 |
 | **Ctrl+Shift+A** | LINE | 開啟／關閉麥克風 |
 | **Ctrl+Shift+V** | LINE | 開啟／關閉相機 |
 
@@ -94,6 +94,7 @@
 
 | 快速鍵 | 類別 | 操作 |
 |---|---|---|
+| **NVDA+Windows+O** | 附加元件 | 按更多選項按鈕 |
 | **Shift+Enter** | LINE | 換行 |
 | **Ctrl+F** | LINE | 搜尋 |
 | **Ctrl+N** | LINE | 開啟記事本 |

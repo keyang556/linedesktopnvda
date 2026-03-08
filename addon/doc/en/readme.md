@@ -54,10 +54,10 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 |---|---|---|
 | **NVDA+Windows+C** | Add-on | Make a voice call |
 | **NVDA+Windows+V** | Add-on | Make a video call |
-| **NVDA+Windows+O** | Add-on | Click more options button |
 | **NVDA+Windows+A** | Add-on | Answer an incoming call |
 | **NVDA+Windows+D** | Add-on | Reject an incoming call |
 | **NVDA+Windows+S** | Add-on | Check caller information |
+| **NVDA+Windows+F** | Add-on | Focus the call window |
 | **Ctrl+Shift+A** | LINE | Toggle microphone on/off |
 | **Ctrl+Shift+V** | LINE | Toggle camera on/off |
 
@@ -94,6 +94,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 | Shortcut | Category | Action |
 |---|---|---|
+| **NVDA+Windows+O** | Add-on | Click more options button |
 | **Shift+Enter** | LINE | New line |
 | **Ctrl+F** | LINE | Search |
 | **Ctrl+N** | LINE | Open notes |

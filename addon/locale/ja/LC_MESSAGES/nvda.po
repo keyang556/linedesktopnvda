@@ -62,6 +62,10 @@ msgstr "メッセージ入力"
 msgid "Search chat rooms"
 msgstr "トークルーム検索"
 
+#. Translators: Label for the search notes content field in LINE
+msgid "Search notes content"
+msgstr "ノート内容を検索"
+
 #. Translators: Tab name announced when pressing Control+1 in LINE
 msgid "Friends"
 msgstr "友だち"

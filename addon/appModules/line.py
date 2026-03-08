@@ -1113,8 +1113,9 @@ def _detectEditFieldLabel(element, handler):
 
 	Checks for:
 	1. Login context (>=2 sibling edit controls) → 'Email' / 'Password'
-	2. Search field (placeholder text or position in left sidebar) → 'Search chat rooms'
-	3. Message input (placeholder text or position in right/bottom area) → 'Message input'
+	2. Notes search field (window title contains notes keywords) → 'Search notes content'
+	3. Search field (placeholder text or position in left sidebar) → 'Search chat rooms'
+	4. Message input (placeholder text or position in right/bottom area) → 'Message input'
 
 	Returns the label string, or '' if the field cannot be identified.
 	"""
@@ -1164,6 +1165,118 @@ def _detectEditFieldLabel(element, handler):
 			# Translators: Generic label for a login field when position cannot be determined
 			return _("Login field")
 
+		# --- Check window title to detect notes context ---
+		windowTitle = ""
+		try:
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
+			if hwnd:
+				buf = ctypes.create_unicode_buffer(512)
+				ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
+				windowTitle = (buf.value or "").lower()
+		except Exception:
+			pass
+
+		# Notes window keywords (check for notes/Keep in window title)
+		NOTES_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
+		isNotesWindow = any(kw in windowTitle for kw in NOTES_KEYWORDS)
+		
+		# Additional check: Use OCR on the top area to detect notes tabs
+		# LINE notes has "相簿" and "已儲存" tabs at the top
+		if not isNotesWindow:
+			try:
+				hwnd = ctypes.windll.user32.GetForegroundWindow()
+				if hwnd:
+					# Get window rect
+					wndRect = ctypes.wintypes.RECT()
+					ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
+					winWidth = wndRect.right - wndRect.left
+					winHeight = wndRect.bottom - wndRect.top
+					
+					log.debug(f"LINE: Attempting OCR notes detection, window size: {winWidth}x{winHeight}")
+					
+					if winWidth > 0 and winHeight > 0:
+						# OCR the top-center area where tabs are located (center 60%, top 12%)
+						ocrWidth = int(winWidth * 0.6)
+						ocrHeight = int(winHeight * 0.12)
+						ocrLeft = wndRect.left + int(winWidth * 0.2)  # Start from 20% from left
+						ocrTop = wndRect.top
+						
+						log.debug(f"LINE: OCR region: left={ocrLeft}, top={ocrTop}, width={ocrWidth}, height={ocrHeight}")
+						
+						# Quick OCR check
+						import screenBitmap
+						from contentRecog import uwpOcr
+						
+						langs = uwpOcr.getLanguages()
+						if langs:
+							ocrLang = None
+							for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
+								if candidate in langs:
+									ocrLang = candidate
+									break
+							if not ocrLang:
+								for lang in langs:
+									if lang.startswith("zh"):
+										ocrLang = lang
+										break
+							if not ocrLang:
+								ocrLang = langs[0]
+							
+							log.debug(f"LINE: Using OCR language: {ocrLang}")
+							
+							sb = screenBitmap.ScreenBitmap(ocrWidth, ocrHeight)
+							pixels = sb.captureImage(ocrLeft, ocrTop, ocrWidth, ocrHeight)
+							
+							recognizer = uwpOcr.UwpOcr(language=ocrLang)
+							
+							# Synchronous OCR for quick detection
+							import threading
+							resultHolder = [None]
+							event = threading.Event()
+							
+							class _ImgInfo:
+								def __init__(self, w, h):
+									self.recogWidth = w
+									self.recogHeight = h
+									self.resizeFactor = 1
+								def convertXToScreen(self, x):
+									return ocrLeft + x
+								def convertYToScreen(self, y):
+									return ocrTop + y
+								def convertWidthToScreen(self, w):
+									return w
+								def convertHeightToScreen(self, h):
+									return h
+							
+							imgInfo = _ImgInfo(ocrWidth, ocrHeight)
+							
+							def _onOcr(result):
+								resultHolder[0] = result
+								event.set()
+							
+							recognizer.recognize(pixels, imgInfo, _onOcr)
+							event.wait(timeout=2.0)  # Increased timeout to 2 seconds
+							
+							result = resultHolder[0]
+							if result and not isinstance(result, Exception):
+								ocrText = getattr(result, 'text', '') or ''
+								ocrText = ocrText.strip()
+								
+								log.debug(f"LINE: OCR result text: {ocrText!r}")
+								
+								# Check for notes-specific keywords
+								if any(kw in ocrText for kw in ["相簿", "已儲存", "album", "saved", "アルバム", "保存済み"]):
+									isNotesWindow = True
+									log.info(f"LINE: Detected notes window via OCR: {ocrText!r}")
+								else:
+									log.debug(f"LINE: No notes keywords found in OCR text")
+							else:
+								log.debug(f"LINE: OCR returned no result or error: {result}")
+						else:
+							log.debug("LINE: No OCR languages available")
+			except Exception:
+				log.debug("LINE: notes window OCR detection failed", exc_info=True)
+
 		# --- Single edit field: detect search vs message input ---
 		# Strategy 1: Try reading UIA Name or Value for placeholder/content clues
 		placeholder = ""
@@ -1195,6 +1308,11 @@ def _detectEditFieldLabel(element, handler):
 		MESSAGE_KEYWORDS = ("輸入訊息", "message", "メッセージ", "ข้อความ", "입력")
 		if placeholder:
 			if any(kw in placeholder for kw in SEARCH_KEYWORDS):
+				# If in notes window, return notes search label
+				if isNotesWindow:
+					# Translators: Label for the search notes content field in LINE
+					return _("Search notes content")
+				# Otherwise, return chat rooms search label
 				# Translators: Label for the search chat rooms field in LINE
 				return _("Search chat rooms")
 			if any(kw in placeholder for kw in MESSAGE_KEYWORDS):
@@ -1224,12 +1342,18 @@ def _detectEditFieldLabel(element, handler):
 
 				log.debug(
 					f"LINE edit field position: relX={relativeX:.2f}, "
-					f"relY={relativeY:.2f}, relBottom={relativeBottom:.2f}"
+					f"relY={relativeY:.2f}, relBottom={relativeBottom:.2f}, "
+					f"windowTitle={windowTitle!r}, isNotesWindow={isNotesWindow}"
 				)
 
 				# Search field: in the left sidebar (< 50% of window width)
 				# and near the top of the window
 				if relativeX < 0.5 and relativeY < 0.3:
+					# If in notes window, return notes search label
+					if isNotesWindow:
+						# Translators: Label for the search notes content field in LINE
+						return _("Search notes content")
+					# Otherwise, return chat rooms search label
 					# Translators: Label for the search chat rooms field in LINE
 					return _("Search chat rooms")
 
@@ -1245,6 +1369,8 @@ def _detectEditFieldLabel(element, handler):
 	except Exception:
 		log.debug("_detectEditFieldLabel failed", exc_info=True)
 		return ""
+
+
 
 
 def _queryAndSpeakUIAFocus():
