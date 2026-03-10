@@ -4482,6 +4482,7 @@ class AppModule(appModuleHandler.AppModule):
 			ui.message(f"更多選項功能錯誤: {e}")
 
 
+
 	# ── Read chat room name ────────────────────────────────────────────
 
 	def _readChatRoomName(self):
@@ -6026,6 +6027,116 @@ class AppModule(appModuleHandler.AppModule):
 
 		t = threading.Thread(target=_checkCameraStatus, daemon=True)
 		t.start()
+
+	# ── Navigate to chat room tabs ─────────────────────────────────────
+
+	def _navigateToChatTab(self, tabName):
+		"""Navigate to a specific chat room tab by clicking on it.
+
+		Args:
+			tabName: The name of the tab to navigate to
+			        (全部, 好友, 群組, 社群, 官方帳號)
+
+		Returns:
+			True if successful, False otherwise
+
+		The tab bar in LINE Desktop (Qt6) is at the top of the chat list
+		panel.  When a tab is already selected, LINE renders it with a
+		highlight / underline style that OCR often cannot read.  Therefore
+		we do NOT gate on OCR — we always click at the known position.
+		"""
+		import ctypes
+		import ctypes.wintypes
+		import api
+
+		# Known tab positions in client coordinates at 96 DPI.
+		# These are measured from the top-left of the window's
+		# client area.  The sidebar (icons column) is to the left,
+		# X values account for the sidebar width.
+		# Y=35 is the vertical centre of the tab bar text.
+		_TAB_POSITIONS = {
+			"全部":     (100, 35),
+			"好友":     (140, 35),
+			"群組":     (180, 35),
+			"社群":     (225, 35),
+			"官方帳號": (285, 35),
+		}
+
+		if tabName not in _TAB_POSITIONS:
+			log.warning(f"LINE: Unknown tab name: {tabName}")
+			return False
+
+		try:
+			# ── Find the main LINE window ──
+			obj = api.getFocusObject()
+			if (
+				obj
+				and obj.appModule
+				and obj.appModule.appName.lower()
+				in ('line', 'line_app', 'linecall')
+			):
+				hwnd = obj.windowHandle
+				# Walk up to the top-level window
+				while hwnd:
+					parent = ctypes.windll.user32.GetParent(hwnd)
+					if not parent:
+						break
+					hwnd = parent
+			else:
+				# Fallback: find by window class
+				hwnd = ctypes.windll.user32.FindWindowW(
+					"Qt663QWindowIcon", None
+				)
+				if not hwnd:
+					hwnd = ctypes.windll.user32.FindWindowW(
+						"Qt66QWindowIcon", None
+					)
+				if not hwnd:
+					hwnd = ctypes.windll.user32.FindWindowW(
+						"Qt65QWindowIcon", None
+					)
+				if not hwnd:
+					hwnd = ctypes.windll.user32.FindWindowW(
+						"Qt5QWindowIcon", None
+					)
+
+			if not hwnd:
+				log.warning(
+					"LINE: Cannot find main window for tab navigation"
+				)
+				return False
+
+			# ── Calculate click position ──
+			baseX, baseY = _TAB_POSITIONS[tabName]
+
+			# Apply DPI scaling
+			dpiScale = _getDpiScale(hwnd)
+			clientX = int(baseX * dpiScale)
+			clientY = int(baseY * dpiScale)
+
+			# Convert client coordinates to screen coordinates
+			point = ctypes.wintypes.POINT(clientX, clientY)
+			ctypes.windll.user32.ClientToScreen(
+				hwnd, ctypes.byref(point)
+			)
+			screenX = point.x
+			screenY = point.y
+
+			# ── Click the tab ──
+			self._clickAtPosition(screenX, screenY, hwnd)
+			log.info(
+				f"LINE: Clicked tab '{tabName}' at "
+				f"screen position ({screenX}, {screenY})"
+			)
+
+			return True
+
+		except Exception as e:
+			log.warning(
+				f"LINE: Error navigating to tab {tabName}: {e}",
+				exc_info=True,
+			)
+			return False
 
 	__gestures = {
 		"kb:tab": "navigateAndTrack",

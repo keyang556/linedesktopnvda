@@ -25,7 +25,7 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports voice and video calls, incoming call handling, microphone and camera status announcements, and OCR-assisted text reading."""),
 	# version
-	addon_version="1.1.2",
+	addon_version="1.1.3",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""Improved video call handling and incoming call detection.

@@ -80,3 +80,23 @@ msgstr "Chats"
 #. Translators: Tab name announced when pressing Control+3 in LINE
 msgid "Add friends"
 msgstr "Add friends"
+
+#. Translators: Menu item for navigating to All chats tab
+msgid "全部聊天室(&1)"
+msgstr "All Chats(&1)"
+
+#. Translators: Menu item for navigating to Friends tab
+msgid "好友(&2)"
+msgstr "Friends(&2)"
+
+#. Translators: Menu item for navigating to Groups tab
+msgid "群組(&3)"
+msgstr "Groups(&3)"
+
+#. Translators: Menu item for navigating to Communities tab
+msgid "社群(&4)"
+msgstr "Communities(&4)"
+
+#. Translators: Menu item for navigating to Official accounts tab
+msgid "官方帳號(&5)"
+msgstr "Official Accounts(&5)"

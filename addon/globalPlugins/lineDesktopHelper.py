@@ -64,6 +64,35 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		try:
 			self._lineSubMenu = wx.Menu()
 
+			# ── Chat room tab navigation ──
+			self._allChatsItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for navigating to All chats tab
+				_("全部聊天室(&1)") + "\tNVDA+Windows+1",
+			)
+			self._friendsItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for navigating to Friends tab
+				_("好友(&2)") + "\tNVDA+Windows+2",
+			)
+			self._groupsItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for navigating to Groups tab
+				_("群組(&3)") + "\tNVDA+Windows+3",
+			)
+			self._communitiesItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for navigating to Communities tab
+				_("社群(&4)") + "\tNVDA+Windows+4",
+			)
+			self._officialItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for navigating to Official accounts tab
+				_("官方帳號(&5)") + "\tNVDA+Windows+5",
+			)
+
+			self._lineSubMenu.AppendSeparator()
+
 			# ── Chat functions ──
 			self._voiceCallItem = self._lineSubMenu.Append(
 				wx.ID_ANY,
@@ -111,6 +140,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			)
 
 			# Bind events
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onAllChats, self._allChatsItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onFriends, self._friendsItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onGroups, self._groupsItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onCommunities, self._communitiesItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onOfficial, self._officialItem
+			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onVoiceCall, self._voiceCallItem
 			)
@@ -166,6 +210,39 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self._toolsMenu = None
 
 	# ── Menu event handlers ──────────────────────────────────────────
+
+	def _onAllChats(self, evt):
+		wx.CallAfter(self._doNavigateTab, "全部")
+
+	def _onFriends(self, evt):
+		wx.CallAfter(self._doNavigateTab, "好友")
+
+	def _onGroups(self, evt):
+		wx.CallAfter(self._doNavigateTab, "群組")
+
+	def _onCommunities(self, evt):
+		wx.CallAfter(self._doNavigateTab, "社群")
+
+	def _onOfficial(self, evt):
+		wx.CallAfter(self._doNavigateTab, "官方帳號")
+
+	def _doNavigateTab(self, tabName):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab(tabName):
+					ui.message(tabName)
+				else:
+					ui.message(f"無法切換到{tabName}")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")
 
 	def _onVoiceCall(self, evt):
 		# Defer execution so the NVDA menu closes first and LINE regains focus
@@ -474,3 +551,120 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
 			ui.message(f"更多選項功能錯誤: {e}")
+
+	# ── Chat room tab navigation shortcuts ─────────────────────────
+
+	@script(
+		description="LINE: 跳到全部聊天室",
+		gesture="kb:NVDA+windows+1",
+		category="LINE Desktop",
+	)
+	def script_navigateAllChats(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab("全部"):
+					ui.message("全部")
+				else:
+					ui.message("無法切換到全部")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")
+
+	@script(
+		description="LINE: 跳到好友",
+		gesture="kb:NVDA+windows+2",
+		category="LINE Desktop",
+	)
+	def script_navigateFriends(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab("好友"):
+					ui.message("好友")
+				else:
+					ui.message("無法切換到好友")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")
+
+	@script(
+		description="LINE: 跳到群組",
+		gesture="kb:NVDA+windows+3",
+		category="LINE Desktop",
+	)
+	def script_navigateGroups(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab("群組"):
+					ui.message("群組")
+				else:
+					ui.message("無法切換到群組")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")
+
+	@script(
+		description="LINE: 跳到社群",
+		gesture="kb:NVDA+windows+4",
+		category="LINE Desktop",
+	)
+	def script_navigateCommunities(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab("社群"):
+					ui.message("社群")
+				else:
+					ui.message("無法切換到社群")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")
+
+	@script(
+		description="LINE: 跳到官方帳號",
+		gesture="kb:NVDA+windows+5",
+		category="LINE Desktop",
+	)
+	def script_navigateOfficial(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message("LINE 未執行")
+			return
+		try:
+			if hasattr(lineApp, '_navigateToChatTab'):
+				if lineApp._navigateToChatTab("官方帳號"):
+					ui.message("官方帳號")
+				else:
+					ui.message("無法切換到官方帳號")
+			else:
+				ui.message("此功能需要更新 LINE 模組")
+		except Exception as e:
+			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
+			ui.message(f"切換分頁錯誤: {e}")

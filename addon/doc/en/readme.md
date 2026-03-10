@@ -83,6 +83,16 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 | **Ctrl+Shift+K** | LINE | Open Keep Memo |
 | **F1** | LINE | Show shortcut key tips (Note: screen readers cannot read this content; please refer to this document instead) |
 
+### Chat Room Tab Navigation
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **NVDA+Windows+1** | Add-on | Navigate to All Chats tab |
+| **NVDA+Windows+2** | Add-on | Navigate to Friends tab |
+| **NVDA+Windows+3** | Add-on | Navigate to Groups tab |
+| **NVDA+Windows+4** | Add-on | Navigate to Communities tab |
+| **NVDA+Windows+5** | Add-on | Navigate to Official Accounts tab |
+
 ### Friends & Chat List
 
 | Shortcut | Category | Action |
