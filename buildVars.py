@@ -25,7 +25,7 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports voice and video calls, incoming call handling, microphone and camera status announcements, and OCR-assisted text reading."""),
 	# version
-	addon_version="1.1.4",
+	addon_version="1.1.5",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""Improved video call handling and incoming call detection.
@@ -41,7 +41,7 @@ Improved message copy-read reliability."""),
 	# Documentation file name
 	addon_docFileName="readme.html",
 	# Minimum NVDA version supported (e.g. "2019.3.0", minor version is optional)
-	addon_minimumNVDAVersion="2019.3",
+	addon_minimumNVDAVersion="2020.1",
 	# Last NVDA version supported/tested (e.g. "2024.4.0", ideally more recent than minimum version)
 	addon_lastTestedNVDAVersion="2026.1",
 	# Add-on update channel (default is None, denoting stable releases,
