@@ -23,6 +23,7 @@ import ctypes.wintypes
 import comtypes
 import re
 import time
+from ._virtualWindow import VirtualWindow
 import addonHandler
 
 addonHandler.initTranslation()
@@ -2514,6 +2515,7 @@ class AppModule(appModuleHandler.AppModule):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
+		VirtualWindow.initialize()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}"
@@ -2728,6 +2730,7 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception:
 			pass
 
+		VirtualWindow.onFocusChanged(obj)
 		nextHandler()
 
 	def event_UIA_elementSelected(self, obj, nextHandler):
