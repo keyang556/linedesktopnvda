@@ -39,21 +39,30 @@ class VirtualWindow:
 		
 		cls.windowClasses = tuple(VirtualWindow.__subclasses__())
 		
-		decide_executeGesture.register(cls.processKey)
+		decide_executeGesture.register(cls.handleGesture)
+	
+	@classmethod
+	def handleGesture(cls, gesture: InputGesture):
+		'''
+		This method is called by inputCore.decide_executeGesture. 
+		This method must return True, Because it is only responsible for processing gestures when a virtual window is active, and it should not block any other gesture processing.
+		'''
+		import core
+		core.callLater(1, cls.processKey, gesture)
+		return True
 	
 	@classmethod
 	def processKey(cls, gesture: InputGesture):
 		'''
 		Processes a keyboard gesture for the current virtual window.
-		This method is called by inputCore.decide_executeGesture. 
-		This method must return True, Because it is only responsible for processing gestures when a virtual window is active, and it should not block any other gesture processing.
+		
 		'''
 		if not cls.currentWindow:
-			return True
+			return
 		
 		foreground = api.getForegroundObject()
 		if foreground.appModule.appName != 'line':
-			return True
+			return
 		
 		# Process the gesture for the current virtual window.
 		previousKeys = {'kb:uparrow', 'kb:shift+tab'}
@@ -67,7 +76,7 @@ class VirtualWindow:
 		elif clickKeys.intersection(ids):
 			cls.currentWindow.click()
 		
-		return True
+		return
 	
 	@classmethod
 	def onFocusChanged(cls, obj):
