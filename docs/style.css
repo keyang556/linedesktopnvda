@@ -1,0 +1,200 @@
+:root {
+    --bg-color: #ffffff;
+    --text-color: #1a1a1a;
+    --primary-color: #00b900;
+    --primary-dark: #008f00;
+    --focus-color: #0056b3;
+    --card-bg: #f8f9fa;
+    --border-color: #e0e0e0;
+    --contact-color: #0056b3;
+    --contact-dark: #004494;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-color: #121212;
+        --text-color: #f1f1f1;
+        --primary-color: #00d600;
+        --primary-dark: #00b900;
+        --card-bg: #1e1e1e;
+        --border-color: #333333;
+        --contact-color: #339af0;
+        --contact-dark: #1c7ed6;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    font-size: 1rem;
+}
+
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--focus-color);
+    color: white;
+    padding: 8px 16px;
+    z-index: 100;
+    font-weight: bold;
+    text-decoration: none;
+    transition: top 0.2s ease-in-out;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+header {
+    background-color: var(--primary-color);
+    color: #ffffff;
+    padding: 1.5rem 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+h2 {
+    color: var(--primary-dark);
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 0.5rem;
+    margin-top: 0;
+}
+
+select {
+    padding: 0.5rem;
+    font-size: 1rem;
+    border-radius: 4px;
+    border: 1px solid #ffffff;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+main {
+    padding: 2rem 0;
+}
+
+main:focus {
+    outline: none;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.feature-list {
+    padding-left: 1.5rem;
+}
+
+.feature-list li {
+    margin-bottom: 0.75rem;
+}
+
+.button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.button {
+    display: inline-block;
+    background-color: var(--primary-color);
+    color: #ffffff !important;
+    text-decoration: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    font-weight: bold;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.button:hover {
+    background-color: var(--primary-dark);
+}
+
+.button-secondary {
+    background-color: #555555;
+}
+.button-secondary:hover {
+    background-color: #333333;
+}
+
+.button-outline {
+    background-color: transparent;
+    border: 2px solid var(--text-color);
+    color: var(--text-color) !important;
+}
+.button-outline:hover {
+    background-color: var(--text-color);
+    color: var(--bg-color) !important;
+}
+
+.button-line {
+    background-color: #06c755;
+    color: #ffffff !important;
+}
+.button-line:hover {
+    background-color: #05a044;
+}
+
+.button-contact {
+    background-color: var(--contact-color);
+    color: #ffffff !important;
+}
+.button-contact:hover {
+    background-color: var(--contact-dark);
+}
+
+*:focus-visible {
+    outline: 3px solid var(--focus-color);
+    outline-offset: 3px;
+}
+
+footer {
+    text-align: center;
+    padding: 2rem 0;
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border-color);
+    margin-top: 2rem;
+}

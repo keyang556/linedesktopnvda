@@ -5816,6 +5816,117 @@ class AppModule(appModuleHandler.AppModule):
 
 		self._contextMenuAction(0, "另存新檔", afterCallback=_afterSaveAs)
 
+	def _isVoiceDurationLine(self, text):
+		"""Return True when OCR text looks like a voice duration label."""
+		if not text:
+			return False
+		normalized = str(text).strip().replace("：", ":")
+		normalized = re.sub(r"\s+", "", normalized)
+		return bool(re.fullmatch(r"\d{1,2}:\d{2}", normalized))
+
+	def _looksLikeVoiceMessageOcr(self, text):
+		"""Heuristic for LINE voice messages based on OCR text."""
+		if not text:
+			return False
+
+		normalized = _removeCJKSpaces(text.strip())
+		normalizedLower = normalized.lower()
+		lines = [
+			line.strip(" \t,|")
+			for line in normalized.split("\n")
+			if line and line.strip(" \t,|")
+		]
+		if not lines:
+			return False
+
+		hasDurationLine = any(
+			self._isVoiceDurationLine(line)
+			for line in lines[:4]
+		)
+		hasActionHint = any(
+			keyword in normalized
+			for keyword in (
+				"另存新檔",
+				"分享",
+				"Keep",
+				"儲存",
+			)
+		)
+		hasFileHint = any(
+			keyword in normalized
+			for keyword in ("下載期限",)
+		) or any(
+			unit in normalizedLower
+			for unit in ("kb", "mb", "gb")
+		)
+
+		return hasDurationLine and hasActionHint and not hasFileHint
+
+	def _playVoiceMessageViaOcr(self, rawEl, hwnd):
+		"""Use message OCR + screenshot-derived ratios to click Play."""
+		try:
+			rect = rawEl.CurrentBoundingRectangle
+			left = int(rect.left)
+			top = int(rect.top)
+			right = int(rect.right)
+			bottom = int(rect.bottom)
+			width = right - left
+			height = bottom - top
+			if width <= 0 or height <= 0:
+				return False
+
+			ocrText = self._ocrWindowArea(
+				hwnd,
+				region=(left, top, width, height),
+				sync=True,
+				timeout=3.0,
+			)
+			ocrText = _removeCJKSpaces(ocrText.strip()) if ocrText else ""
+			log.info(f"LINE: play voice message OCR: {ocrText!r}")
+			if not self._looksLikeVoiceMessageOcr(ocrText):
+				return False
+
+			lines = [
+				line.strip(" \t,|")
+				for line in ocrText.split("\n")
+				if line and line.strip(" \t,|")
+			]
+			durationIdx = -1
+			for idx, line in enumerate(lines[:4]):
+				if self._isVoiceDurationLine(line):
+					durationIdx = idx
+					break
+
+			# Screenshot-based layout:
+			# the play icon sits in the upper-middle portion of the message row,
+			# roughly one quarter in from the side where the voice bubble lives.
+			candidates = []
+			if durationIdx > 0:
+				candidates.append((0.26, 0.42, "ocr-left"))
+			else:
+				candidates.append((0.26, 0.42, "ocr-left-ambiguous"))
+				candidates.append((0.74, 0.42, "ocr-right-ambiguous"))
+
+			for xRatio, yRatio, label in candidates:
+				clickX = left + int(width * xRatio)
+				clickY = top + int(height * yRatio)
+				clickX = max(left + 8, min(clickX, right - 8))
+				clickY = max(top + 8, min(clickY, bottom - 8))
+				log.info(
+					f"LINE: play voice message clicking {label} at "
+					f"({clickX}, {clickY})"
+				)
+				self._clickAtPosition(clickX, clickY, hwnd)
+				if len(candidates) > 1:
+					time.sleep(0.12)
+			return True
+		except Exception as e:
+			log.debug(
+				f"LINE: play voice message OCR fallback failed: {e}",
+				exc_info=True,
+			)
+			return False
+
 	@script(
 		gesture="kb:NVDA+windows+p",
 		description=_("Play the current voice message"),
@@ -5826,6 +5937,7 @@ class AppModule(appModuleHandler.AppModule):
 		if _suppressAddon:
 			return
 		try:
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
 			handler = UIAHandler.handler
 			if handler:
 				rawEl = handler.clientObject.GetFocusedElement()
@@ -5858,28 +5970,20 @@ class AppModule(appModuleHandler.AppModule):
 							cx = int((rect.left + rect.right) / 2)
 							cy = int((rect.top + rect.bottom) / 2)
 							if cx > 0 and cy > 0:
-								self._clickAtPosition(cx, cy)
+								self._clickAtPosition(cx, cy, hwnd)
 								ui.message("播放")
 								return
 						except Exception:
 							pass
+					if self._playVoiceMessageViaOcr(rawEl, hwnd):
+						ui.message("播放")
+						return
 		except Exception as e:
 			log.debug(
 				f"LINE: play voice message UIA search failed: {e}",
 				exc_info=True,
 			)
-
-		# Fallback: send Space to toggle play/pause
-		try:
-			from keyboardHandler import KeyboardInputGesture
-			KeyboardInputGesture.fromName("space").send()
-			ui.message("播放")
-		except Exception as e:
-			log.warning(
-				f"LINE: play voice message fallback failed: {e}",
-				exc_info=True,
-			)
-			ui.message("無法播放")
+		ui.message("找不到語音訊息的播放按鈕")
 
 	@script(
 		gesture="kb:NVDA+windows+delete",
