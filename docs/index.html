@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-TW" id="html-root">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LINE Desktop NVDA Add-on</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link" id="skip-link">跳至主要內容</a>
+
+    <header role="banner">
+        <div class="container header-container">
+            <h1 id="site-title">LINE NVDA 桌面版附加元件</h1>
+            <nav aria-label="語言選擇 / Language Selection">
+                <label for="lang-select" class="visually-hidden" id="lang-label">選擇語言</label>
+                <select id="lang-select" aria-labelledby="lang-label">
+                    <option value="zh-TW" selected>繁體中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="th">ภาษาไทย</option>
+                </select>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" role="main" class="container" tabindex="-1">
+        
+        <section aria-labelledby="motivation-heading" class="card">
+            <h2 id="motivation-heading">開發動機</h2>
+            <p id="motivation-text">2025年8月12日，LINE 宣布將於同年9月22日結束 Chrome 擴充功能版本。這對視障使用者來說是巨大的衝擊，因為 Chrome 版是目前視障使用者唯一可以透過電腦操作、且相對友善（儘管仍不完美）的版本。後續雖因引發爭議而暫停下架，但該版本仍隨時面臨終止的風險。為了確保數位平權與通訊暢通，我們開發了此附加元件，致力於全面提升 LINE 官方桌面版軟體的無障礙操作體驗。</p>
+        </section>
+
+        <section aria-labelledby="features-heading" class="card">
+            <h2 id="features-heading">核心功能</h2>
+            <ul class="feature-list">
+                <li id="feature-1">修復訊息列表的鍵盤焦點與流暢的報讀順序。</li>
+                <li id="feature-2">優化聯絡人清單與聊天室之間的快速切換（Tab 鍵導航）。</li>
+                <li id="feature-3">支援未讀訊息數量與來電提示的即時語音報讀（aria-live）。</li>
+                <li id="feature-4">修正部分無法透過鍵盤觸發的按鈕元件。</li>
+            </ul>
+        </section>
+
+        <section aria-labelledby="req-heading" class="card">
+            <h2 id="req-heading">系統需求</h2>
+            <ul class="feature-list">
+                <li id="req-1">螢幕閱讀器：NVDA 2019.3 或以上版本（建議使用 2024.1 或更新版本）。</li>
+                <li id="req-2">通訊軟體：LINE 電腦版 for Windows（從 Microsoft Store 安裝的最新版本）。</li>
+                <li id="req-3">作業系統：Windows 10 / Windows 11。</li>
+            </ul>
+        </section>
+
+        <section aria-labelledby="download-heading" class="card">
+            <h2 id="download-heading">下載與安裝</h2>
+            <p id="download-text">請前往專案的 GitHub Releases 頁面下載最新版本的 `.nvda-addon` 檔案。下載後，在執行 NVDA 的狀態下，直接開啟該檔案即可完成安裝。</p>
+            <a href="https://github.com/hong-cell/linedesktopnvda/releases" class="button" id="download-btn" target="_blank" rel="noopener noreferrer">前往 GitHub 下載</a>
+        </section>
+
+        <section aria-labelledby="contribute-heading" class="card">
+            <h2 id="contribute-heading">參與專案與問題回報</h2>
+            <p id="contribute-text">這是一個社群驅動的開源專案。如果您在使用過程中遇到任何無障礙問題（如未報讀的按鈕或焦點遺失），或是希望貢獻程式碼，歡迎前往我們的 GitHub 儲存庫提交 Issue 或 Pull Request。此外，您也可以加入我們的 LINE 使用者交流群組，或直接與開發團隊聯絡。</p>
+            
+            <div class="button-group">
+                <a href="https://github.com/hong-cell/linedesktopnvda/issues" class="button button-secondary" id="issue-btn" target="_blank" rel="noopener noreferrer">回報問題 (Issues)</a>
+                <a href="https://github.com/hong-cell/linedesktopnvda" class="button button-outline" id="repo-btn" target="_blank" rel="noopener noreferrer">查看原始碼</a>
+                <a href="https://line.me/R/ti/g/BKQ2dZtTjx" class="button button-line" id="line-group-btn" target="_blank" rel="noopener noreferrer">加入 LINE 交流群組</a>
+                <a href="https://line.me/ti/p/3GigC88lAt" class="button button-contact" id="contact-btn" target="_blank" rel="noopener noreferrer">聯絡開發者 張可揚</a>
+            </div>
+        </section>
+
+    </main>
+
+    <footer role="contentinfo">
+        <div class="container">
+            <p id="footer-text">本開源專案託管於 GitHub (hong-cell/linedesktopnvda)。此為社群開發之附加元件，與 LINE 官方無直接關聯。</p>
+        </div>
+    </footer>
+
+    <script src="main.js"></script>
+</body>
+</html>
