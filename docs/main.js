@@ -23,7 +23,7 @@ const translations = {
         "repo-btn": "查看原始碼",
         "line-group-btn": "加入 LINE 交流群組",
         "contact-btn": "聯絡開發者 張可揚",
-        "footer-text": "本開源專案託管於 GitHub (hong-cell/linedesktopnvda)。此為社群開發之附加元件，與 LINE 官方無直接關聯。"
+        "footer-text": "本開源專案託管於 GitHub (keyang556/linedesktopnvda)。此為社群開發之附加元件，與 LINE 官方無直接關聯。"
     },
     "en": {
         "skip-link": "Skip to main content",
@@ -49,7 +49,7 @@ const translations = {
         "repo-btn": "View Source Code",
         "line-group-btn": "Join LINE Group",
         "contact-btn": "Contact Developer Ken",
-        "footer-text": "This open-source project is hosted on GitHub (hong-cell/linedesktopnvda). It is a community-driven add-on and is not directly affiliated with LINE."
+        "footer-text": "This open-source project is hosted on GitHub (keyang556/linedesktopnvda). It is a community-driven add-on and is not directly affiliated with LINE."
     },
     "ja": {
         "skip-link": "メインコンテンツへスキップ",
@@ -75,7 +75,7 @@ const translations = {
         "repo-btn": "ソースコードを表示",
         "line-group-btn": "LINE グループに参加",
         "contact-btn": "開発者 Ken に連絡",
-        "footer-text": "このオープンソースプロジェクトはGitHub (hong-cell/linedesktopnvda) でホストされています。コミュニティ主導のアドオンであり、LINE公式とは直接関係ありません。"
+        "footer-text": "このオープンソースプロジェクトはGitHub (keyang556/linedesktopnvda) でホストされています。コミュニティ主導のアドオンであり、LINE公式とは直接関係ありません。"
     },
     "th": {
         "skip-link": "ข้ามไปยังเนื้อหาหลัก",
@@ -101,7 +101,7 @@ const translations = {
         "repo-btn": "ดูซอร์สโค้ด",
         "line-group-btn": "เข้าร่วมกลุ่ม LINE",
         "contact-btn": "ติดต่อผู้พัฒนา Ken",
-        "footer-text": "โปรเจ็กต์โอเพนซอร์ซนี้โฮสต์บน GitHub (hong-cell/linedesktopnvda) เป็นส่วนเสริมที่ขับเคลื่อนโดยชุมชนและไม่มีความเกี่ยวข้องโดยตรงกับ LINE"
+        "footer-text": "โปรเจ็กต์โอเพนซอร์ซนี้โฮสต์บน GitHub (keyang556/linedesktopnvda) เป็นส่วนเสริมที่ขับเคลื่อนโดยชุมชนและไม่มีความเกี่ยวข้องโดยตรงกับ LINE"
     }
 };
 

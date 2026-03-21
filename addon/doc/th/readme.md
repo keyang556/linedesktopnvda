@@ -163,7 +163,7 @@
 
 * **กลุ่มผู้ใช้ LINE (LINE User Group)**: [เข้าร่วมกลุ่ม](https://line.me/R/ti/g/BKQ2dZtTjx)
   ยินดีต้อนรับสู่เข้าร่วมกลุ่มเพื่อเสนอแนะฟีเจอร์ใหม่ แจ้งปัญหาการใช้งาน หรือร่วมพูดคุยกับทีมพัฒนา
-* **รหัสต้นฉบับ (Source Code) และการติดตามปัญหา**: [GitHub Repository](https://github.com/hong-cell/linedesktopnvda)
+* **รหัสต้นฉบับ (Source Code) และการติดตามปัญหา**: [GitHub Repository](https://github.com/keyang556/linedesktopnvda)
   หากมีข้อเสนอแนะหรือพบข้อบกพร่อง สามารถเปิด Issue ได้ และหากต้องการร่วมพัฒนา สามารถส่ง Pull Request ได้เสมอ
 * **ติดต่อนักพัฒนา**: [ติดต่อผ่าน LINE](https://line.me/ti/p/3GigC88lAt)
 
