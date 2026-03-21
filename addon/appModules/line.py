@@ -3400,8 +3400,7 @@ class AppModule(appModuleHandler.AppModule):
 		
 		# Click the button
 		self._clickAtPosition(moreOptionsX, iconY, hwnd)
-		ui.message("更多選項")
-		
+
 		return True
 	
 	def _makeCallByType(self, callType):
@@ -4637,9 +4636,51 @@ class AppModule(appModuleHandler.AppModule):
 		try:
 			if not self._clickMoreOptionsButton():
 				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				return
+			import core
+			core.callLater(500, self._activateMoreOptionsMenu)
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
 			ui.message(f"更多選項功能錯誤: {e}")
+
+	def _activateMoreOptionsMenu(self, retriesLeft=3):
+		"""Find the more options popup and activate the virtual window for browsing."""
+		import ctypes
+		import ctypes.wintypes as wintypes
+
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			return
+
+		pid = wintypes.DWORD()
+		tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+
+		popupCandidates = []
+		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+		def _enumCb(enumHwnd, lParam):
+			if enumHwnd != hwnd and ctypes.windll.user32.IsWindowVisible(enumHwnd):
+				wRect = wintypes.RECT()
+				ctypes.windll.user32.GetWindowRect(enumHwnd, ctypes.byref(wRect))
+				w = wRect.right - wRect.left
+				h = wRect.bottom - wRect.top
+				if w >= 50 and h >= 100:
+					popupCandidates.append((enumHwnd, wRect.left, wRect.top, wRect.right, wRect.bottom))
+			return True
+
+		ctypes.windll.user32.EnumThreadWindows(tid, WNDENUMPROC(_enumCb), 0)
+
+		if not popupCandidates:
+			if retriesLeft > 0:
+				import core
+				core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
+			return
+
+		_, left, top, right, bottom = popupCandidates[0]
+		log.info(f"LINE: more options popup found at ({left}, {top}, {right}, {bottom})")
+
+		from ._virtualWindows.chatMoreOptions import ChatMoreOptions
+		VirtualWindow.currentWindow = ChatMoreOptions((left, top, right, bottom))
 
 
 
