@@ -3525,14 +3525,15 @@ class AppModule(appModuleHandler.AppModule):
 		
 		def _handleConfirmDialog():
 			"""OCR the confirmation dialog, announce it, and auto-click 開始.
-			
-			This is used for voice calls only. Voice calls show a simple
-			confirmation dialog centered on the window.
+
+			This is used for voice calls only. Voice calls show a
+			confirmation dialog centered on the window. Group calls have
+			a taller dialog (with member avatars) than personal calls.
 			"""
 			try:
 				cScale = _getDpiScale()
 				dialogW = int(320 * cScale)
-				dialogH = int(120 * cScale)
+				dialogH = int(200 * cScale)
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
 				dialogLeft = winCenterX - dialogW // 2
@@ -3632,12 +3633,15 @@ class AppModule(appModuleHandler.AppModule):
 								f"{ocrText!r}"
 							)
 							
+							isGroup = "群組" in ocrText
 							if ocrText:
 								ui.message(ocrText)
 							else:
 								ui.message("語音通話確認")
-							
-							core.callLater(300, _clickStart)
+
+							core.callLater(
+								300, _clickStart, isGroup
+							)
 						except Exception as e:
 							log.warning(
 								f"LINE: dialog OCR handler "
@@ -3660,22 +3664,33 @@ class AppModule(appModuleHandler.AppModule):
 				)
 				_clickStart()
 		
-		def _clickStart():
-			"""Click the 開始 (Start) button on the voice call confirmation dialog."""
+		def _clickStart(isGroup=False):
+			"""Click the 開始 (Start) button on the voice call confirmation dialog.
+
+			Group call dialogs are taller (member avatars), so the button
+			is further below the window centre than for personal calls.
+			"""
 			try:
 				sScale = _getDpiScale()
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
 				startBtnX = winCenterX - int(43 * sScale)
-				startBtnY = winCenterY + int(17 * sScale)
+				if isGroup:
+					startBtnY = winCenterY + int(50 * sScale)
+				else:
+					startBtnY = winCenterY + int(17 * sScale)
 				
 				log.info(
 					f"LINE: clicking 開始 at "
 					f"({startBtnX}, {startBtnY})"
+					f" group={isGroup}"
 				)
 				appModRef._clickAtPosition(startBtnX, startBtnY, hwnd)
-				
-				ui.message("已開始語音通話")
+
+				if isGroup:
+					ui.message("已開始群組語音通話")
+				else:
+					ui.message("已開始語音通話")
 			except Exception as e:
 				log.warning(
 					f"LINE: click 開始 failed: {e}",
