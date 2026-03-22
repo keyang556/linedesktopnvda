@@ -6411,6 +6411,255 @@ class AppModule(appModuleHandler.AppModule):
 		"""User pressed N to cancel message recall."""
 		self._endRecallConfirmation(False)
 
+	@script(
+		gesture="kb:applications",
+		description=_("Open message context menu"),
+		category="LINE",
+	)
+	def script_messageContextMenu(self, gesture):
+		"""Right-click current message and open a virtual window for browsing the context menu."""
+		if _suppressAddon:
+			gesture.send()
+			return
+
+		try:
+			handler = UIAHandler.handler
+			rawEl = handler.clientObject.GetFocusedElement()
+			if rawEl:
+				ct = rawEl.CurrentControlType
+				if ct == 50004:  # Edit control
+					gesture.send()
+					return
+		except Exception:
+			pass
+
+		try:
+			handler = UIAHandler.handler
+			rawEl = handler.clientObject.GetFocusedElement()
+			if not rawEl:
+				ui.message("找不到目前的訊息")
+				return
+
+			rect = rawEl.CurrentBoundingRectangle
+			cx = int((rect.left + rect.right) / 2)
+			cy = int((rect.top + rect.bottom) / 2)
+			elLeft = int(rect.left)
+			elRight = int(rect.right)
+			elTop = int(rect.top)
+			elBottom = int(rect.bottom)
+
+			if cx <= 0 or cy <= 0:
+				ui.message("找不到目前的訊息")
+				return
+
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
+
+			import ctypes.wintypes as wintypes
+			winRect = wintypes.RECT()
+			ctypes.windll.user32.GetWindowRect(
+				hwnd, ctypes.byref(winRect)
+			)
+			winTop = int(winRect.top)
+			winBottom = int(winRect.bottom)
+		except Exception as e:
+			log.debug(f"LINE: messageContextMenu getElement failed: {e}")
+			ui.message("找不到目前的訊息")
+			return
+
+		clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
+		elWidth = elRight - elLeft
+		clickPositions = [
+			(elLeft + elWidth // 6, clampedCenter, "1/6-left"),
+			(elLeft + 5 * elWidth // 6, clampedCenter, "5/6-right"),
+			(elLeft + elWidth // 4, clampedCenter, "1/4-left"),
+			(elLeft + 3 * elWidth // 4, clampedCenter, "3/4-right"),
+			(cx, clampedCenter, "center"),
+		]
+
+		VK_CONTROL = 0x11
+		VK_SHIFT = 0x10
+		VK_MENU = 0x12
+		GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
+		for _wait in range(40):
+			held = any(GetAsyncKeyState(vk) & 0x8000
+					   for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
+			if not held:
+				break
+			time.sleep(0.05)
+
+		appModRef = self
+
+		def _attemptAtOffset(posIdx=0):
+			if posIdx >= len(clickPositions):
+				ui.message("找不到訊息選單")
+				return
+
+			clickX, clickY, posLabel = clickPositions[posIdx]
+			log.info(
+				f"LINE: right-clicking message at "
+				f"({clickX}, {clickY}) [{posLabel}] for context menu"
+			)
+			appModRef._rightClickAtPosition(clickX, clickY, hwnd)
+
+			def _findPopupAndActivate(retriesLeft=4):
+				try:
+					import ctypes.wintypes as wintypes
+
+					pid = wintypes.DWORD()
+					tid = ctypes.windll.user32.GetWindowThreadProcessId(
+						hwnd, ctypes.byref(pid)
+					)
+					popupCandidates = []
+
+					WNDENUMPROC = ctypes.WINFUNCTYPE(
+						ctypes.c_bool,
+						wintypes.HWND,
+						wintypes.LPARAM,
+					)
+
+					def _enumCallback(enumHwnd, lParam):
+						if (
+							enumHwnd != hwnd
+							and ctypes.windll.user32.IsWindowVisible(enumHwnd)
+						):
+							wRect = wintypes.RECT()
+							ctypes.windll.user32.GetWindowRect(
+								enumHwnd, ctypes.byref(wRect)
+							)
+							w = wRect.right - wRect.left
+							h = wRect.bottom - wRect.top
+							if w >= 50 and h >= 30:
+								popupCandidates.append(enumHwnd)
+						return True
+
+					ctypes.windll.user32.EnumThreadWindows(
+						tid, WNDENUMPROC(_enumCallback), 0
+					)
+
+					popupHwnd = None
+					if popupCandidates:
+						popupHwnd = popupCandidates[0]
+					else:
+						for dy in [0, -40, -80, 40, 80]:
+							pt = wintypes.POINT(clickX, clickY + dy)
+							candidateHwnd = (
+								ctypes.windll.user32.WindowFromPoint(pt)
+							)
+							if candidateHwnd and candidateHwnd != hwnd:
+								popupHwnd = candidateHwnd
+								break
+
+					if not popupHwnd:
+						if retriesLeft > 0:
+							core.callLater(
+								200,
+								lambda: _findPopupAndActivate(retriesLeft - 1),
+							)
+							return
+						core.callLater(
+							300,
+							lambda: _attemptAtOffset(posIdx + 1),
+						)
+						return
+
+					uiaHandler = UIAHandler.handler
+					element = uiaHandler.clientObject.ElementFromHandle(
+						popupHwnd
+					)
+					if not element:
+						if retriesLeft > 0:
+							core.callLater(
+								200,
+								lambda: _findPopupAndActivate(retriesLeft - 1),
+							)
+							return
+						return
+
+					try:
+						ct = element.CurrentControlType
+						eRect = element.CurrentBoundingRectangle
+						eW = int(eRect.right - eRect.left)
+						eH = int(eRect.bottom - eRect.top)
+						if ct == 50033 or eW < 50 or eH < 30:
+							core.callLater(
+								300,
+								lambda: _attemptAtOffset(posIdx + 1),
+							)
+							return
+					except Exception:
+						pass
+
+					# Check menu has enough items (≥3) to be a real context menu
+					walker = uiaHandler.clientObject.RawViewWalker
+					itemCount = 0
+					child = walker.GetFirstChildElement(element)
+					idx = 0
+					while child and idx < 30:
+						try:
+							childRect = child.CurrentBoundingRectangle
+							childH = int(childRect.bottom - childRect.top)
+							childW = int(childRect.right - childRect.left)
+							if 20 <= childH <= 80 and childW >= childH * 2:
+								itemCount += 1
+						except Exception:
+							pass
+						try:
+							child = walker.GetNextSiblingElement(child)
+						except Exception:
+							break
+						idx += 1
+
+					if itemCount < 3:
+						# Wrong menu (e.g. 全選), dismiss and try next
+						log.debug(
+							f"LINE: context menu has only {itemCount} items, "
+							f"dismissing and trying next position"
+						)
+						from keyboardHandler import KeyboardInputGesture
+						KeyboardInputGesture.fromName("escape").send()
+						core.callLater(
+							300,
+							lambda: _attemptAtOffset(posIdx + 1),
+						)
+						return
+
+					eRect = element.CurrentBoundingRectangle
+					popupRect = (
+						int(eRect.left),
+						int(eRect.top),
+						int(eRect.right),
+						int(eRect.bottom),
+					)
+					popupRowRects = _collectPopupMenuRowRects(
+						popupHwnd,
+						popupRect,
+					)
+					log.info(
+						f"LINE: message context menu popup found at "
+						f"{popupRect}"
+					)
+
+					from ._virtualWindows.messageContextMenu import MessageContextMenu
+					VirtualWindow.currentWindow = MessageContextMenu(
+						popupRect,
+						rowRects=popupRowRects,
+					)
+
+				except Exception as e:
+					log.debug(
+						f"LINE: message context menu detection failed: {e}",
+						exc_info=True,
+					)
+					try:
+						from keyboardHandler import KeyboardInputGesture
+						KeyboardInputGesture.fromName("escape").send()
+					except Exception:
+						pass
+
+			core.callLater(300, _findPopupAndActivate)
+
+		_attemptAtOffset(0)
+
 	def script_toggleMicAndAnnounce(self, gesture):
 		"""Pass Ctrl+Shift+A to LINE, then OCR the call window to announce mic status."""
 		# Always pass the gesture through first
