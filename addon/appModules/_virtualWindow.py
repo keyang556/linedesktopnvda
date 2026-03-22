@@ -9,6 +9,13 @@ import winUser
 import pkgutil
 from importlib import import_module
 
+# Key sets used for gesture matching
+_PREVIOUS_KEYS = {'kb:uparrow', 'kb:shift+tab'}
+_NEXT_KEYS = {'kb:downarrow', 'kb:tab'}
+_CLICK_KEYS = {'kb:enter', 'kb:space'}
+_ESCAPE_KEYS = {'kb:escape'}
+_HANDLED_KEYS = _PREVIOUS_KEYS | _NEXT_KEYS | _CLICK_KEYS | _ESCAPE_KEYS
+
 class VirtualWindow:
 	'''
 	VirtualWindow is a base class for creating virtual windows for different screens in the Line App. It allows users to navigate and interact with elements on the screen using keyboard gestures.
@@ -19,12 +26,13 @@ class VirtualWindow:
 	- Previous Element: kb:up or kb:shift+tab
 	- Next Element: kb:down or kb:tab
 	- Click Element: kb:enter or kb:space
+	- Dismiss: kb:escape
 	'''
 	title = None
-	
+
 	windowClasses = tuple()
 	currentWindow = None
-	
+
 	@classmethod
 	def initialize(cls):
 		'''
@@ -36,48 +44,66 @@ class VirtualWindow:
 		pkg = import_module(__package__ + '._virtualWindows')
 		for importer, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
 			import_module(f'{__package__}._virtualWindows.{modname}')
-		
+
 		cls.windowClasses = tuple(VirtualWindow.__subclasses__())
-		
+
 		decide_executeGesture.register(cls.handleGesture)
-	
+
 	@classmethod
 	def handleGesture(cls, gesture: InputGesture):
 		'''
-		This method is called by inputCore.decide_executeGesture. 
-		This method must return True, Because it is only responsible for processing gestures when a virtual window is active, and it should not block any other gesture processing.
+		This method is called by inputCore.decide_executeGesture.
+		When a virtual window is active, navigation and action keys are
+		consumed (return False) so that the AppModule scripts do not
+		also process them. Other keys pass through normally.
 		'''
-		import core
-		core.callLater(1, cls.processKey, gesture)
+		if not cls.currentWindow:
+			return True
+
+		try:
+			foreground = api.getForegroundObject()
+			if foreground.appModule.appName != 'line':
+				return True
+		except Exception:
+			return True
+
+		ids = gesture.normalizedIdentifiers
+		if _HANDLED_KEYS.intersection(ids):
+			import core
+			core.callLater(1, cls.processKey, gesture)
+			return False
+
 		return True
-	
+
 	@classmethod
 	def processKey(cls, gesture: InputGesture):
 		'''
 		Processes a keyboard gesture for the current virtual window.
-		
+
 		'''
 		if not cls.currentWindow:
 			return
-		
-		foreground = api.getForegroundObject()
-		if foreground.appModule.appName != 'line':
+
+		try:
+			foreground = api.getForegroundObject()
+			if foreground.appModule.appName != 'line':
+				return
+		except Exception:
 			return
-		
+
 		# Process the gesture for the current virtual window.
-		previousKeys = {'kb:uparrow', 'kb:shift+tab'}
-		nextKeys = {'kb:downarrow', 'kb:tab'}
-		clickKeys = {'kb:enter', 'kb:space'}
 		ids = gesture.normalizedIdentifiers
-		if previousKeys.intersection(ids):
+		if _PREVIOUS_KEYS.intersection(ids):
 			cls.currentWindow.previous()
-		elif nextKeys.intersection(ids):
+		elif _NEXT_KEYS.intersection(ids):
 			cls.currentWindow.next()
-		elif clickKeys.intersection(ids):
+		elif _CLICK_KEYS.intersection(ids):
 			cls.currentWindow.click()
-		
+		elif _ESCAPE_KEYS.intersection(ids):
+			cls.currentWindow.dismiss()
+
 		return
-	
+
 	@classmethod
 	def onFocusChanged(cls, obj):
 		'''
@@ -86,33 +112,33 @@ class VirtualWindow:
 		window = cls.getWindowClass(obj)
 		if getattr(cls.currentWindow, '__class__', None) is window:
 			return
-		
+
 		cls.currentWindow = window(obj) if window else None
-	
+
 	@classmethod
 	def getWindowClass(cls, obj):
 		for windowClass in cls.windowClasses:
 			if windowClass.isMatchLineScreen(obj):
 				return windowClass
-			
-		
-	
+
+
+
 	@staticmethod
 	def isMatchLineScreen(obj):
 		# This method should be overridden by subclasses to determine if current Line App screen is matches the virtual window.
 		raise NotImplementedError()
-	
+
 	def __init__(self, obj):
 		self.obj = obj
 		self.elements = []
 		self.pos = -1
 		self.makeElements()
 		message(self.title) if self.title else None
-	
+
 	def makeElements(self):
 		'''
 		This method should be overridden by subclasses to populate the elements list based on the current Line App screen.
-		
+
 		elements should be a list of dictionaries with at least 'name' and optionally 'role' and 'clickPoint' keys, for example:
 		[
 			{'name': 'Button 1', 'role': roleObject, 'clickPoint': (x, y)},
@@ -121,49 +147,49 @@ class VirtualWindow:
 		]
 		'''
 		raise NotImplementedError()
-	
+
 	def rectGetCenterPoint(self, rect):
 		return rect.left + (rect.width // 2), rect.top + (rect.height // 2)
-	
+
 	def previous(self):
 		if not self.elements:
 			return
-		
+
 		if self.pos > 0:
 			self.pos -= 1
 		else:
 			self.pos = len(self.elements) - 1
-		
+
 		self.show()
-	
+
 	def next(self):
 		if not self.elements:
 			return
-		
+
 		if self.pos < len(self.elements) - 1:
 			self.pos += 1
 		else:
 			self.pos = 0
-		
+
 		self.show()
-	
+
 	def show(self):
 		element = self.element
 		if not element:
 			return
-		
+
 		role = element.get('role')
 		roleName = role.displayString if role else ''
 		displayText = f'{element["name"]}' + (f' ({roleName})' if roleName else '')
 		message(displayText)
-	
+
 	@property
 	def element(self):
 		if not self.elements:
 			return None
-		
+
 		return self.elements[self.pos]
-	
+
 	def click(self):
 		'''
 		Simulates a click on the current element by executing mouse events at the element's click point.
@@ -171,10 +197,18 @@ class VirtualWindow:
 		element = self.element
 		if not element or not element.get('clickPoint'):
 			return
-		
+
 		originalPos = winUser.getCursorPos()
 		winUser.setCursorPos(*element.get('clickPoint'))
 		mouseHandler.executeMouseEvent(winUser.MOUSEEVENTF_LEFTDOWN, 0, 0)
 		mouseHandler.executeMouseEvent(winUser.MOUSEEVENTF_LEFTUP, 0, 0)
 		winUser.setCursorPos(*originalPos)
-	
+
+	def dismiss(self):
+		'''
+		Dismisses the virtual window and sends Escape to close any popup.
+		Subclasses can override this for custom dismiss behavior.
+		'''
+		VirtualWindow.currentWindow = None
+		from keyboardHandler import KeyboardInputGesture
+		KeyboardInputGesture.fromName("escape").send()

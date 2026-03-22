@@ -4919,6 +4919,81 @@ class AppModule(appModuleHandler.AppModule):
 
 
 
+	# ── Message context menu (right-click / Shift+F10) ────────────────
+
+	def script_messageContextMenu(self, gesture):
+		"""Open context menu on current message and activate virtual window."""
+		if _suppressAddon:
+			gesture.send()
+			return
+		gesture.send()
+		import core
+		core.callLater(500, self._activateMessageContextMenu)
+
+	def _activateMessageContextMenu(self, retriesLeft=3):
+		"""Find the message context menu popup and activate the virtual window."""
+		import ctypes
+		import ctypes.wintypes as wintypes
+
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		if not hwnd:
+			return
+
+		pid = wintypes.DWORD()
+		tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+		popupCandidates = []
+		mainRect = wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(mainRect))
+		mainArea = max(
+			(mainRect.right - mainRect.left) * (mainRect.bottom - mainRect.top), 1
+		)
+
+		def _enumCb(enumHwnd, lParam):
+			if (
+				enumHwnd != hwnd
+				and ctypes.windll.user32.IsWindowVisible(enumHwnd)
+			):
+				wRect = wintypes.RECT()
+				ctypes.windll.user32.GetWindowRect(enumHwnd, ctypes.byref(wRect))
+				w = wRect.right - wRect.left
+				h = wRect.bottom - wRect.top
+				area = w * h
+				if w >= 50 and h >= 30 and area < mainArea * 0.5:
+					popupCandidates.append({
+						"hwnd": enumHwnd,
+						"left": wRect.left,
+						"top": wRect.top,
+						"right": wRect.right,
+						"bottom": wRect.bottom,
+						"width": w,
+						"height": h,
+					})
+			return True
+
+		ctypes.windll.user32.EnumThreadWindows(tid, WNDENUMPROC(_enumCb), 0)
+
+		if not popupCandidates:
+			if retriesLeft > 0:
+				import core
+				core.callLater(300, lambda: self._activateMessageContextMenu(retriesLeft - 1))
+			return
+
+		best = max(popupCandidates, key=lambda c: c["height"])
+		popupRect = (best["left"], best["top"], best["right"], best["bottom"])
+		popupRowRects = _collectPopupMenuRowRects(best["hwnd"], popupRect)
+
+		log.info(
+			f"LINE: message context menu popup found at "
+			f"({best['left']}, {best['top']}, {best['right']}, {best['bottom']})"
+		)
+
+		from ._virtualWindows.messageContextMenu import MessageContextMenu
+		VirtualWindow.currentWindow = MessageContextMenu(
+			popupRect,
+			rowRects=popupRowRects,
+		)
+
 	# ── Read chat room name ────────────────────────────────────────────
 
 	def _readChatRoomName(self):
@@ -7029,4 +7104,6 @@ class AppModule(appModuleHandler.AppModule):
 		"kb:enter": "sendMessageAndPlaySound",
 		"kb:control+shift+a": "toggleMicAndAnnounce",
 		"kb:control+shift+v": "toggleCameraAndAnnounce",
+		"kb:shift+f10": "messageContextMenu",
+		"kb:applications": "messageContextMenu",
 	}

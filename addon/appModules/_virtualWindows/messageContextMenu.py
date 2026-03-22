@@ -30,19 +30,27 @@ _KNOWN_MENU_LABELS = (
 	"儲存至記事本",
 	"設為公告",
 	"另存新檔",
+	"轉傳",
 )
 
 _MENU_LABEL_ALIASES = {
-	"回覆": ("回覆", "回復"),
-	"複製": ("複製", "複裂"),
+	"回覆": ("回覆", "回復", "回覧"),
+	"複製": ("複製", "复制", "複裂"),
 	"分享": ("分享",),
 	"刪除": ("刪除", "删除"),
 	"收回": ("收回",),
-	"翻譯": ("翻譯", "翻译", "翻譯"),
-	"傳送至Keep筆記": ("傳送至Keep筆記", "傳送至Keep筆記", "傅送至Keep筆記"),
-	"儲存至記事本": ("儲存至記事本", "儲存至記事本"),
-	"設為公告": ("設為公告", "設為公告"),
-	"另存新檔": ("另存新檔", "另存新檔"),
+	"翻譯": ("翻譯", "翻译"),
+	"傳送至Keep筆記": (
+		"傳送至Keep筆記",
+		"傳送至 Keep 筆記",
+		"傳送至Keep",
+		"傳送至 Keep",
+		"傅送至Keep筆記",
+	),
+	"儲存至記事本": ("儲存至記事本",),
+	"設為公告": ("設為公告",),
+	"另存新檔": ("另存新檔",),
+	"轉傳": ("轉傳",),
 }
 
 _NOISE_LINE_RE = re.compile(r"^[\W_]*[\d０-９]+[\W_]*$|^[A-Za-z]{4,}$")
@@ -67,7 +75,8 @@ def _matchMenuLabel(text: str) -> str | None:
 	bestLabel = None
 	bestRatio = 0.0
 	for canonical in _KNOWN_MENU_LABELS:
-		ratio = difflib.SequenceMatcher(None, normalized, canonical).ratio()
+		canonicalNorm = _normalizeLineText(canonical)
+		ratio = difflib.SequenceMatcher(None, normalized, canonicalNorm).ratio()
 		if ratio > bestRatio:
 			bestRatio = ratio
 			bestLabel = canonical
@@ -331,3 +340,8 @@ class MessageContextMenu(VirtualWindow):
 	def click(self):
 		super().click()
 		VirtualWindow.currentWindow = None
+
+	def dismiss(self):
+		VirtualWindow.currentWindow = None
+		from keyboardHandler import KeyboardInputGesture
+		KeyboardInputGesture.fromName("escape").send()
