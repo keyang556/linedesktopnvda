@@ -29,12 +29,6 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
     3. Press `NVDA+Windows+C` to make a voice call, or `NVDA+Windows+V` to make a video call.
 * **Pre-check**: Before sending a message or making a call, always check the chat history to ensure you are contacting the right person.
 
-## Message Reading and Copying
-
-* **Reading Messages**: When navigating through the message list, the add-on uses a "copy-first" approach to read messages. It automatically right-clicks the message → selects "Copy" → reads the clipboard content. The original clipboard content is restored after reading.
-* **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu.
-* **OCR Fallback**: If copying via the context menu fails (e.g., the menu or menu item cannot be found), the add-on will automatically fall back to OCR (Optical Character Recognition) to read the message content.
-
 ### Sound Effects
 
 * **Default (Copy Success)**: If the message is read via the context menu copy method, no special sound effect is played.
@@ -43,10 +37,47 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 > [!WARNING]
 > OCR (Optical Character Recognition) results are **not 100% accurate**. If you hear the `ocr.wav` sound effect, be aware that the text may differ from the actual message content. To verify the exact content, it is recommended to check the message on your phone or another platform.
 
+## Message Reading and Copying
+
+* **Reading Messages**: When navigating through the message list, the add-on uses a "copy-first" approach to read messages. It automatically right-clicks the message → selects "Copy" → reads the clipboard content. The original clipboard content is restored after reading.
+* **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu.
+* **OCR Fallback**: If copying via the context menu fails (e.g., the menu or menu item cannot be found), the add-on will automatically fall back to OCR (Optical Character Recognition) to read the message content.
+
+## Virtual Windows
+
+### What are Virtual Windows?
+
+Virtual Windows are special interfaces provided by this add-on to improve access to certain LINE features that are difficult to access through standard accessibility APIs. When you use specific shortcuts, the add-on creates a virtual menu or dialog box, allowing you to operate these features more conveniently.
+
+### Types of Virtual Windows
+
+This add-on currently provides the following virtual windows:
+
+1. **Chat Room More Options Menu**: Press `NVDA+Windows+O` to open
+2. **Message Context Menu**: Used for copying, replying, recalling messages, and other operations
+3. **Verification Code Window**: Reads out the verification code when logging into LINE for the first time; enter this code on your mobile device
+4. **System Tray Menu**: Used to access LINE options in the system tray
+
+### How to Use Virtual Windows
+
+1. **Open Virtual Window**: Use the corresponding shortcut (e.g., `NVDA+Windows+O`)
+2. **Navigate Options**: Use the up and down arrow keys to move between options
+3. **Select Option**: Press `Enter` to execute the selected option
+4. **Close Window**: Press `Escape` to close the virtual window
+
+### Notes
+
+- Virtual windows are simulated interfaces; actual operations are still performed by the add-on through coordinate automation
+- Some virtual window options may vary depending on the LINE version or interface state
+- If a virtual window does not work properly, ensure your LINE window is in a normal state and not obscured by other windows
+
 ## Keyboard Shortcuts
 
 > [!NOTE]
 > In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, and "LINE" indicates built-in LINE Desktop shortcuts.
+
+> [!TIP]
+> You can customize these shortcuts through "NVDA Menu → Preferences → Input Gestures".
 
 ### Calls & Incoming Calls
 
@@ -69,6 +100,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 | **NVDA+Windows+R** | Add-on | Reply to the current message |
 | **NVDA+Windows+Delete** | Add-on | Recall (unsend) the current message |
 | **NVDA+Windows+T** | Add-on | Read current chat room name |
+| **NVDA+Windows+K** | Add-on | Open Save As dialog (Files can only be downloaded for 7 days after upload) |
 
 ### Basic Shortcuts
 
@@ -127,6 +159,8 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 | Shortcut | Category | Action |
 |---|---|---|
+| **NVDA+Windows+K** | Add-on | Save voice message |
+| **NVDA+Windows+P** | Add-on | Play voice message |
 | **Ctrl+S** | LINE | Save file |
 | **Ctrl+C** | LINE | Copy file |
 | **Enter** | LINE | Full screen |
