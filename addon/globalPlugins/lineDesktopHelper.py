@@ -230,19 +230,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab(tabName):
 					ui.message(tabName)
 				else:
-					ui.message(f"無法切換到{tabName}")
+					ui.message(_("無法切換到{tabName}").format(tabName=tabName))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))
 
 	def _onVoiceCall(self, evt):
 		# Defer execution so the NVDA menu closes first and LINE regains focus
@@ -252,14 +252,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if not lineApp._makeCallByType("voice"):
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 		except Exception as e:
 			log.warning(f"LINE makeCall error: {e}", exc_info=True)
-			ui.message(f"通話功能錯誤: {e}")
+			ui.message(_("通話功能錯誤: {error}").format(error=e))
 
 	def _onVideoCall(self, evt):
 		wx.CallAfter(self._doVideoCall)
@@ -268,14 +268,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if not lineApp._makeCallByType("video"):
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
-			ui.message(f"視訊通話功能錯誤: {e}")
+			ui.message(_("視訊通話功能錯誤: {error}").format(error=e))
 
 	def _onMoreOptions(self, evt):
 		wx.CallAfter(self._doMoreOptions)
@@ -284,14 +284,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if not lineApp._clickMoreOptionsButton():
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
-			ui.message(f"更多選項功能錯誤: {e}")
+			ui.message(_("更多選項功能錯誤: {error}").format(error=e))
 
 	def _onReadChatName(self, evt):
 		wx.CallAfter(self._doReadChatName)
@@ -300,13 +300,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			lineApp._readChatRoomName()
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
-			ui.message(f"讀取聊天室名稱錯誤: {e}")
+			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
 
 	def _onAnswerCall(self, evt):
 		wx.CallAfter(self._doAnswerCall)
@@ -315,17 +315,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._answerIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE answerCall error: {e}", exc_info=True)
-			ui.message(f"接聽功能錯誤: {e}")
+			ui.message(_("接聽功能錯誤: {error}").format(error=e))
 
 	def _onRejectCall(self, evt):
 		wx.CallAfter(self._doRejectCall)
@@ -334,17 +334,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._rejectIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
-			ui.message(f"拒絕功能錯誤: {e}")
+			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
 
 	def _onCheckCaller(self, evt):
 		wx.CallAfter(self._doCheckCaller)
@@ -353,17 +353,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._getCallerInfo(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
-			ui.message(f"來電查看功能錯誤: {e}")
+			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
 
 	def _onFocusCallWindow(self, evt):
 		wx.CallAfter(self._doFocusCallWindow)
@@ -374,14 +374,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import speech
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			import ctypes
 			import ctypes.wintypes
 			hwnd = lineApp._findIncomingCallWindow()
 			if not hwnd:
-				ui.message("未偵測到通話視窗")
+				ui.message(_("未偵測到通話視窗"))
 				return
 			try:
 				ctypes.windll.user32.SetForegroundWindow(hwnd)
@@ -396,15 +396,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 						ui.message(ocrText)
 						log.info(f"LINE: call window OCR: {ocrText!r}")
 					else:
-						ui.message("通話視窗（無法辨識內容）")
+						ui.message(_("通話視窗（無法辨識內容）"))
 				except Exception as e:
 					log.warning(f"LINE: call window OCR error: {e}", exc_info=True)
-					ui.message("通話視窗")
+					ui.message(_("通話視窗"))
 
 			core.callLater(300, _announceCallWindow)
 		except Exception as e:
 			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
-			ui.message(f"跳到通話視窗功能錯誤: {e}")
+			ui.message(_("跳到通話視窗功能錯誤: {error}").format(error=e))
 
 	def terminate(self, *args, **kwargs):
 		self._removeToolsMenu()
@@ -416,7 +416,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				pass
 
 	@script(
-		description="Debug: Report focused object's appModule and executable",
+		# Translators: Description of a debug script to report focused object info
+		description=_("Debug: Report focused object's appModule and executable"),
 		gesture="kb:NVDA+shift+j"
 	)
 	def script_reportFocusInfo(self, gesture):
@@ -439,7 +440,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	# ── Incoming call global shortcuts ─────────────────────────────
 
 	@script(
-		description="LINE: 接聽來電",
+		# Translators: Description of a script to answer an incoming LINE call
+		description=_("LINE: 接聽來電"),
 		gesture="kb:NVDA+windows+a",
 		category="LINE Desktop",
 	)
@@ -447,20 +449,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._answerIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE answerCall error: {e}", exc_info=True)
-			ui.message(f"接聽功能錯誤: {e}")
+			ui.message(_("接聽功能錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 拒絕來電",
+		# Translators: Description of a script to reject an incoming LINE call
+		description=_("LINE: 拒絕來電"),
 		gesture="kb:NVDA+windows+d",
 		category="LINE Desktop",
 	)
@@ -468,20 +471,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._rejectIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
-			ui.message(f"拒絕功能錯誤: {e}")
+			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 查看來電者",
+		# Translators: Description of a script to check who is calling
+		description=_("LINE: 查看來電者"),
 		gesture="kb:NVDA+windows+s",
 		category="LINE Desktop",
 	)
@@ -489,20 +493,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			hwnd = lineApp._findIncomingCallWindow()
 			if hwnd:
 				lineApp._getCallerInfo(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
-			ui.message(f"來電查看功能錯誤: {e}")
+			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 跳到通話視窗",
+		# Translators: Description of a script to focus the call window
+		description=_("LINE: 跳到通話視窗"),
 		gesture="kb:NVDA+windows+f",
 		category="LINE Desktop",
 	)
@@ -510,16 +515,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			lineApp.script_focusCallWindow(gesture)
 		except Exception as e:
 			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
-			ui.message(f"跳到通話視窗功能錯誤: {e}")
+			ui.message(_("跳到通話視窗功能錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 讀出目前聊天室名稱",
+		# Translators: Description of a script to read the current chat room name
+		description=_("LINE: 讀出目前聊天室名稱"),
 		gesture="kb:NVDA+windows+t",
 		category="LINE Desktop",
 	)
@@ -527,16 +533,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			lineApp.script_readChatRoomName(gesture)
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
-			ui.message(f"讀取聊天室名稱錯誤: {e}")
+			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 點擊更多選項按鈕",
+		# Translators: Description of a script to click the more options button
+		description=_("LINE: 點擊更多選項按鈕"),
 		gesture="kb:NVDA+windows+o",
 		category="LINE Desktop",
 	)
@@ -544,18 +551,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			lineApp.script_clickMoreOptions(gesture)
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
-			ui.message(f"更多選項功能錯誤: {e}")
+			ui.message(_("更多選項功能錯誤: {error}").format(error=e))
 
 	# ── Chat room tab navigation shortcuts ─────────────────────────
 
 	@script(
-		description="LINE: 跳到全部聊天室",
+		# Translators: Description of a script to navigate to all chats tab
+		description=_("LINE: 跳到全部聊天室"),
 		gesture="kb:NVDA+windows+1",
 		category="LINE Desktop",
 	)
@@ -563,22 +571,24 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab("全部"):
-					ui.message("全部")
+					ui.message(_("全部"))
 				else:
-					ui.message("無法切換到全部")
+					# Translators: Shown when unable to switch to a chat tab
+					ui.message(_("無法切換到全部"))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 跳到好友",
+		# Translators: Description of a script to navigate to friends tab
+		description=_("LINE: 跳到好友"),
 		gesture="kb:NVDA+windows+2",
 		category="LINE Desktop",
 	)
@@ -586,22 +596,23 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab("好友"):
-					ui.message("好友")
+					ui.message(_("好友"))
 				else:
-					ui.message("無法切換到好友")
+					ui.message(_("無法切換到好友"))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 跳到群組",
+		# Translators: Description of a script to navigate to groups tab
+		description=_("LINE: 跳到群組"),
 		gesture="kb:NVDA+windows+3",
 		category="LINE Desktop",
 	)
@@ -609,22 +620,23 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab("群組"):
-					ui.message("群組")
+					ui.message(_("群組"))
 				else:
-					ui.message("無法切換到群組")
+					ui.message(_("無法切換到群組"))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 跳到社群",
+		# Translators: Description of a script to navigate to communities tab
+		description=_("LINE: 跳到社群"),
 		gesture="kb:NVDA+windows+4",
 		category="LINE Desktop",
 	)
@@ -632,22 +644,23 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab("社群"):
-					ui.message("社群")
+					ui.message(_("社群"))
 				else:
-					ui.message("無法切換到社群")
+					ui.message(_("無法切換到社群"))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))
 
 	@script(
-		description="LINE: 跳到官方帳號",
+		# Translators: Description of a script to navigate to official accounts tab
+		description=_("LINE: 跳到官方帳號"),
 		gesture="kb:NVDA+windows+5",
 		category="LINE Desktop",
 	)
@@ -655,16 +668,16 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		lineApp = _getLineAppModule()
 		if not lineApp:
-			ui.message("LINE 未執行")
+			ui.message(_("LINE 未執行"))
 			return
 		try:
 			if hasattr(lineApp, '_navigateToChatTab'):
 				if lineApp._navigateToChatTab("官方帳號"):
-					ui.message("官方帳號")
+					ui.message(_("官方帳號"))
 				else:
-					ui.message("無法切換到官方帳號")
+					ui.message(_("無法切換到官方帳號"))
 			else:
-				ui.message("此功能需要更新 LINE 模組")
+				ui.message(_("此功能需要更新 LINE 模組"))
 		except Exception as e:
 			log.warning(f"LINE navigateTab error: {e}", exc_info=True)
-			ui.message(f"切換分頁錯誤: {e}")
+			ui.message(_("切換分頁錯誤: {error}").format(error=e))

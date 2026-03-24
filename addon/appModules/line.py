@@ -2177,7 +2177,7 @@ def _copyAndReadMessage(targetElement):
 						if msgHasSaveAs and msgHasSave:
 							if "下載期限" in msgOcrText:
 								log.info("LINE: copy-read detected file message")
-								ui.message("檔案訊息。按 NVDA+Windows+K 另存新檔。")
+								ui.message(_("檔案訊息。按 NVDA+Windows+K 另存新檔。"))
 								_dismissMenu()
 								_restoreClipboard(origClip)
 								return
@@ -2929,7 +2929,8 @@ class AppModule(appModuleHandler.AppModule):
 		nextHandler()
 
 	@script(
-		description="Debug: log UIA tree info for the focused element",
+		# Translators: Description of a debug script that logs UIA tree info
+		description=_("Debug: log UIA tree info for the focused element"),
 		gesture="kb:NVDA+shift+k",
 		category="LINE Desktop",
 	)
@@ -3634,16 +3635,16 @@ class AppModule(appModuleHandler.AppModule):
 					f"{curRect.right},{curRect.bottom})"
 				)
 				
-				ui.message("視訊通話確認")
+				ui.message(_("視訊通話確認"))
 				appModRef._clickAtPosition(btnX, btnY, curHwnd)
 				
-				ui.message("已開始視訊通話")
+				ui.message(_("已開始視訊通話"))
 			except Exception as e:
 				log.warning(
 					f"LINE: click video start failed: {e}",
 					exc_info=True
 				)
-				ui.message("無法點擊開始按鈕")
+				ui.message(_("無法點擊開始按鈕"))
 		
 		def _handleConfirmDialog():
 			"""OCR the confirmation dialog, announce it, and auto-click 開始.
@@ -3759,7 +3760,7 @@ class AppModule(appModuleHandler.AppModule):
 							if ocrText:
 								ui.message(ocrText)
 							else:
-								ui.message("語音通話確認")
+								ui.message(_("語音通話確認"))
 
 							core.callLater(
 								300, _clickStart, isGroup
@@ -3810,15 +3811,15 @@ class AppModule(appModuleHandler.AppModule):
 				appModRef._clickAtPosition(startBtnX, startBtnY, hwnd)
 
 				if isGroup:
-					ui.message("已開始群組語音通話")
+					ui.message(_("已開始群組語音通話"))
 				else:
-					ui.message("已開始語音通話")
+					ui.message(_("已開始語音通話"))
 			except Exception as e:
 				log.warning(
 					f"LINE: click 開始 failed: {e}",
 					exc_info=True
 				)
-				ui.message("無法點擊開始按鈕")
+				ui.message(_("無法點擊開始按鈕"))
 		
 		return True
 	
@@ -4457,7 +4458,7 @@ class AppModule(appModuleHandler.AppModule):
 					)
 					self._clickAtPosition(cx, cy)
 				
-				ui.message("已接聽")
+				ui.message(_("已接聽"))
 				return True
 		
 		# Strategy 3: OCR confirms call window, then click at position
@@ -4502,7 +4503,7 @@ class AppModule(appModuleHandler.AppModule):
 			f"{rect.top},{rect.right},{rect.bottom})"
 		)
 		self._clickAtPosition(answerX, answerY)
-		ui.message("已接聽")
+		ui.message(_("已接聽"))
 		return True
 	
 	def _rejectIncomingCall(self, hwnd):
@@ -4575,7 +4576,7 @@ class AppModule(appModuleHandler.AppModule):
 					)
 					self._clickAtPosition(cx, cy)
 				
-				ui.message("已拒絕")
+				ui.message(_("已拒絕"))
 				return True
 		
 		# Strategy 3: OCR confirms call window, then click at position
@@ -4619,7 +4620,7 @@ class AppModule(appModuleHandler.AppModule):
 			f"{rect.top},{rect.right},{rect.bottom})"
 		)
 		self._clickAtPosition(rejectX, rejectY)
-		ui.message("已拒絕")
+		ui.message(_("已拒絕"))
 		return True
 	
 	def _getCallerInfo(self, hwnd):
@@ -4640,12 +4641,12 @@ class AppModule(appModuleHandler.AppModule):
 				callerName = callerName.replace(removeKw, "")
 			callerName = callerName.strip()
 			if callerName:
-				ui.message(f"來電：{callerName}")
+				ui.message(_("來電：{callerName}").format(callerName=callerName))
 			else:
-				ui.message(f"來電（OCR: {ocrText}）")
+				ui.message(_("來電（OCR: {ocrText}）").format(ocrText=ocrText))
 			log.info(f"LINE: caller info OCR: {ocrText!r}")
 		else:
-			ui.message("無法辨識來電者")
+			ui.message(_("無法辨識來電者"))
 			log.info("LINE: caller info OCR returned empty")
 	
 	# ── Incoming call scripts ──────────────────────────────────────────
@@ -4659,10 +4660,10 @@ class AppModule(appModuleHandler.AppModule):
 			if hwnd:
 				self._answerIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE answerCall error: {e}", exc_info=True)
-			ui.message(f"接聽功能錯誤: {e}")
+			ui.message(_("接聽功能錯誤: {error}").format(error=e))
 	
 	def script_rejectCall(self, gesture):
 		"""Reject an incoming LINE call."""
@@ -4671,10 +4672,10 @@ class AppModule(appModuleHandler.AppModule):
 			if hwnd:
 				self._rejectIncomingCall(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
-			ui.message(f"拒絕功能錯誤: {e}")
+			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
 	
 	def script_checkCaller(self, gesture):
 		"""Announce who is calling."""
@@ -4683,10 +4684,10 @@ class AppModule(appModuleHandler.AppModule):
 			if hwnd:
 				self._getCallerInfo(hwnd)
 			else:
-				ui.message("未偵測到來電")
+				ui.message(_("未偵測到來電"))
 		except Exception as e:
 			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
-			ui.message(f"來電查看功能錯誤: {e}")
+			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
 
 	def script_focusCallWindow(self, gesture):
 		"""Find the LineCall window, bring it to foreground, and OCR its content."""
@@ -4695,7 +4696,7 @@ class AppModule(appModuleHandler.AppModule):
 
 		hwnd = self._findIncomingCallWindow()
 		if not hwnd:
-			ui.message("未偵測到通話視窗")
+			ui.message(_("未偵測到通話視窗"))
 			return
 
 		# Bring the call window to the foreground
@@ -4713,17 +4714,18 @@ class AppModule(appModuleHandler.AppModule):
 					ui.message(ocrText)
 					log.info(f"LINE: call window OCR: {ocrText!r}")
 				else:
-					ui.message("通話視窗（無法辨識內容）")
+					ui.message(_("通話視窗（無法辨識內容）"))
 			except Exception as e:
 				log.warning(f"LINE: call window OCR error: {e}", exc_info=True)
-				ui.message("通話視窗")
+				ui.message(_("通話視窗"))
 
 		core.callLater(300, _announceCallWindow)
 
 	# ── Outgoing call scripts ──────────────────────────────────────────
 
 	@script(
-		description="撥打語音通話",
+		# Translators: Description of a script to make a voice call
+		description=_("撥打語音通話"),
 		gesture="kb:NVDA+windows+c",
 		category="LINE Desktop",
 	)
@@ -4731,13 +4733,14 @@ class AppModule(appModuleHandler.AppModule):
 		"""Click the phone icon, then auto-select voice call from the popup menu."""
 		try:
 			if not self._makeCallByType("voice"):
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 		except Exception as e:
 			log.warning(f"LINE makeCall error: {e}", exc_info=True)
-			ui.message(f"通話功能錯誤: {e}")
+			ui.message(_("通話功能錯誤: {error}").format(error=e))
 	
 	@script(
-		description="撥打視訊通話",
+		# Translators: Description of a script to make a video call
+		description=_("撥打視訊通話"),
 		gesture="kb:NVDA+windows+v",
 		category="LINE Desktop",
 	)
@@ -4745,12 +4748,13 @@ class AppModule(appModuleHandler.AppModule):
 		"""Click the phone icon, then auto-select video call from the popup menu."""
 		try:
 			if not self._makeCallByType("video"):
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
-			ui.message(f"視訊通話功能錯誤: {e}")
+			ui.message(_("視訊通話功能錯誤: {error}").format(error=e))
 	@script(
-		description="LINE: 點擊更多選項按鈕",
+		# Translators: Description of a script to click the more options button
+		description=_("LINE: 點擊更多選項按鈕"),
 		gesture="kb:NVDA+windows+o",
 		category="LINE Desktop",
 	)
@@ -4758,13 +4762,13 @@ class AppModule(appModuleHandler.AppModule):
 		"""Click the more options (⋮) button in the chat header."""
 		try:
 			if not self._clickMoreOptionsButton():
-				ui.message("找不到 LINE 視窗，請先開啟聊天室")
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 				return
 			import core
 			core.callLater(500, self._activateMoreOptionsMenu)
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
-			ui.message(f"更多選項功能錯誤: {e}")
+			ui.message(_("更多選項功能錯誤: {error}").format(error=e))
 
 	def _activateMoreOptionsMenu(self, retriesLeft=3):
 		"""Find the more options popup and activate the virtual window for browsing."""
@@ -5050,7 +5054,7 @@ class AppModule(appModuleHandler.AppModule):
 
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
-			ui.message("找不到 LINE 視窗")
+			ui.message(_("找不到 LINE 視窗"))
 			return
 
 		scale = _getDpiScale(hwnd)
@@ -5095,7 +5099,7 @@ class AppModule(appModuleHandler.AppModule):
 		nameH = nameBottom - nameTop
 
 		if nameW <= 0 or nameH <= 0:
-			ui.message("無法取得聊天室標題區域")
+			ui.message(_("無法取得聊天室標題區域"))
 			return
 
 		log.info(
@@ -5115,13 +5119,14 @@ class AppModule(appModuleHandler.AppModule):
 			if ocrText:
 				ui.message(ocrText)
 			else:
-				ui.message("無法讀取聊天室名稱")
+				ui.message(_("無法讀取聊天室名稱"))
 		except Exception as e:
 			log.warning(f"LINE: readChatRoomName OCR error: {e}", exc_info=True)
-			ui.message(f"讀取聊天室名稱錯誤: {e}")
+			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
 
 	@script(
-		description="讀出目前聊天室名稱",
+		# Translators: Description of a script to read the current chat room name
+		description=_("讀出目前聊天室名稱"),
 		gesture="kb:NVDA+windows+t",
 		category="LINE Desktop",
 	)
@@ -5134,7 +5139,7 @@ class AppModule(appModuleHandler.AppModule):
 			self._readChatRoomName()
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
-			ui.message(f"讀取聊天室名稱錯誤: {e}")
+			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
 
 	def _pollFileDialog(self):
 		"""Poll to detect when the file dialog closes, then resume addon.
@@ -5460,7 +5465,7 @@ class AppModule(appModuleHandler.AppModule):
 			handler = UIAHandler.handler
 			rawEl = handler.clientObject.GetFocusedElement()
 			if not rawEl:
-				ui.message("找不到目前的訊息")
+				ui.message(_("找不到目前的訊息"))
 				return
 
 			rect = rawEl.CurrentBoundingRectangle
@@ -5470,7 +5475,7 @@ class AppModule(appModuleHandler.AppModule):
 			elBottom = int(rect.bottom)
 
 			if cx <= 0 or cy <= 0:
-				ui.message("找不到目前的訊息")
+				ui.message(_("找不到目前的訊息"))
 				return
 
 			hwnd = ctypes.windll.user32.GetForegroundWindow()
@@ -5485,7 +5490,7 @@ class AppModule(appModuleHandler.AppModule):
 			winBottom = int(winRect.bottom)
 		except Exception as e:
 			log.debug(f"LINE: _contextMenuAction getElement failed: {e}")
-			ui.message("找不到目前的訊息")
+			ui.message(_("找不到目前的訊息"))
 			return
 
 		# Click positions to try, ordered by reliability.
@@ -5591,7 +5596,7 @@ class AppModule(appModuleHandler.AppModule):
 										f"LINE: OCR fallback copied: "
 										f"{copyText!r}"
 									)
-									ui.message("複製")
+									ui.message(_("複製"))
 									try:
 										nvwave.playWaveFile(_OCR_SOUND_PATH, asynchronous=True)
 									except Exception:
@@ -5606,7 +5611,7 @@ class AppModule(appModuleHandler.AppModule):
 							f"LINE: OCR fallback failed: {e}",
 							exc_info=True,
 						)
-				ui.message(f"找不到「{actionName}」選項")
+				ui.message(_("找不到「{actionName}」選項").format(actionName=actionName))
 				return
 
 			clickX, clickY, posLabel = clickPositions[posIdx]
@@ -6375,19 +6380,19 @@ class AppModule(appModuleHandler.AppModule):
 							cy = int((rect.top + rect.bottom) / 2)
 							if cx > 0 and cy > 0:
 								self._clickAtPosition(cx, cy, hwnd)
-								ui.message("播放")
+								ui.message(_("播放"))
 								return
 						except Exception:
 							pass
 					if self._playVoiceMessageViaOcr(rawEl, hwnd):
-						ui.message("播放")
+						ui.message(_("播放"))
 						return
 		except Exception as e:
 			log.debug(
 				f"LINE: play voice message UIA search failed: {e}",
 				exc_info=True,
 			)
-		ui.message("找不到語音訊息的播放按鈕")
+		ui.message(_("找不到語音訊息的播放按鈕"))
 
 	@script(
 		gesture="kb:NVDA+windows+delete",
@@ -6405,13 +6410,13 @@ class AppModule(appModuleHandler.AppModule):
 	def _beginRecallConfirmation(self):
 		"""Prompt for recall confirmation and bind Y/N shortcuts."""
 		if getattr(self, '_recallPending', False):
-			ui.message("確認要收回嗎？按 Y 確認，按 N 取消")
+			ui.message(_("確認要收回嗎？按 Y 確認，按 N 取消"))
 			return
 
 		token = getattr(self, '_recallConfirmationToken', 0) + 1
 		self._recallConfirmationToken = token
 		self._recallPending = True
-		ui.message("確認要收回嗎？按 Y 確認，按 N 取消")
+		ui.message(_("確認要收回嗎？按 Y 確認，按 N 取消"))
 		self.bindGesture("kb:y", "confirmRecall")
 		self.bindGesture("kb:n", "cancelRecall")
 
@@ -6536,10 +6541,10 @@ class AppModule(appModuleHandler.AppModule):
 		from keyboardHandler import KeyboardInputGesture
 		if confirmed:
 			KeyboardInputGesture.fromName("enter").send()
-			ui.message("已收回")
+			ui.message(_("已收回"))
 		else:
 			KeyboardInputGesture.fromName("escape").send()
-			ui.message("已取消")
+			ui.message(_("已取消"))
 
 	def script_confirmRecall(self, gesture):
 		"""User pressed Y to confirm message recall."""
@@ -6576,7 +6581,7 @@ class AppModule(appModuleHandler.AppModule):
 			handler = UIAHandler.handler
 			rawEl = handler.clientObject.GetFocusedElement()
 			if not rawEl:
-				ui.message("找不到目前的訊息")
+				ui.message(_("找不到目前的訊息"))
 				return
 
 			rect = rawEl.CurrentBoundingRectangle
@@ -6588,7 +6593,7 @@ class AppModule(appModuleHandler.AppModule):
 			elBottom = int(rect.bottom)
 
 			if cx <= 0 or cy <= 0:
-				ui.message("找不到目前的訊息")
+				ui.message(_("找不到目前的訊息"))
 				return
 
 			hwnd = ctypes.windll.user32.GetForegroundWindow()
@@ -6602,7 +6607,7 @@ class AppModule(appModuleHandler.AppModule):
 			winBottom = int(winRect.bottom)
 		except Exception as e:
 			log.debug(f"LINE: messageContextMenu getElement failed: {e}")
-			ui.message("找不到目前的訊息")
+			ui.message(_("找不到目前的訊息"))
 			return
 
 		_messageContextMenuRequestId += 1
@@ -6701,7 +6706,7 @@ class AppModule(appModuleHandler.AppModule):
 			if _logAndAbortIfStale(f"attemptAtOffset[{posIdx}]"):
 				return
 			if posIdx >= len(clickPositions):
-				ui.message("找不到訊息選單")
+				ui.message(_("找不到訊息選單"))
 				return
 
 			clickX, clickY, posLabel = clickPositions[posIdx]
