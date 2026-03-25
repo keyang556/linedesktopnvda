@@ -2208,15 +2208,49 @@ def _copyAndReadMessage(targetElement):
 				if isSelectAll:
 					selectAllCount[0] += 1
 				if isSelectAll and selectAllCount[0] >= 6:
-					# Wrong menu (≤2 items) seen at 6+ positions
-					# — bail to OCR.
-					log.info(
-						f"LINE: copy-read wrong menu (≤2 items) "
-						f"seen {selectAllCount[0]} times, last at "
-						f"[{clickPositions[posIdx][2]}], "
-						f"skipping to OCR"
-					)
+					# ≤2-item menu seen 6+ times — likely a
+					# delete-only menu (call record) or wrong
+					# menu.  Check for call patterns first.
 					_dismissMenu()
+					msgOcrText = _getMessageOcrText()
+					callAnnouncement = None
+					if msgOcrText:
+						if "取消" in msgOcrText:
+							callAnnouncement = "取消的通話"
+						elif "無應答" in msgOcrText:
+							callAnnouncement = "無應答"
+						elif "未接來電" in msgOcrText:
+							callAnnouncement = "未接來電"
+						else:
+							# Strip timestamp patterns
+							# (上午/下午 HH:MM) to avoid
+							# confusing them with durations
+							stripped = re.sub(
+								r'[上下丨\|]午\s*'
+								r'\d{1,2}\s*[::]\s*\d{2}',
+								'', msgOcrText,
+							)
+							if re.search(
+								r'\d{1,2}\s*[::]\s*\d{2}',
+								stripped,
+							):
+								callAnnouncement = "通話"
+					if callAnnouncement:
+						log.info(
+							f"LINE: copy-read detected call "
+							f"record: {callAnnouncement!r} "
+							f"from OCR: {msgOcrText!r}"
+						)
+						_restoreClipboard(origClip)
+						ui.message(callAnnouncement)
+						return
+					log.info(
+						f"LINE: copy-read wrong menu "
+						f"(≤2 items) seen "
+						f"{selectAllCount[0]} times, last "
+						f"at [{clickPositions[posIdx][2]}]"
+						f", skipping to OCR"
+					)
 					core.callLater(300, lambda: _attemptCopyAtOffset(len(clickPositions)))
 					return
 				if len(menuItems) >= 3:
