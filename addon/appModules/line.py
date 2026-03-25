@@ -1759,12 +1759,20 @@ def _copyAndReadMessage(targetElement):
 	pos_5_6 = elLeft + 5 * elWidth // 6
 	pos_1_4 = elLeft + elWidth // 4
 	pos_3_4 = elLeft + 3 * elWidth // 4
+	pos_1_8 = elLeft + elWidth // 8
+	pos_1_10 = elLeft + elWidth // 10
+	pos_7_8 = elLeft + 7 * elWidth // 8
+	pos_9_10 = elLeft + 9 * elWidth // 10
 
 	clickPositions = [
 		(pos_1_6, clampedCenter, "1/6-left"),
 		(pos_5_6, clampedCenter, "5/6-right"),
 		(pos_1_4, clampedCenter, "1/4-left"),
 		(pos_3_4, clampedCenter, "3/4-right"),
+		(pos_9_10, clampedCenter, "9/10-right"),
+		(pos_7_8, clampedCenter, "7/8-right"),
+		(pos_1_10, clampedCenter, "1/10-left"),
+		(pos_1_8, clampedCenter, "1/8-left"),
 		(cx, clampedCenter, "center"),
 		(pos_1_6, clampedTop, "1/6-top"),
 		(pos_5_6, clampedBottom, "5/6-bottom"),
@@ -2199,8 +2207,8 @@ def _copyAndReadMessage(targetElement):
 				isSelectAll = len(menuItems) <= 2
 				if isSelectAll:
 					selectAllCount[0] += 1
-				if isSelectAll and selectAllCount[0] >= 3:
-					# ≤2-item menu seen 3+ times — likely a
+				if isSelectAll and selectAllCount[0] >= 6:
+					# ≤2-item menu seen 6+ times — likely a
 					# delete-only menu (call record) or wrong
 					# menu.  Check for call patterns first.
 					_dismissMenu()
@@ -5568,11 +5576,15 @@ class AppModule(appModuleHandler.AppModule):
 		pos_5_6 = elLeft + 5 * elWidth // 6
 		pos_1_4 = elLeft + elWidth // 4
 		pos_3_4 = elLeft + 3 * elWidth // 4
+		pos_7_8 = elLeft + 7 * elWidth // 8
+		pos_9_10 = elLeft + 9 * elWidth // 10
 		clickPositions = [
 			(pos_1_6, clampedCenter, "1/6-left"),
 			(pos_5_6, clampedCenter, "5/6-right"),
 			(pos_1_4, clampedCenter, "1/4-left"),
 			(pos_3_4, clampedCenter, "3/4-right"),
+			(pos_9_10, clampedCenter, "9/10-right"),
+			(pos_7_8, clampedCenter, "7/8-right"),
 			(cx, clampedCenter, "center"),
 			(pos_1_6, clampedTop, "1/6-top"),
 			(pos_5_6, clampedBottom, "5/6-bottom"),
@@ -6022,15 +6034,70 @@ class AppModule(appModuleHandler.AppModule):
 											break
 									if targetLineIdx >= 0:
 										nItems = len(menuItems)
+										nOcrLines = len(lines)
 										if nItems > 0:
-											# Direct 1:1 mapping:
-											# separators are excluded
-											# from menuItems, so OCR
-											# line N = item N.
-											itemIdx = min(
-												targetLineIdx,
-												nItems - 1,
-											)
+											if nItems == nOcrLines:
+												# Direct 1:1 mapping
+												itemIdx = min(
+													targetLineIdx,
+													nItems - 1,
+												)
+											else:
+												# Count mismatch (e.g.
+												# emoji reaction bar
+												# adds a menu item
+												# without OCR text).
+												# Use y-position to
+												# find the right item.
+												itemIdx = min(
+													targetLineIdx,
+													nItems - 1,
+												)
+												try:
+													fR = (
+														menuItems[0][0]
+														.CurrentBoundingRectangle
+													)
+													lR = (
+														menuItems[-1][0]
+														.CurrentBoundingRectangle
+													)
+													cTop = fR.top
+													cBot = lR.bottom
+													tH = cBot - cTop
+													if (
+														tH > 0
+														and nOcrLines > 0
+													):
+														estY = (
+															cTop
+															+ (targetLineIdx + 0.5)
+															* tH
+															/ nOcrLines
+														)
+														bestD = float("inf")
+														bestI = 0
+														for mi, (it, _) in enumerate(menuItems):
+															try:
+																r = it.CurrentBoundingRectangle
+																mY = (r.top + r.bottom) / 2
+																d = abs(mY - estY)
+																if d < bestD:
+																	bestD = d
+																	bestI = mi
+															except Exception:
+																pass
+														itemIdx = bestI
+												except Exception:
+													pass
+												log.debug(
+													f"LINE: OCR/item "
+													f"count mismatch "
+													f"({nOcrLines} vs "
+													f"{nItems}), "
+													f"y-matched to "
+													f"item {itemIdx}"
+												)
 											targetItem = (
 												menuItems[itemIdx][0]
 											)
@@ -6150,14 +6217,14 @@ class AppModule(appModuleHandler.AppModule):
 							"escape"
 						).send()
 						# Got wrong menu (≤2 items = 全選 or
-						# 背景設定).  If seen at 2+ positions,
+						# 背景設定).  If seen at 5+ positions,
 						# bail; otherwise try next position.
 						isSelectAll = (
 							len(menuItems) <= 2
 						)
 						if (
 							isSelectAll
-							and posIdx >= 1
+							and posIdx >= 5
 						):
 							log.info(
 								f"LINE: wrong menu (≤2)"
@@ -6720,6 +6787,8 @@ class AppModule(appModuleHandler.AppModule):
 			(elLeft + 5 * elWidth // 6, clampedCenter, "5/6-right"),
 			(elLeft + elWidth // 4, clampedCenter, "1/4-left"),
 			(elLeft + 3 * elWidth // 4, clampedCenter, "3/4-right"),
+			(elLeft + 9 * elWidth // 10, clampedCenter, "9/10-right"),
+			(elLeft + 7 * elWidth // 8, clampedCenter, "7/8-right"),
 			(cx, clampedCenter, "center"),
 		]
 
