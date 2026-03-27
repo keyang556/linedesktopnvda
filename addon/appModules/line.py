@@ -99,6 +99,80 @@ def _removeCJKSpaces(text):
 	return _CJK_SPACE_RE.sub('', text)
 
 
+def _extractCallDuration(text):
+	"""Extract a normalized call duration from OCR text, ignoring clock timestamps."""
+	if not text:
+		return None
+
+	normalized = _removeCJKSpaces(str(text).strip())
+	lines = []
+	for rawLine in normalized.splitlines():
+		line = rawLine.strip()
+		if not line:
+			continue
+		line = re.sub(
+			r'(?<=\d)\s*[:：•\.。．·･]+\s*(?=\d)',
+			':',
+			line,
+		)
+		line = re.sub(r"\s+", "", line)
+		line = re.sub(r":{2,}", ":", line)
+		if line:
+			lines.append(line)
+
+	clockTimeRe = re.compile(
+		r'^(?:(?:[上下]午)|午|am|pm)\d{1,2}:\d{2}$',
+		re.IGNORECASE,
+	)
+	durationRe = re.compile(r'^\d{1,2}:\d{2}(?::\d{2})?$')
+	match = None
+	for line in lines:
+		if clockTimeRe.fullmatch(line):
+			continue
+		if durationRe.fullmatch(line):
+			match = durationRe.fullmatch(line)
+			break
+	else:
+		collapsed = "".join(lines)
+		collapsed = re.sub(
+			r'(?:(?:[上下]午)|午|am|pm)\d{1,2}:\d{2}',
+			'',
+			collapsed,
+			flags=re.IGNORECASE,
+		)
+		match = re.search(r'(?<!\d)(\d{1,2}(?::\d{2}){1,2})(?!\d)', collapsed)
+	if not match:
+		return None
+
+	parts = match.group(0).split(":")
+	if len(parts) == 2:
+		return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+	if len(parts) == 3:
+		return (
+			f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(parts[2]):02d}"
+		)
+	return None
+
+
+def _getCallAnnouncementFromOcr(text):
+	"""Return the spoken announcement for a call record OCR snippet."""
+	if not text:
+		return None
+
+	normalized = _removeCJKSpaces(str(text).strip())
+	if "取消" in normalized:
+		return "取消的通話"
+	if "無應答" in normalized:
+		return "無應答"
+	if "未接來電" in normalized:
+		return "未接來電"
+
+	duration = _extractCallDuration(normalized)
+	if duration:
+		return f"通話時間：{duration}"
+	return None
+
+
 def _collectPopupMenuRowRects(
 	popupHwnd,
 	popupRect: tuple[int, int, int, int],
@@ -550,7 +624,7 @@ def _extractTextFromUIAElement(element):
 
 
 
-def _ocrReadElementText(rawElement, appModuleRef=None):
+def _ocrReadElementText(rawElement, appModuleRef=None, preferCallAnnouncement=False):
 	"""Perform OCR on a raw UIA element's bounding rect and speak the result.
 
 	This is used as a fallback when all UIA text extraction strategies
@@ -653,9 +727,12 @@ def _ocrReadElementText(rawElement, appModuleRef=None):
 					ocrText = getattr(result, 'text', '') or ''
 					ocrText = _removeCJKSpaces(ocrText.strip())
 					if ocrText:
+						announcement = None
+						if preferCallAnnouncement:
+							announcement = _getCallAnnouncementFromOcr(ocrText)
 						log.info(f"LINE OCR nav result: {ocrText!r}")
 						speech.cancelSpeech()
-						ui.message(ocrText)
+						ui.message(announcement or ocrText)
 					else:
 						log.debug("LINE OCR: no text found in element")
 				except Exception as e:
@@ -2213,28 +2290,9 @@ def _copyAndReadMessage(targetElement):
 					# menu.  Check for call patterns first.
 					_dismissMenu()
 					msgOcrText = _getMessageOcrText()
-					callAnnouncement = None
-					if msgOcrText:
-						if "取消" in msgOcrText:
-							callAnnouncement = "取消的通話"
-						elif "無應答" in msgOcrText:
-							callAnnouncement = "無應答"
-						elif "未接來電" in msgOcrText:
-							callAnnouncement = "未接來電"
-						else:
-							# Strip timestamp patterns
-							# (上午/下午 HH:MM) to avoid
-							# confusing them with durations
-							stripped = re.sub(
-								r'[上下丨\|]午\s*'
-								r'\d{1,2}\s*[::]\s*\d{2}',
-								'', msgOcrText,
-							)
-							if re.search(
-								r'\d{1,2}\s*[::]\s*\d{2}',
-								stripped,
-							):
-								callAnnouncement = "通話"
+					callAnnouncement = _getCallAnnouncementFromOcr(
+						msgOcrText
+					)
 					if callAnnouncement:
 						log.info(
 							f"LINE: copy-read detected call "
@@ -2366,7 +2424,7 @@ def _ocrReadMessageFallback(targetElement):
 		nvwave.playWaveFile(_OCR_SOUND_PATH, asynchronous=True)
 	except Exception:
 		log.debugWarning("Failed to play OCR sound", exc_info=True)
-	_ocrReadElementText(targetElement)
+	_ocrReadElementText(targetElement, preferCallAnnouncement=True)
 
 
 class LineChatListItem(UIA):
