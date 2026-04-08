@@ -10,7 +10,7 @@ class MessageReaderDialog(wx.Dialog):
 	Up arrow moves to the previous message, down arrow moves to the next.
 	"""
 
-	def __init__(self, messages, title="訊息閱讀器"):
+	def __init__(self, messages, title="訊息閱讀器", cleanupPath=None):
 		super().__init__(
 			gui.mainFrame,
 			title=title,
@@ -18,6 +18,7 @@ class MessageReaderDialog(wx.Dialog):
 		)
 		self._messages = messages
 		self._pos = len(messages) - 1 if messages else -1
+		self._cleanupPath = cleanupPath
 
 		panel = wx.Panel(self)
 		sizer = wx.BoxSizer(wx.VERTICAL)
@@ -107,13 +108,28 @@ class MessageReaderDialog(wx.Dialog):
 			self._speakMessage("已經是最後一則訊息")
 
 	def _onClose(self, evt):
+		# Clean up temp file if specified
+		if self._cleanupPath:
+			try:
+				import os
+				if os.path.isfile(self._cleanupPath):
+					os.remove(self._cleanupPath)
+					log.debug(f"Deleted temp chat export: {self._cleanupPath}")
+			except Exception as e:
+				log.warning(f"Failed to delete temp chat export: {e}")
 		self.Destroy()
 
 
-def openMessageReader(messages, title="訊息閱讀器"):
-	"""Open the message reader dialog on the main GUI thread."""
+def openMessageReader(messages, title="訊息閱讀器", cleanupPath=None):
+	"""Open the message reader dialog on the main GUI thread.
+
+	Args:
+		messages: List of parsed message dicts
+		title: Dialog window title
+		cleanupPath: Optional file path to delete when dialog closes
+	"""
 	def _show():
-		dlg = MessageReaderDialog(messages, title=title)
+		dlg = MessageReaderDialog(messages, title=title, cleanupPath=cleanupPath)
 		dlg.Show()
 		dlg.Raise()
 	wx.CallAfter(_show)

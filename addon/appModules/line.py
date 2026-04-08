@@ -6139,7 +6139,7 @@ class AppModule(appModuleHandler.AppModule):
 				return
 
 			log.info(f"LINE: message reader parsed {len(messages)} messages from {savePath}")
-			openMessageReader(messages)
+			openMessageReader(messages, cleanupPath=savePath)
 		except Exception as e:
 			log.warning(f"LINE: message reader parse error: {e}", exc_info=True)
 			ui.message(_("訊息閱讀器開啟錯誤"))
