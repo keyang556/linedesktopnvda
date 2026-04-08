@@ -17,7 +17,7 @@ class MessageReaderDialog(wx.Dialog):
 			style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
 		)
 		self._messages = messages
-		self._pos = len(messages) - 1 if messages else -1
+		self._pos = 0 if messages else -1
 		self._cleanupPath = cleanupPath
 
 		panel = wx.Panel(self)
@@ -77,8 +77,6 @@ class MessageReaderDialog(wx.Dialog):
 			self._movePrevious()
 		elif keyCode == wx.WXK_DOWN:
 			self._moveNext()
-		elif keyCode == wx.WXK_ESCAPE:
-			self.Close()
 		else:
 			evt.Skip()
 

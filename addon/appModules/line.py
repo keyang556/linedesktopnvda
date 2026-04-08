@@ -5893,6 +5893,8 @@ class AppModule(appModuleHandler.AppModule):
 
 	def script_openMessageReader(self, gesture):
 		"""Open message reader: click more options, auto-click save chat, parse, and display."""
+		if getattr(self, '_messageReaderPending', False):
+			return
 		ui.message(_("正在開啟訊息閱讀器…"))
 		try:
 			if not self._clickMoreOptionsButton():
