@@ -5967,11 +5967,9 @@ class AppModule(appModuleHandler.AppModule):
 				ui.message(_("未偵測到儲存對話框"))
 			return
 
-		# Build temp file path
-		addonDir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-		tempDir = os.path.join(addonDir, "temp")
-		os.makedirs(tempDir, exist_ok=True)
-		savePath = os.path.join(tempDir, "chat_export.txt")
+		# Build temp file path (use system temp dir to avoid locking the addon folder)
+		import tempfile
+		savePath = os.path.join(tempfile.gettempdir(), "lineDesktop_chat_export.txt")
 		self._messageReaderSavePath = savePath
 
 		# Find the filename edit control in the Save dialog
