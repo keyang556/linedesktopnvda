@@ -109,6 +109,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# Translators: Menu item for clicking more options button
 				_("更多選項(&O)") + "\tNVDA+Windows+O",
 			)
+			self._messageReaderItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for opening the message reader
+				_("訊息閱讀器(&J)") + "\tNVDA+Windows+J",
+			)
 			self._readChatNameItem = self._lineSubMenu.Append(
 				wx.ID_ANY,
 				# Translators: Menu item for reading chat room name
@@ -163,6 +168,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onMoreOptions, self._moreOptionsItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onMessageReader, self._messageReaderItem
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onReadChatName, self._readChatNameItem
@@ -276,6 +284,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(_("視訊通話功能錯誤: {error}").format(error=e))
+
+	def _onMessageReader(self, evt):
+		wx.CallAfter(self._doMessageReader)
+
+	def _doMessageReader(self):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message(_("LINE 未執行"))
+			return
+		try:
+			lineApp.script_openMessageReader(None)
+		except Exception as e:
+			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
+			ui.message(_("訊息閱讀器功能錯誤: {error}").format(error=e))
 
 	def _onMoreOptions(self, evt):
 		wx.CallAfter(self._doMoreOptions)
@@ -540,6 +563,24 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
 			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
+
+	@script(
+		# Translators: Description of a script to open the message reader
+		description=_("LINE: 開啟訊息閱讀器"),
+		gesture="kb:NVDA+windows+j",
+		category="LINE Desktop",
+	)
+	def script_openMessageReader(self, gesture):
+		import ui
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message(_("LINE 未執行"))
+			return
+		try:
+			lineApp.script_openMessageReader(gesture)
+		except Exception as e:
+			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
+			ui.message(_("訊息閱讀器功能錯誤: {error}").format(error=e))
 
 	@script(
 		# Translators: Description of a script to click the more options button

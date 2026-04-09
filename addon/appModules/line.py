@@ -5885,7 +5885,279 @@ class AppModule(appModuleHandler.AppModule):
 	def _handleChatMoreOptionsAction(self, actionName):
 		"""Handle post-click actions from the chat more-options virtual window."""
 		if actionName == "儲存聊天":
-			self._suppressAddonForFileDialog("Save chat selected")
+			if getattr(self, '_messageReaderPending', False):
+				core.callLater(800, self._messageReaderHandleSaveDialog)
+			else:
+				self._suppressAddonForFileDialog("Save chat selected")
+
+	def script_openMessageReader(self, gesture):
+		"""Open message reader: click more options, auto-click save chat, parse, and display."""
+		if getattr(self, '_messageReaderPending', False):
+			ui.message(_("訊息閱讀器正在執行中，請稍候"))
+			return
+		ui.message(_("正在開啟訊息閱讀器…"))
+		try:
+			if not self._clickMoreOptionsButton():
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
+				return
+			self._messageReaderPending = True
+			core.callLater(500, self._activateMoreOptionsMenu)
+			# Poll until virtual window is ready, then auto-click 儲存聊天
+			core.callLater(1500, self._messageReaderAutoClickSaveChat)
+		except Exception as e:
+			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
+			self._messageReaderPending = False
+			ui.message(_("訊息閱讀器功能錯誤"))
+
+	def _messageReaderAutoClickSaveChat(self, retriesLeft=15):
+		"""Poll the ChatMoreOptions virtual window until 儲存聊天 is found, then click it."""
+		if not getattr(self, '_messageReaderPending', False):
+			return
+
+		from ._virtualWindows.chatMoreOptions import ChatMoreOptions
+		window = VirtualWindow.currentWindow
+		if not isinstance(window, ChatMoreOptions) or not window.elements:
+			if retriesLeft > 0:
+				core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
+			else:
+				self._messageReaderPending = False
+				ui.message(_("找不到儲存聊天選項"))
+			return
+
+		for i, elem in enumerate(window.elements):
+			if elem.get('name') == '儲存聊天':
+				window.pos = i
+				window.click()
+				log.info("LINE: message reader auto-clicked 儲存聊天")
+				return
+
+		if retriesLeft > 0:
+			core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
+		else:
+			self._messageReaderPending = False
+			ui.message(_("找不到儲存聊天選項"))
+
+	def _messageReaderHandleSaveDialog(self, retriesLeft=10):
+		"""Find the Save As dialog, set filename to temp folder, and save."""
+		import ctypes
+		import ctypes.wintypes as wintypes
+		import tempfile
+
+		lineProcessId = self.processID
+		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+		dialogHwnd = None
+
+		def _enumCallback(hwnd, lParam):
+			nonlocal dialogHwnd
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+			if buf.value == "#32770":
+				pid = wintypes.DWORD()
+				ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+				if pid.value == lineProcessId:
+					if ctypes.windll.user32.IsWindowVisible(hwnd):
+						dialogHwnd = hwnd
+						return False
+			return True
+
+		ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enumCallback), 0)
+
+		if not dialogHwnd:
+			if retriesLeft > 0:
+				core.callLater(300, lambda: self._messageReaderHandleSaveDialog(retriesLeft - 1))
+			else:
+				self._messageReaderPending = False
+				ui.message(_("未偵測到儲存對話框"))
+			return
+
+		# Build temp file path (use system temp dir to avoid locking the addon folder)
+		import tempfile
+		savePath = os.path.join(tempfile.gettempdir(), "lineDesktop_chat_export.txt")
+		self._messageReaderSavePath = savePath
+
+		# Pre-delete existing file to suppress the overwrite confirmation dialog
+		try:
+			if os.path.isfile(savePath):
+				os.remove(savePath)
+		except Exception as e:
+			log.warning(f"LINE: could not pre-delete chat export: {e}")
+
+		# Find the filename edit control in the Save dialog
+		# The file dialog has a ComboBoxEx32 > ComboBox > Edit hierarchy
+		editHwnd = self._findSaveDialogEdit(dialogHwnd)
+		if not editHwnd:
+			self._messageReaderPending = False
+			ui.message(_("無法操作儲存對話框"))
+			return
+
+		# Set the filename
+		WM_SETTEXT = 0x000C
+		pathBuffer = ctypes.create_unicode_buffer(savePath)
+		ctypes.windll.user32.SendMessageW(
+			editHwnd, WM_SETTEXT, 0, pathBuffer
+		)
+
+		# Press Enter to save (send BN_CLICKED to Save button, or press Enter)
+		core.callLater(200, lambda: self._messageReaderPressSave(dialogHwnd))
+
+	def _findSaveDialogEdit(self, dialogHwnd):
+		"""Find the filename Edit control inside a standard Windows Save dialog.
+
+		Uses EnumChildWindows to recursively search all descendants, looking for
+		an Edit inside a ComboBoxEx32 > ComboBox chain (the filename field).
+		Falls back to the first visible+enabled Edit control found.
+		"""
+		import ctypes
+		import ctypes.wintypes as wintypes
+
+		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+		foundEdit = [None]
+
+		# Primary: find Edit inside any ComboBoxEx32 > ComboBox (filename field)
+		def _searchComboBoxEx(hwnd, lParam):
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+			if buf.value == "ComboBoxEx32":
+				combo = ctypes.windll.user32.FindWindowExW(hwnd, None, "ComboBox", None)
+				if combo:
+					edit = ctypes.windll.user32.FindWindowExW(combo, None, "Edit", None)
+					if edit and ctypes.windll.user32.IsWindowVisible(edit):
+						foundEdit[0] = edit
+						return False  # stop enumeration
+			return True
+
+		ctypes.windll.user32.EnumChildWindows(
+			dialogHwnd, WNDENUMPROC(_searchComboBoxEx), 0
+		)
+		if foundEdit[0]:
+			log.debug(f"LINE: found save dialog Edit in ComboBoxEx32: {foundEdit[0]}")
+			return foundEdit[0]
+
+		# Fallback: first visible+enabled Edit control in the dialog
+		def _searchFirstEdit(hwnd, lParam):
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+			if buf.value == "Edit":
+				if (ctypes.windll.user32.IsWindowVisible(hwnd)
+						and ctypes.windll.user32.IsWindowEnabled(hwnd)):
+					foundEdit[0] = hwnd
+					return False
+			return True
+
+		ctypes.windll.user32.EnumChildWindows(
+			dialogHwnd, WNDENUMPROC(_searchFirstEdit), 0
+		)
+		if foundEdit[0]:
+			log.debug(f"LINE: found save dialog Edit (fallback): {foundEdit[0]}")
+		else:
+			log.debug("LINE: could not find Edit in save dialog")
+		return foundEdit[0]
+
+	def _messageReaderPressSave(self, dialogHwnd):
+		"""Press Enter in the Save dialog to trigger save, then wait for file."""
+		import ctypes
+		import ctypes.wintypes as wintypes
+
+		# Find the Save/存檔 button and click it
+		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+		saveBtn = [None]
+
+		def _findSaveBtn(hwnd, lParam):
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+			if buf.value == "Button":
+				titleBuf = ctypes.create_unicode_buffer(64)
+				ctypes.windll.user32.GetWindowTextW(hwnd, titleBuf, 64)
+				title = titleBuf.value
+				if any(k in title for k in ("存", "Save", "儲存")):
+					if ctypes.windll.user32.IsWindowVisible(hwnd):
+						saveBtn[0] = hwnd
+						return False
+			return True
+
+		ctypes.windll.user32.EnumChildWindows(dialogHwnd, WNDENUMPROC(_findSaveBtn), 0)
+
+		BM_CLICK = 0x00F5
+		if saveBtn[0]:
+			log.debug(f"LINE: clicking Save button hwnd={saveBtn[0]}")
+			ctypes.windll.user32.SendMessageW(saveBtn[0], BM_CLICK, 0, 0)
+		else:
+			# Fallback: send Enter to the dialog
+			log.debug("LINE: Save button not found, sending Enter to dialog")
+			WM_KEYDOWN = 0x0100
+			WM_KEYUP = 0x0101
+			VK_RETURN = 0x0D
+			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYDOWN, VK_RETURN, 0)
+			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYUP, VK_RETURN, 0)
+
+		# Handle possible "overwrite?" confirmation dialog
+		core.callLater(500, self._messageReaderHandleOverwrite)
+
+	def _messageReaderHandleOverwrite(self, retriesLeft=5):
+		"""Handle the overwrite confirmation dialog if it appears, then read the file."""
+		import ctypes
+		import ctypes.wintypes as wintypes
+
+		lineProcessId = self.processID
+		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+		dialogHwnd = None
+
+		def _enumCallback(hwnd, lParam):
+			nonlocal dialogHwnd
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
+			if buf.value == "#32770":
+				pid = wintypes.DWORD()
+				ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+				if pid.value == lineProcessId:
+					if ctypes.windll.user32.IsWindowVisible(hwnd):
+						dialogHwnd = hwnd
+						return False
+			return True
+
+		ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enumCallback), 0)
+
+		if dialogHwnd:
+			# There's still a dialog — might be overwrite confirmation
+			# Try clicking Yes / pressing Enter
+			WM_KEYDOWN = 0x0100
+			WM_KEYUP = 0x0101
+			VK_RETURN = 0x0D
+			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYDOWN, VK_RETURN, 0)
+			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYUP, VK_RETURN, 0)
+			# Check again after a delay
+			if retriesLeft > 0:
+				core.callLater(500, lambda: self._messageReaderHandleOverwrite(retriesLeft - 1))
+			return
+
+		# No dialog — file should be saved, read it
+		core.callLater(300, self._messageReaderOpenFile)
+
+	def _messageReaderOpenFile(self):
+		"""Read the saved chat file and open the message reader dialog."""
+		savePath = getattr(self, '_messageReaderSavePath', None)
+		if not savePath or not os.path.isfile(savePath):
+			ui.message(_("找不到儲存的聊天紀錄檔案"))
+			self._messageReaderPending = False
+			return
+
+		try:
+			from ._chatParser import parseChatFile
+			from ._messageReader import openMessageReader
+
+			messages = parseChatFile(savePath)
+			if not messages:
+				ui.message(_("聊天紀錄中沒有訊息"))
+				self._messageReaderPending = False
+				return
+
+			log.info(f"LINE: message reader parsed {len(messages)} messages from {savePath}")
+			openMessageReader(messages, cleanupPath=savePath)
+			self._messageReaderPending = False
+		except Exception as e:
+			log.warning(f"LINE: message reader parse error: {e}", exc_info=True)
+			ui.message(_("訊息閱讀器開啟錯誤"))
+			self._messageReaderPending = False
 
 	def script_openFileDialog(self, gesture):
 		"""Pass Ctrl+O to LINE, suppress addon while file dialog is open."""
