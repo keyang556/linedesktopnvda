@@ -5986,7 +5986,7 @@ class AppModule(appModuleHandler.AppModule):
 		# The file dialog has a ComboBoxEx32 > ComboBox > Edit hierarchy
 		editHwnd = self._findSaveDialogEdit(dialogHwnd)
 		if not editHwnd:
-    self._messageReaderPending = False
+			self._messageReaderPending = False
 			ui.message(_("無法操作儲存對話框"))
 			return
 
