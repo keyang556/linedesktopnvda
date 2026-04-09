@@ -118,6 +118,9 @@ class MessageReaderDialog(wx.Dialog):
 		self.Destroy()
 
 
+_readerDlg = None  # module-level singleton sentinel
+
+
 def openMessageReader(messages, title="訊息閱讀器", cleanupPath=None):
 	"""Open the message reader dialog on the main GUI thread.
 
@@ -127,7 +130,11 @@ def openMessageReader(messages, title="訊息閱讀器", cleanupPath=None):
 		cleanupPath: Optional file path to delete when dialog closes
 	"""
 	def _show():
-		dlg = MessageReaderDialog(messages, title=title, cleanupPath=cleanupPath)
-		dlg.Show()
-		dlg.Raise()
+		global _readerDlg
+		if _readerDlg and _readerDlg.IsShown():
+			_readerDlg.Raise()
+			return
+		_readerDlg = MessageReaderDialog(messages, title=title, cleanupPath=cleanupPath)
+		_readerDlg.Show()
+		_readerDlg.Raise()
 	wx.CallAfter(_show)
