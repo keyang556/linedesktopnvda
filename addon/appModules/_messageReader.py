@@ -1,7 +1,6 @@
 import wx
 import gui
 from logHandler import log
-from languageHandler import gettext as _
 
 
 class MessageReaderDialog(wx.Dialog):
