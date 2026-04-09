@@ -1,6 +1,7 @@
 import wx
 import gui
 from logHandler import log
+from languageHandler import gettext as _
 
 
 class MessageReaderDialog(wx.Dialog):
@@ -10,7 +11,9 @@ class MessageReaderDialog(wx.Dialog):
 	Up arrow moves to the previous message, down arrow moves to the next.
 	"""
 
-	def __init__(self, messages, title="訊息閱讀器", cleanupPath=None):
+	def __init__(self, messages, title=None, cleanupPath=None):
+		if title is None:
+			title = _("訊息閱讀器")
 		super().__init__(
 			gui.mainFrame,
 			title=title,
@@ -33,7 +36,7 @@ class MessageReaderDialog(wx.Dialog):
 		)
 		sizer.Add(self._textCtrl, 1, wx.EXPAND | wx.ALL, 5)
 
-		closeBtn = wx.Button(panel, wx.ID_CLOSE, "關閉(&C)")
+		closeBtn = wx.Button(panel, wx.ID_CLOSE, _("關閉(&C)"))
 		sizer.Add(closeBtn, 0, wx.ALIGN_CENTER | wx.ALL, 5)
 
 		panel.SetSizer(sizer)
@@ -52,7 +55,7 @@ class MessageReaderDialog(wx.Dialog):
 
 	def _updateDisplay(self):
 		if not self._messages or self._pos < 0:
-			self._textCtrl.SetValue("沒有訊息")
+			self._textCtrl.SetValue(_("沒有訊息"))
 			self._totalLabel.SetLabel("")
 			return
 		msg = self._messages[self._pos]
@@ -94,7 +97,7 @@ class MessageReaderDialog(wx.Dialog):
 			self._pos -= 1
 			self._updateDisplay()
 		else:
-			self._speakMessage("已經是第一則訊息")
+			self._speakMessage(_("已經是第一則訊息"))
 
 	def _moveNext(self):
 		if not self._messages:
@@ -103,7 +106,7 @@ class MessageReaderDialog(wx.Dialog):
 			self._pos += 1
 			self._updateDisplay()
 		else:
-			self._speakMessage("已經是最後一則訊息")
+			self._speakMessage(_("已經是最後一則訊息"))
 
 	def _onClose(self, evt):
 		# Clean up temp file if specified
@@ -121,7 +124,7 @@ class MessageReaderDialog(wx.Dialog):
 _readerDlg = None  # module-level singleton sentinel
 
 
-def openMessageReader(messages, title="訊息閱讀器", cleanupPath=None):
+def openMessageReader(messages, title=None, cleanupPath=None):
 	"""Open the message reader dialog on the main GUI thread.
 
 	Args:
