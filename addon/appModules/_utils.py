@@ -84,13 +84,16 @@ def message(text):
 	
 	handler = braille.handler
 	assert handler
-	if handler.buffer is handler.messageBuffer:
-		handler.buffer.clear()
-	else:
-		handler.buffer = handler.messageBuffer
-	
-	region = braille.TextRegion(text)
-	region.update()
-	handler.buffer.regions.append(region)
-	handler.buffer.update()
-	handler.update()
+	try:
+		if handler.buffer is handler.messageBuffer:
+			handler.buffer.clear()
+		else:
+			handler.buffer = handler.messageBuffer
+
+		region = braille.TextRegion(text)
+		region.update()
+		handler.buffer.regions.append(region)
+		handler.buffer.update()
+		handler.update()
+	except RuntimeError:
+		log.debug("Braille translation failed for text, skipping braille output", exc_info=True)
