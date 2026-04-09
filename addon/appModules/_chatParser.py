@@ -2,7 +2,7 @@ import re
 
 _DATE_RE = re.compile(r'^\d{4}\.\d{2}\.\d{2} .+$')
 _MSG_RE = re.compile(r'^(\d{2}:\d{2}) (\S+?) (.+)$')
-_RECALL_RE = re.compile(r'^(\d{2}:\d{2}) (\S+?)已收回訊息$')
+_RECALL_RE = re.compile(r'^(\d{2}:\d{2}) (\S+?) 已收回訊息$')
 
 
 def parseChatFile(filePath):
