@@ -40,6 +40,7 @@ def _load_message_reader_module():
 	spec = importlib.util.spec_from_file_location(module_name, module_path)
 	assert spec and spec.loader
 	module = importlib.util.module_from_spec(spec)
+	module._ = lambda text: text
 	sys.modules[module_name] = module
 	spec.loader.exec_module(module)
 	return module
@@ -131,3 +132,17 @@ def test_message_reader_progress_counts_only_real_messages():
 
 	dialog._pos = 3
 	assert dialog._getProgressLabel() == "2 / 2"
+
+
+def test_message_reader_boundary_prompts_use_generic_item_wording():
+	spoken = []
+	dialog = object.__new__(message_reader.MessageReaderDialog)
+	dialog._messages = [{"type": "date", "content": "2026.04.09 星期四"}]
+	dialog._pos = 0
+	dialog._speakMessage = spoken.append
+	dialog._updateDisplay = lambda: None
+
+	dialog._movePrevious()
+	dialog._moveNext()
+
+	assert spoken == ["已經是第一項", "已經是最後一項"]

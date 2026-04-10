@@ -64,8 +64,6 @@ class MessageReaderDialog(wx.Dialog):
 		)
 		if self._messages[self._pos].get('type') == 'date' and currentMessageIndex < self._messageCount:
 			currentMessageIndex += 1
-		if currentMessageIndex <= 0:
-			return ""
 		return f"{currentMessageIndex} / {self._messageCount}"
 
 	def _updateDisplay(self):
@@ -110,7 +108,7 @@ class MessageReaderDialog(wx.Dialog):
 			self._pos -= 1
 			self._updateDisplay()
 		else:
-			self._speakMessage(_("已經是第一則訊息"))
+			self._speakMessage(_("已經是第一項"))
 
 	def _moveNext(self):
 		if not self._messages:
@@ -119,7 +117,7 @@ class MessageReaderDialog(wx.Dialog):
 			self._pos += 1
 			self._updateDisplay()
 		else:
-			self._speakMessage(_("已經是最後一則訊息"))
+			self._speakMessage(_("已經是最後一項"))
 
 	def _onClose(self, evt):
 		global _readerDlg
