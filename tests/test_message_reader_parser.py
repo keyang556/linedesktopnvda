@@ -120,12 +120,7 @@ def test_message_reader_progress_counts_only_real_messages():
 		{"type": "message", "name": "Bob", "content": "晚安", "time": "21:00"},
 	]
 	dialog._messageCount = 2
-	dialog._messageIndexMap = {
-		0: 0,
-		1: 1,
-		2: 1,
-		3: 2,
-	}
+	dialog._messageIndexMap = [0, 1, 1, 2]
 
 	dialog._pos = 0
 	assert dialog._getProgressLabel() == "1 / 2"
@@ -138,6 +133,19 @@ def test_message_reader_progress_counts_only_real_messages():
 
 	dialog._pos = 3
 	assert dialog._getProgressLabel() == "2 / 2"
+
+
+def test_message_reader_hides_progress_on_trailing_date_row():
+	dialog = object.__new__(message_reader.MessageReaderDialog)
+	dialog._messages = [
+		{"type": "message", "name": "Alice", "content": "早安", "time": "09:00"},
+		{"type": "date", "content": "2026.04.10 星期五"},
+	]
+	dialog._messageCount = 1
+	dialog._messageIndexMap = [1, 1]
+	dialog._pos = 1
+
+	assert dialog._getProgressLabel() == ""
 
 
 def test_message_reader_boundary_prompts_use_generic_item_wording():

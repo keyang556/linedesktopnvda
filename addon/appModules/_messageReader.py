@@ -20,15 +20,15 @@ class MessageReaderDialog(wx.Dialog):
 			style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
 		)
 		self._messages = messages
-		self._messageCount = sum(1 for msg in messages if msg.get('type') != 'date')
-		self._messageIndexMap = {}
-		realCount = 0
-		for i, msg in enumerate(messages):
-			if msg.get('type') != 'date':
-				realCount += 1
-			self._messageIndexMap[i] = realCount
 		self._pos = 0 if messages else -1
 		self._cleanupPath = cleanupPath
+		self._messageCount = sum(1 for msg in messages if msg.get('type') != 'date')
+		self._messageIndexMap = []
+		messageIndex = 0
+		for msg in messages:
+			if msg.get('type') != 'date':
+				messageIndex += 1
+			self._messageIndexMap.append(messageIndex)
 
 		panel = wx.Panel(self)
 		sizer = wx.BoxSizer(wx.VERTICAL)
@@ -63,11 +63,15 @@ class MessageReaderDialog(wx.Dialog):
 		return f"{msg['name']} {msg['content']} {msg['time']}"
 
 	def _getProgressLabel(self):
+		"""Return progress text counting only actual messages."""
 		if self._messageCount <= 0 or self._pos < 0:
 			return ""
 		currentMessageIndex = self._messageIndexMap[self._pos]
-		if self._messages[self._pos].get('type') == 'date' and currentMessageIndex < self._messageCount:
-			currentMessageIndex += 1
+		if self._messages[self._pos].get('type') == 'date':
+			if currentMessageIndex < self._messageCount:
+				currentMessageIndex += 1
+			else:
+				return ""
 		return f"{currentMessageIndex} / {self._messageCount}"
 
 	def _updateDisplay(self):
