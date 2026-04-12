@@ -23,10 +23,154 @@ import ctypes.wintypes
 import comtypes
 import re
 import time
+import configparser
 from ._virtualWindow import VirtualWindow
 import addonHandler
 
 addonHandler.initTranslation()
+
+
+# ---------------------------------------------------------------------------
+# LINE installation info — version detection and window type classification
+# ---------------------------------------------------------------------------
+
+def _getLineDataDir():
+	"""Return the LINE data directory path, or None if not found."""
+	localAppData = os.environ.get("LOCALAPPDATA", "")
+	if not localAppData:
+		return None
+	lineDataDir = os.path.join(localAppData, "LINE", "Data")
+	if os.path.isdir(lineDataDir):
+		return lineDataDir
+	return None
+
+
+def _readLineVersion():
+	"""Read the installed LINE version from LINE.ini.
+
+	Returns the version string (e.g. '26.1.0.3865') or None.
+	"""
+	dataDir = _getLineDataDir()
+	if not dataDir:
+		return None
+	iniPath = os.path.join(dataDir, "LINE.ini")
+	if not os.path.isfile(iniPath):
+		return None
+	try:
+		parser = configparser.ConfigParser()
+		parser.read(iniPath, encoding="utf-8")
+		return parser.get("global", "last_updated_version", fallback=None)
+	except Exception:
+		return None
+
+
+def _readLineLanguage():
+	"""Read the LINE UI language from installLang.ini.
+
+	Returns the language code (e.g. 'zh-TW') or None.
+	"""
+	dataDir = _getLineDataDir()
+	if not dataDir:
+		return None
+	iniPath = os.path.join(dataDir, "installLang.ini")
+	if not os.path.isfile(iniPath):
+		return None
+	try:
+		parser = configparser.ConfigParser()
+		parser.read(iniPath, encoding="utf-8")
+		return parser.get("General", "installLang", fallback=None)
+	except Exception:
+		return None
+
+
+# Window type classification —
+# LINE has two main window modes:
+#   "AllInOneWindow" — sidebar (chat list) + chat area in one window
+#   "ChatWindow" — standalone chat window (no sidebar)
+# In ChatWindow mode, all list items are message items (no sidebar heuristic needed).
+
+# Cache to avoid repeated window classification within the same focus cycle.
+_windowTypeCache = {
+	"hwnd": None,
+	"type": None,      # "allinone", "chat", or "unknown"
+	"expiresAt": 0.0,
+}
+_WINDOW_TYPE_CACHE_TTL = 2.0  # seconds
+
+
+def _classifyLineWindow(hwnd=None):
+	"""Classify the current LINE window as 'allinone', 'chat', or 'unknown'.
+
+	Uses window dimensions as heuristic:
+	  - AllInOneWindow is wider (has sidebar ~250-350px + chat area)
+	  - ChatWindow is narrower (chat area only, typically < 500px wide)
+	Also checks UIA tree for sidebar list presence as a secondary signal.
+	"""
+	global _windowTypeCache
+
+	if hwnd is None:
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+	if not hwnd:
+		return "unknown"
+
+	now = time.monotonic()
+	cache = _windowTypeCache
+	if cache["hwnd"] == int(hwnd) and cache["expiresAt"] > now:
+		return cache["type"]
+
+	windowType = "unknown"
+	try:
+		rect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+		winWidth = rect.right - rect.left
+
+		# AllInOneWindow typically has sidebar (~250-350px) + chat area (~400px+)
+		# so total width >= ~600px. ChatWindow is standalone chat, narrower.
+		# However, users can resize. Use a soft threshold + child window count.
+		if winWidth >= 600:
+			# Likely AllInOneWindow, but could be a wide ChatWindow.
+			# Check for the presence of multiple pane children (sidebar + chat)
+			# via quick UIA check.
+			try:
+				handler = UIAHandler.handler
+				if handler:
+					walker = handler.clientObject.RawViewWalker
+					rootCond = handler.clientObject.CreatePropertyCondition(
+						30003, 50033  # ControlType == Pane
+					)
+					rootEl = handler.clientObject.ElementFromHandle(hwnd)
+					if rootEl:
+						panes = rootEl.FindAll(2, rootCond)  # TreeScope.Children=2
+						paneCount = panes.Length if panes else 0
+						if paneCount >= 2:
+							windowType = "allinone"
+						else:
+							# Single pane or no panes — could be ChatWindow
+							# at larger size
+							windowType = "allinone" if winWidth >= 700 else "chat"
+			except Exception:
+				# Fallback: wide window is likely AllInOneWindow
+				windowType = "allinone"
+		else:
+			windowType = "chat"
+
+	except Exception:
+		log.debug("_classifyLineWindow failed", exc_info=True)
+
+	cache["hwnd"] = int(hwnd)
+	cache["type"] = windowType
+	cache["expiresAt"] = now + _WINDOW_TYPE_CACHE_TTL
+	log.debug(f"LINE: window type classified as '{windowType}' (hwnd={hwnd})")
+	return windowType
+
+
+def _isChatWindowMode(hwnd=None):
+	"""Return True if the current LINE window is a standalone ChatWindow.
+
+	In ChatWindow mode, there is no sidebar — all list items are message items.
+	"""
+	return _classifyLineWindow(hwnd) == "chat"
+
 
 # Sound file to play after a message is successfully sent
 _SEND_SOUND_PATH = os.path.join(
@@ -1868,6 +2012,10 @@ def _isInChatListContext(handler):
 		if ct == 50007:  # ListItem - focus is on a list item already
 			listEl, walker = _findListElement(handler, rawElement)
 			if listEl:
+				# In standalone ChatWindow mode there is no sidebar —
+				# all lists are message lists, not chat lists.
+				if _isChatWindowMode():
+					return False, None, None, -1
 				# Check if this list is in the left sidebar (chat list area)
 				# vs the right side (message list area)
 				try:
@@ -1941,12 +2089,17 @@ def _findChatListFromWindow(handler):
 
 	Fallback when _findChatListFromCache fails (stale COM ref).
 	Finds List elements and picks the one in the left sidebar area.
+	In standalone ChatWindow mode there is no sidebar, so returns (None, None).
 	Returns (listElement, items) or (None, None).
 	"""
 	global _chatListSearchField
 	try:
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
+			return None, None
+
+		# Standalone ChatWindow has no sidebar — no chat list to find
+		if _isChatWindowMode(hwnd):
 			return None, None
 
 		# Get window rect to identify sidebar area
@@ -2208,24 +2361,28 @@ def _queryAndSpeakUIAFocus():
 		# Only use copy-first for message list items.
 		if ct == 50007:  # ListItem
 			isMessageItem = False
-			try:
-				elRect = targetElement.CurrentBoundingRectangle
-				elLeft = int(elRect.left)
-				# Get the LINE window rect
-				lineHwnd = ctypes.windll.user32.GetForegroundWindow()
-				import ctypes.wintypes as _wt
-				wr = _wt.RECT()
-				ctypes.windll.user32.GetWindowRect(
-					lineHwnd, ctypes.byref(wr)
-				)
-				winWidth = int(wr.right - wr.left)
-				winLeft = int(wr.left)
-				# Message list items are in the right portion
-				# (element left edge > 35% of window width from left)
-				if winWidth > 0 and (elLeft - winLeft) > winWidth * 0.35:
-					isMessageItem = True
-			except Exception:
-				pass
+			# In standalone ChatWindow mode, all list items are message items
+			if _isChatWindowMode():
+				isMessageItem = True
+			else:
+				try:
+					elRect = targetElement.CurrentBoundingRectangle
+					elLeft = int(elRect.left)
+					# Get the LINE window rect
+					lineHwnd = ctypes.windll.user32.GetForegroundWindow()
+					import ctypes.wintypes as _wt
+					wr = _wt.RECT()
+					ctypes.windll.user32.GetWindowRect(
+						lineHwnd, ctypes.byref(wr)
+					)
+					winWidth = int(wr.right - wr.left)
+					winLeft = int(wr.left)
+					# Message list items are in the right portion
+					# (element left edge > 35% of window width from left)
+					if winWidth > 0 and (elLeft - winLeft) > winWidth * 0.35:
+						isMessageItem = True
+				except Exception:
+					pass
 			if isMessageItem:
 				log.info(
 					f"LINE UIA focus: ct={ct} (message ListItem), "
@@ -3321,9 +3478,14 @@ class AppModule(appModuleHandler.AppModule):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		VirtualWindow.initialize()
+		# Read and cache LINE installation info
+		self._lineVersion = _readLineVersion()
+		self._lineLanguage = _readLineLanguage()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
-			f"exe: {self.appName}"
+			f"exe: {self.appName}, "
+			f"lineVersion: {self._lineVersion}, "
+			f"lineLanguage: {self._lineLanguage}"
 		)
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
@@ -5819,6 +5981,38 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
 			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
+
+	@script(
+		# Translators: Description of a script to report LINE version and window type
+		description=_("報告 LINE 版本與視窗類型"),
+		gesture="kb:NVDA+shift+v",
+		category="LINE Desktop",
+	)
+	def script_reportLineInfo(self, gesture):
+		"""Report LINE version, language, and current window type."""
+		parts = []
+		ver = self._lineVersion
+		if ver:
+			# Translators: Reported LINE version
+			parts.append(_("LINE 版本: {version}").format(version=ver))
+		else:
+			parts.append(_("LINE 版本: 未知"))
+		lang = self._lineLanguage
+		if lang:
+			parts.append(_("語言: {language}").format(language=lang))
+		winType = _classifyLineWindow()
+		typeNames = {
+			"allinone": _("主視窗（含側邊欄）"),
+			"chat": _("獨立聊天視窗"),
+			"unknown": _("未知視窗"),
+		}
+		# Translators: Reported LINE window type
+		parts.append(_("視窗類型: {type}").format(
+			type=typeNames.get(winType, winType)
+		))
+		msg = ", ".join(parts)
+		ui.message(msg)
+		log.info(f"LINE info: {msg}")
 
 	def _pollFileDialog(self):
 		"""Poll to detect when the file dialog closes, then resume addon.
