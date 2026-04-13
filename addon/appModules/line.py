@@ -6084,12 +6084,6 @@ class AppModule(appModuleHandler.AppModule):
 		ui.message(msg)
 		log.info(f"LINE info: {msg}")
 
-	@script(
-		# Translators: Description of a script to toggle Qt accessibility env var
-		description=_("切換 Qt 無障礙環境變數"),
-		gesture="kb:NVDA+shift+a",
-		category="LINE Desktop",
-	)
 	def script_toggleQtAccessible(self, gesture):
 		"""Toggle QT_ACCESSIBILITY=1 user environment variable."""
 		currentlySet = _isQtAccessibleSet()

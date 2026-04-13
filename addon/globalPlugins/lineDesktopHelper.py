@@ -204,7 +204,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			self._qtAccessibleItem = self._lineSubMenu.Append(
 				wx.ID_ANY,
 				# Translators: Menu item for toggling Qt accessibility env var
-				_("切換 Qt 無障礙環境變數(&Q)") + "\tNVDA+Shift+A",
+				_("切換 Qt 無障礙環境變數(&Q)"),
 			)
 
 			# Bind events
