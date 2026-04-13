@@ -24,6 +24,7 @@ import comtypes
 import re
 import time
 import configparser
+import winreg
 from ._virtualWindow import VirtualWindow
 import addonHandler
 
@@ -81,6 +82,69 @@ def _readLineLanguage():
 		return parser.get("General", "installLang", fallback=None)
 	except Exception:
 		return None
+
+
+# ---------------------------------------------------------------------------
+# Qt accessibility environment variable management
+# ---------------------------------------------------------------------------
+
+_QT_ACCESSIBILITY_ENV_NAME = "QT_ACCESSIBILITY"
+_HWND_BROADCAST = 0xFFFF
+_WM_SETTINGCHANGE = 0x001A
+_SMTO_ABORTIFHUNG = 0x0002
+
+
+def _isQtAccessibleSet():
+	"""Check if QT_ACCESSIBILITY=1 is set in user environment variables.
+
+	Returns True if the variable is set to '1', False otherwise.
+	"""
+	try:
+		with winreg.OpenKey(
+			winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ
+		) as key:
+			value, _ = winreg.QueryValueEx(key, _QT_ACCESSIBILITY_ENV_NAME)
+			return str(value) == "1"
+	except FileNotFoundError:
+		return False
+	except Exception:
+		log.debugWarning("Failed to read QT_ACCESSIBILITY from registry", exc_info=True)
+		return False
+
+
+def _setQtAccessible(enable=True):
+	"""Set or remove QT_ACCESSIBILITY in user environment variables.
+
+	Writes to HKCU\\Environment so the setting persists across reboots.
+	Broadcasts WM_SETTINGCHANGE so new processes pick up the change.
+	Returns True on success, False on failure.
+	"""
+	try:
+		with winreg.OpenKey(
+			winreg.HKEY_CURRENT_USER, "Environment", 0,
+			winreg.KEY_SET_VALUE | winreg.KEY_READ
+		) as key:
+			if enable:
+				winreg.SetValueEx(
+					key, _QT_ACCESSIBILITY_ENV_NAME, 0,
+					winreg.REG_SZ, "1"
+				)
+				log.info("QT_ACCESSIBILITY=1 set in user environment")
+			else:
+				try:
+					winreg.DeleteValue(key, _QT_ACCESSIBILITY_ENV_NAME)
+					log.info("QT_ACCESSIBILITY removed from user environment")
+				except FileNotFoundError:
+					pass
+		# Broadcast environment change to all windows
+		ctypes.windll.user32.SendMessageTimeoutW(
+			_HWND_BROADCAST, _WM_SETTINGCHANGE, 0,
+			"Environment", _SMTO_ABORTIFHUNG, 5000, None
+		)
+		return True
+	except Exception:
+		log.warning("Failed to set QT_ACCESSIBILITY in registry", exc_info=True)
+		return False
 
 
 # Window type classification —
@@ -3481,11 +3545,13 @@ class AppModule(appModuleHandler.AppModule):
 		# Read and cache LINE installation info
 		self._lineVersion = _readLineVersion()
 		self._lineLanguage = _readLineLanguage()
+		self._qtAccessibleSet = _isQtAccessibleSet()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "
 			f"lineVersion: {self._lineVersion}, "
-			f"lineLanguage: {self._lineLanguage}"
+			f"lineLanguage: {self._lineLanguage}, "
+			f"qtAccessible: {self._qtAccessibleSet}"
 		)
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
@@ -6010,9 +6076,27 @@ class AppModule(appModuleHandler.AppModule):
 		parts.append(_("視窗類型: {type}").format(
 			type=typeNames.get(winType, winType)
 		))
+		qtA11y = _isQtAccessibleSet()
+		parts.append(
+			_("Qt 無障礙: 已啟用") if qtA11y else _("Qt 無障礙: 未啟用")
+		)
 		msg = ", ".join(parts)
 		ui.message(msg)
 		log.info(f"LINE info: {msg}")
+
+	def script_toggleQtAccessible(self, gesture):
+		"""Toggle QT_ACCESSIBILITY=1 user environment variable."""
+		currentlySet = _isQtAccessibleSet()
+		if currentlySet:
+			if _setQtAccessible(False):
+				ui.message(_("已移除 QT_ACCESSIBILITY 環境變數，重啟 LINE 後生效"))
+			else:
+				ui.message(_("移除 QT_ACCESSIBILITY 環境變數失敗"))
+		else:
+			if _setQtAccessible(True):
+				ui.message(_("已設定 QT_ACCESSIBILITY=1，重啟 LINE 後生效"))
+			else:
+				ui.message(_("設定 QT_ACCESSIBILITY 環境變數失敗"))
 
 	def _pollFileDialog(self):
 		"""Poll to detect when the file dialog closes, then resume addon.

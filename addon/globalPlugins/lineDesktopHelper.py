@@ -8,9 +8,63 @@ from scriptHandler import script
 from logHandler import log
 import gui
 import wx
+import winreg
+import ctypes
 import addonHandler
 
 addonHandler.initTranslation()
+
+
+# ---------------------------------------------------------------------------
+# Qt accessibility environment variable helpers (duplicated from line.py
+# so the global plugin can toggle the setting even when LINE is not running)
+# ---------------------------------------------------------------------------
+
+_QT_ACCESSIBILITY_ENV_NAME = "QT_ACCESSIBILITY"
+_HWND_BROADCAST = 0xFFFF
+_WM_SETTINGCHANGE = 0x001A
+_SMTO_ABORTIFHUNG = 0x0002
+
+
+def _isQtAccessibleSet():
+	"""Check if QT_ACCESSIBILITY=1 is set in user environment variables."""
+	try:
+		with winreg.OpenKey(
+			winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ
+		) as key:
+			value, _ = winreg.QueryValueEx(key, _QT_ACCESSIBILITY_ENV_NAME)
+			return str(value) == "1"
+	except FileNotFoundError:
+		return False
+	except Exception:
+		return False
+
+
+def _setQtAccessible(enable=True):
+	"""Set or remove QT_ACCESSIBILITY in user environment variables."""
+	try:
+		with winreg.OpenKey(
+			winreg.HKEY_CURRENT_USER, "Environment", 0,
+			winreg.KEY_SET_VALUE | winreg.KEY_READ
+		) as key:
+			if enable:
+				winreg.SetValueEx(
+					key, _QT_ACCESSIBILITY_ENV_NAME, 0,
+					winreg.REG_SZ, "1"
+				)
+			else:
+				try:
+					winreg.DeleteValue(key, _QT_ACCESSIBILITY_ENV_NAME)
+				except FileNotFoundError:
+					pass
+		ctypes.windll.user32.SendMessageTimeoutW(
+			_HWND_BROADCAST, _WM_SETTINGCHANGE, 0,
+			"Environment", _SMTO_ABORTIFHUNG, 5000, None
+		)
+		return True
+	except Exception:
+		log.warning("Failed to set QT_ACCESSIBILITY in registry", exc_info=True)
+		return False
 
 
 def _getLineAppModule():
@@ -144,6 +198,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				_("跳到通話視窗(&F)") + "\tNVDA+Windows+F",
 			)
 
+			self._lineSubMenu.AppendSeparator()
+
+			# ── Settings ──
+			self._qtAccessibleItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for toggling Qt accessibility env var
+				_("切換 Qt 無障礙環境變數(&Q)"),
+			)
+
 			# Bind events
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onAllChats, self._allChatsItem
@@ -186,6 +249,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU, self._onFocusCallWindow, self._focusCallItem
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU, self._onToggleQtAccessible, self._qtAccessibleItem
 			)
 
 			# Add the submenu to NVDA's Tools menu
@@ -428,6 +494,28 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
 			ui.message(_("跳到通話視窗功能錯誤: {error}").format(error=e))
+
+	def _onToggleQtAccessible(self, evt):
+		wx.CallAfter(self._doToggleQtAccessible)
+
+	def _doToggleQtAccessible(self):
+		import ui
+		lineApp = _getLineAppModule()
+		if lineApp and hasattr(lineApp, 'script_toggleQtAccessible'):
+			lineApp.script_toggleQtAccessible(None)
+			return
+		# LINE not running — toggle the env var directly
+		currentlySet = _isQtAccessibleSet()
+		if currentlySet:
+			if _setQtAccessible(False):
+				ui.message(_("已移除 QT_ACCESSIBILITY 環境變數，重啟 LINE 後生效"))
+			else:
+				ui.message(_("移除 QT_ACCESSIBILITY 環境變數失敗"))
+		else:
+			if _setQtAccessible(True):
+				ui.message(_("已設定 QT_ACCESSIBILITY=1，重啟 LINE 後生效"))
+			else:
+				ui.message(_("設定 QT_ACCESSIBILITY 環境變數失敗"))
 
 	def terminate(self, *args, **kwargs):
 		self._removeToolsMenu()
