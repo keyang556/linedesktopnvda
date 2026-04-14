@@ -82,3 +82,30 @@ def test_message_context_menu_click_invokes_action_callback_and_closes_window():
 
 	assert calls == ["收回"]
 	assert message_context_menu.VirtualWindow.currentWindow is None
+
+
+def test_build_menu_elements_ignores_noise_lines_before_copy_row():
+	lines = [
+		{"text": "50", "rect": (700, 430, 732, 450)},
+		{"text": "回覆", "rect": (706, 449, 742, 469)},
+		{"text": "複製", "rect": (706, 489, 742, 511)},
+		{"text": "分享", "rect": (706, 530, 742, 550)},
+	]
+	row_rects = [
+		(639, 439, 837, 479),
+		(639, 480, 837, 520),
+		(639, 520, 837, 560),
+	]
+
+	elements = message_context_menu._buildMenuElements(
+		lines,
+		(624, 415, 852, 860),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == ["回覆", "複製", "分享"]
+	assert [element["clickPoint"] for element in elements] == [
+		(738, 459),
+		(738, 500),
+		(738, 540),
+	]

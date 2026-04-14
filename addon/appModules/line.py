@@ -461,40 +461,196 @@ def _getRecallConfirmationPrompt(availableActions, isModernDialog=False):
 
 def _extractOcrRectLike(obj):
 	"""Extract a screen-space rectangle from a UWP OCR line/word object."""
-	for attr in ("boundingRect", "boundingRectangle", "rect", "location", "bounds"):
-		rect = getattr(obj, attr, None)
-		if not rect:
-			continue
-		left = getattr(rect, "left", getattr(rect, "x", None))
-		top = getattr(rect, "top", getattr(rect, "y", None))
-		right = getattr(rect, "right", None)
-		bottom = getattr(rect, "bottom", None)
-		if right is None and left is not None:
-			width = getattr(rect, "width", None)
-			if width is not None:
-				right = left + width
-		if bottom is None and top is not None:
-			height = getattr(rect, "height", None)
-			if height is not None:
-				bottom = top + height
-		if None not in (left, top, right, bottom):
-			return (int(left), int(top), int(right), int(bottom))
+	def _getValue(source, *names):
+		if source is None:
+			return None
+		if isinstance(source, dict):
+			for name in names:
+				value = source.get(name)
+				if value is not None:
+					return value
+		for name in names:
+			value = getattr(source, name, None)
+			if value is not None:
+				return value
+		return None
 
-	for attrs in (
-		("left", "top", "right", "bottom"),
-		("x", "y", "width", "height"),
+	def _coerceNumber(value):
+		if value is None:
+			return None
+		for attr in ("value", "Value"):
+			nested = getattr(value, attr, None)
+			if nested is not None and nested is not value:
+				value = nested
+				break
+		try:
+			return float(value)
+		except Exception:
+			return None
+
+	def _coerceIntTuple(*values):
+		coerced = []
+		for value in values:
+			number = _coerceNumber(value)
+			if number is None:
+				return None
+			coerced.append(int(round(number)))
+		return tuple(coerced)
+
+	def _rectFromLeftTopRightBottom(source):
+		rect = _coerceIntTuple(
+			_getValue(source, "left", "Left", "minX", "MinX", "x1", "X1"),
+			_getValue(source, "top", "Top", "minY", "MinY", "y1", "Y1"),
+			_getValue(source, "right", "Right", "maxX", "MaxX", "x2", "X2"),
+			_getValue(source, "bottom", "Bottom", "maxY", "MaxY", "y2", "Y2"),
+		)
+		if rect and rect[2] > rect[0] and rect[3] > rect[1]:
+			return rect
+		return None
+
+	def _rectFromXYWH(source):
+		rect = _coerceIntTuple(
+			_getValue(source, "x", "X"),
+			_getValue(source, "y", "Y"),
+			_getValue(source, "width", "Width", "w", "W"),
+			_getValue(source, "height", "Height", "h", "H"),
+		)
+		if rect and rect[2] > 0 and rect[3] > 0:
+			left, top, width, height = rect
+			return (left, top, left + width, top + height)
+		return None
+
+	def _pointFrom(source):
+		if source is None:
+			return None
+		if isinstance(source, (list, tuple)) and len(source) >= 2:
+			point = _coerceIntTuple(source[0], source[1])
+			if point:
+				return point
+		point = _coerceIntTuple(
+			_getValue(source, "x", "X", "left", "Left"),
+			_getValue(source, "y", "Y", "top", "Top"),
+		)
+		if point:
+			return point
+		return None
+
+	def _rectFromPoints(points):
+		extracted = []
+		if isinstance(points, (list, tuple)) and len(points) >= 8:
+			flatNumbers = [_coerceNumber(value) for value in points]
+			if (
+				len(flatNumbers) % 2 == 0
+				and all(value is not None for value in flatNumbers)
+			):
+				extracted.extend(
+					(
+						int(round(flatNumbers[index])),
+						int(round(flatNumbers[index + 1])),
+					)
+					for index in range(0, len(flatNumbers), 2)
+				)
+		if not extracted:
+			for point in points or ():
+				parsed = _pointFrom(point)
+				if parsed:
+					extracted.append(parsed)
+		if not extracted:
+			return None
+		left = min(x for x, _y in extracted)
+		top = min(y for _x, y in extracted)
+		right = max(x for x, _y in extracted)
+		bottom = max(y for _x, y in extracted)
+		if right <= left or bottom <= top:
+			return None
+		return (left, top, right, bottom)
+
+	def _rectFromSequence(source, preferXYWH=False):
+		if not isinstance(source, (list, tuple)) or len(source) < 4:
+			return None
+		pointRect = _rectFromPoints(source)
+		if pointRect:
+			return pointRect
+		flat = _coerceIntTuple(*source[:4])
+		if not flat:
+			return None
+		left, top, third, fourth = flat
+		edgeRect = None
+		if third > left and fourth > top:
+			edgeRect = (left, top, third, fourth)
+		sizeRect = None
+		if third > 0 and fourth > 0:
+			sizeRect = (left, top, left + third, top + fourth)
+		for rect in ((sizeRect, edgeRect) if preferXYWH else (edgeRect, sizeRect)):
+			if rect and rect[2] > rect[0] and rect[3] > rect[1]:
+				return rect
+		return None
+
+	def _rectFromSource(source, preferXYWH=False):
+		if source is None:
+			return None
+		for rect in (
+			_rectFromLeftTopRightBottom(source),
+			_rectFromXYWH(source),
+		):
+			if rect:
+				return rect
+		origin = _getValue(source, "origin", "Origin")
+		size = _getValue(source, "size", "Size")
+		if origin is not None and size is not None:
+			rect = _coerceIntTuple(
+				_getValue(origin, "x", "X"),
+				_getValue(origin, "y", "Y"),
+				_getValue(size, "width", "Width"),
+				_getValue(size, "height", "Height"),
+			)
+			if rect and rect[2] > 0 and rect[3] > 0:
+				left, top, width, height = rect
+				return (left, top, left + width, top + height)
+		for attr in (
+			"points",
+			"Points",
+			"vertices",
+			"Vertices",
+			"corners",
+			"Corners",
+			"polygon",
+			"Polygon",
+			"coordinates",
+			"Coordinates",
+			"boundingPoints",
+			"BoundingPoints",
+		):
+			rect = _rectFromPoints(_getValue(source, attr))
+			if rect:
+				return rect
+		return _rectFromSequence(source, preferXYWH=preferXYWH)
+
+	for attr in (
+		"boundingRect",
+		"boundingRectangle",
+		"bounding_rect",
+		"bounding_rectangle",
+		"rect",
+		"location",
+		"bounds",
+		"box",
 	):
-		values = [getattr(obj, attr, None) for attr in attrs]
-		if any(value is None for value in values):
-			continue
-		left, top, third, fourth = values
-		if attrs[2] == "right":
-			return (int(left), int(top), int(third), int(fourth))
-		return (int(left), int(top), int(left + third), int(top + fourth))
+		rect = _rectFromSource(_getValue(obj, attr), preferXYWH=True)
+		if rect:
+			return rect
 
-	words = getattr(obj, "words", None) or []
+	rect = _rectFromSource(obj)
+	if rect:
+		return rect
+
+	words = _getValue(obj, "words", "Words")
+	try:
+		wordIterator = iter(words or ())
+	except Exception:
+		wordIterator = ()
 	wordRects = []
-	for word in words:
+	for word in wordIterator:
 		rect = _extractOcrRectLike(word)
 		if rect:
 			wordRects.append(rect)
@@ -524,6 +680,65 @@ def _extractOcrLines(result):
 
 	if extracted:
 		return extracted
+
+	rawWords = getattr(result, "words", None) or []
+	lineEnds = []
+	for rawLine in rawLines:
+		try:
+			lineEnd = int(rawLine)
+		except Exception:
+			continue
+		if lineEnd >= 0:
+			lineEnds.append(lineEnd)
+
+	wordEntries = []
+	for rawWord in rawWords:
+		try:
+			offset = int(getattr(rawWord, "offset"))
+			left = int(getattr(rawWord, "left"))
+			top = int(getattr(rawWord, "top"))
+			width = int(getattr(rawWord, "width"))
+			height = int(getattr(rawWord, "height"))
+		except Exception:
+			continue
+		if width <= 0 or height <= 0:
+			continue
+		wordEntries.append({
+			"offset": offset,
+			"rect": (left, top, left + width, top + height),
+		})
+
+	text = (getattr(result, "text", "") or "")
+	if lineEnds and wordEntries and text:
+		rebuilt = []
+		lineStart = 0
+		wordIndex = 0
+		wordCount = len(wordEntries)
+		textLen = len(text)
+		for rawLineEnd in lineEnds:
+			lineEnd = max(lineStart, min(int(rawLineEnd), textLen))
+			lineText = text[lineStart:lineEnd].rstrip("\r\n")
+			lineRects = []
+			while wordIndex < wordCount and wordEntries[wordIndex]["offset"] < rawLineEnd:
+				if wordEntries[wordIndex]["offset"] >= lineStart:
+					lineRects.append(wordEntries[wordIndex]["rect"])
+				wordIndex += 1
+			if lineText.strip():
+				rect = None
+				if lineRects:
+					rect = (
+						min(item[0] for item in lineRects),
+						min(item[1] for item in lineRects),
+						max(item[2] for item in lineRects),
+						max(item[3] for item in lineRects),
+					)
+				rebuilt.append({
+					"text": lineText.strip(),
+					"rect": rect,
+				})
+			lineStart = lineEnd
+		if rebuilt:
+			return rebuilt
 
 	text = _removeCJKSpaces((getattr(result, "text", "") or "").strip())
 	return [
@@ -906,6 +1121,217 @@ def _normalizeRuntimeId(runtimeId):
 			return None
 
 
+def _buildMessageBubbleClickPositions(
+	rect,
+	winTop,
+	winBottom,
+	includeVerticalOffsets=False,
+):
+	"""Build conservative right-click probes for a focused message row."""
+	try:
+		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
+	except Exception:
+		return []
+
+	elWidth = elRight - elLeft
+	if elWidth <= 0:
+		return []
+
+	cx = int((elLeft + elRight) / 2)
+	cy = int((elTop + elBottom) / 2)
+	clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
+	clampedTop = max(elTop + 2, winTop + 10)
+	clampedBottom = min(elBottom - 2, winBottom - 10)
+	winHeight = max(int(winBottom - winTop), 1)
+	isLowerBubble = clampedCenter >= (winTop + int(winHeight * 0.45))
+
+	# Keep the historic six probes first so currently working messages
+	# behave the same, then add narrower left-edge fallbacks for short
+	# received bubbles whose clickable padding sits further left. Keep
+	# the synthetic "center" probe last so copy-read can stop after the
+	# dedicated edge/padding probes are exhausted.
+	clickPositions = [
+		(elLeft + elWidth // 6, clampedCenter, "1/6-left"),
+		(elLeft + 5 * elWidth // 6, clampedCenter, "5/6-right"),
+		(elLeft + elWidth // 4, clampedCenter, "1/4-left"),
+		(elLeft + 3 * elWidth // 4, clampedCenter, "3/4-right"),
+		(elLeft + 9 * elWidth // 10, clampedCenter, "9/10-right"),
+		(elLeft + 7 * elWidth // 8, clampedCenter, "7/8-right"),
+		(elLeft + elWidth // 10, clampedCenter, "1/10-left"),
+		(elLeft + elWidth // 8, clampedCenter, "1/8-left"),
+	]
+
+	if includeVerticalOffsets:
+		if isLowerBubble:
+			clickPositions.extend([
+				(elLeft + 5 * elWidth // 6, clampedTop, "5/6-top"),
+				(elLeft + 5 * elWidth // 6, clampedBottom, "5/6-bottom"),
+			])
+		clickPositions.extend([
+			(elLeft + elWidth // 10, clampedTop, "1/10-top"),
+			(elLeft + elWidth // 8, clampedTop, "1/8-top"),
+			(elLeft + elWidth // 6, clampedTop, "1/6-top"),
+			(elLeft + elWidth // 10, clampedBottom, "1/10-bottom"),
+			(elLeft + elWidth // 8, clampedBottom, "1/8-bottom"),
+		])
+		if not isLowerBubble:
+			clickPositions.append(
+				(elLeft + 5 * elWidth // 6, clampedBottom, "5/6-bottom")
+			)
+
+	clickPositions.append((cx, clampedCenter, "center"))
+	return clickPositions
+
+
+def _mergeClickPositions(primaryPositions, fallbackPositions):
+	"""Prepend unique primary probes before fallback probes."""
+	merged = []
+	seenPoints = set()
+	for positions in (primaryPositions or (), fallbackPositions or ()):
+		for position in positions:
+			try:
+				x, y, label = position
+				key = (int(x), int(y))
+			except Exception:
+				continue
+			if key in seenPoints:
+				continue
+			seenPoints.add(key)
+			merged.append((int(x), int(y), label))
+	return merged
+
+
+def _normalizeMessageBubbleOcrLine(text):
+	"""Normalize OCR line text for message-bubble metadata detection."""
+	normalized = _removeCJKSpaces((text or "").strip())
+	normalized = re.sub(
+		r'(?<=\d)\s*[:：•\.。．·･℃]+\s*(?=\d)',
+		':',
+		normalized,
+	)
+	normalized = re.sub(r'\s+', '', normalized)
+	return normalized
+
+
+def _isMessageBubbleMetadataOcrLine(text):
+	"""Return True when an OCR line looks like read/time metadata, not content."""
+	normalized = _normalizeMessageBubbleOcrLine(text)
+	if not normalized:
+		return True
+
+	stripped = normalized.strip(" ,，、.。:：;；!！?？'\"`()[]{}<>-~～")
+	if not stripped:
+		return True
+	if stripped in {"已讀", "未讀"}:
+		return True
+
+	timePattern = r'(?:(?:[上下]午)|午|am|pm)?\d{1,2}:\d{1,2}(?::\d{1,2})?'
+	if re.fullmatch(timePattern, stripped, re.IGNORECASE):
+		return True
+	if re.fullmatch(rf'(?:已讀|未讀){timePattern}', stripped, re.IGNORECASE):
+		return True
+	return False
+
+
+def _buildMessageBubbleOcrClickPositions(ocrLines, rect, winTop, winBottom):
+	"""Build OCR-derived probes near the bubble padding instead of the text body."""
+	if not ocrLines or not rect:
+		return []
+	try:
+		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
+	except Exception:
+		return []
+	if elRight <= elLeft or elBottom <= elTop:
+		return []
+
+	contentRects = []
+	for line in ocrLines:
+		if not isinstance(line, dict):
+			continue
+		if _isMessageBubbleMetadataOcrLine(line.get("text", "")):
+			continue
+		lineRect = line.get("rect")
+		if not lineRect:
+			continue
+		try:
+			lineLeft, lineTop, lineRight, lineBottom = [
+				int(value) for value in lineRect
+			]
+		except Exception:
+			continue
+		lineLeft = max(elLeft, lineLeft)
+		lineTop = max(elTop, lineTop)
+		lineRight = min(elRight, lineRight)
+		lineBottom = min(elBottom, lineBottom)
+		if lineRight <= lineLeft or lineBottom <= lineTop:
+			continue
+		contentRects.append((lineLeft, lineTop, lineRight, lineBottom))
+
+	if not contentRects:
+		return []
+
+	contentLeft = min(rect[0] for rect in contentRects)
+	contentTop = min(rect[1] for rect in contentRects)
+	contentRight = max(rect[2] for rect in contentRects)
+	contentBottom = max(rect[3] for rect in contentRects)
+	leftGap = max(0, contentLeft - elLeft)
+	rightGap = max(0, elRight - contentRight)
+	if max(leftGap, rightGap) < 8:
+		return []
+
+	contentWidth = max(1, contentRight - contentLeft)
+	contentHeight = max(1, contentBottom - contentTop)
+	rowWidth = max(1, elRight - elLeft)
+	paddingX = max(12, min(28, int(contentWidth * 0.40)))
+	edgeInset = max(8, min(18, int(rowWidth * 0.04)))
+	preferRight = leftGap > rightGap
+
+	if preferRight:
+		anchorX = min(elRight - edgeInset, contentRight + paddingX)
+		if anchorX <= contentRight:
+			anchorX = min(elRight - edgeInset, contentRight + 8)
+		sideLabel = "ocr-right"
+	else:
+		anchorX = max(elLeft + edgeInset, contentLeft - paddingX)
+		if anchorX >= contentLeft:
+			anchorX = max(elLeft + edgeInset, contentLeft - 8)
+		sideLabel = "ocr-left"
+
+	def _clampY(value):
+		return max(winTop + 10, min(int(value), winBottom - 10))
+
+	yCandidates = [
+		(_clampY((contentTop + contentBottom) / 2), "center"),
+	]
+	if contentHeight >= 18:
+		yCandidates.extend([
+			(_clampY(contentTop + (contentHeight * 0.35)), "upper"),
+			(_clampY(contentTop + (contentHeight * 0.65)), "lower"),
+		])
+
+	positions = []
+	seenY = set()
+	for yValue, suffix in yCandidates:
+		if yValue in seenY:
+			continue
+		seenY.add(yValue)
+		positions.append((int(anchorX), int(yValue), f"{sideLabel}-{suffix}"))
+	return positions
+
+
+def _hasExhaustedMessageBubbleFallbackProbes(posIdx, clickPositions):
+	"""Whether the non-center bubble probes have already been tried."""
+	try:
+		if posIdx < 0 or not clickPositions:
+			return False
+		lastRelevantIdx = len(clickPositions) - 1
+		if clickPositions[lastRelevantIdx][2] == "center":
+			lastRelevantIdx -= 1
+		return lastRelevantIdx >= 0 and posIdx >= lastRelevantIdx
+	except Exception:
+		return False
+
+
 def _getElementRuntimeId(element):
 	if element is None:
 		return None
@@ -1122,6 +1548,107 @@ def _extractMatchedMessageContextMenuLabels(ocrText):
 		if label:
 			matchedLabels.append(label)
 	return popupLines, lineMatches, matchedLabels
+
+
+def _resolvePopupMenuLabelClickPoint(
+	targetLabel,
+	ocrLines,
+	popupRect,
+	popupRowRects=None,
+	buildMenuElements=None,
+):
+	"""Resolve a popup-menu label to a stable click point via OCR + row rects."""
+	if not targetLabel or not ocrLines or not popupRect:
+		return None
+
+	if buildMenuElements is None:
+		try:
+			from ._virtualWindows.messageContextMenu import _buildMenuElements as buildMenuElements
+		except Exception as e:
+			log.debug(
+				f"LINE: failed to load popup OCR menu builder: {e}",
+				exc_info=True,
+			)
+			return None
+
+	try:
+		elements = buildMenuElements(
+			ocrLines,
+			popupRect,
+			rowRects=popupRowRects,
+		)
+	except Exception as e:
+		log.debug(
+			f"LINE: popup OCR menu builder failed for {targetLabel!r}: {e}",
+			exc_info=True,
+		)
+		return None
+
+	for elementIndex, element in enumerate(elements):
+		if element.get("name") != targetLabel:
+			continue
+		clickPoint = element.get("clickPoint")
+		if not clickPoint or len(clickPoint) != 2:
+			continue
+		try:
+			clickX = int(clickPoint[0])
+			clickY = int(clickPoint[1])
+		except Exception:
+			continue
+		return {
+			"clickPoint": (clickX, clickY),
+			"index": elementIndex,
+			"count": len(elements),
+		}
+	return None
+
+
+def _sendGestureWithAddonSuppressed(gestureName):
+	"""Send a key directly to LINE without routing it back through addon scripts."""
+	from keyboardHandler import KeyboardInputGesture
+
+	global _suppressAddon
+	previousSuppressState = _suppressAddon
+	_suppressAddon = True
+	try:
+		KeyboardInputGesture.fromName(gestureName).send()
+	finally:
+		_suppressAddon = previousSuppressState
+
+
+def _popupLooksLikeMessageContextMenu(appMod, hwnd, popupRect):
+	"""Return True only when popup OCR matches known LINE message-menu labels."""
+	left, top, right, bottom = popupRect
+	popupW = right - left
+	popupH = bottom - top
+	if popupW <= 0 or popupH <= 0:
+		return False
+	try:
+		ocrText = appMod._ocrWindowArea(
+			hwnd,
+			region=(left, top, popupW, popupH),
+			sync=True,
+			timeout=2.0,
+		)
+		popupLines, _popupLineMatches, matchedLabels = (
+			_extractMatchedMessageContextMenuLabels(ocrText)
+		)
+		if matchedLabels:
+			log.info(
+				f"LINE: message context menu confirmed via popup OCR: "
+				f"lines={popupLines}, matched={matchedLabels}"
+			)
+			return True
+		log.debug(
+			f"LINE: popup OCR did not resemble a message context menu: "
+			f"{popupLines}"
+		)
+	except Exception as e:
+		log.debug(
+			f"LINE: popup OCR validation failed: {e}",
+			exc_info=True,
+		)
+	return False
 
 
 def _isNotesWindowContext(element, walker, allowOcr=True):
@@ -2568,40 +3095,15 @@ def _copyAndReadMessage(targetElement):
 	elRight = int(rect.right)
 	elTop = int(rect.top)
 	elBottom = int(rect.bottom)
-	elWidth = elRight - elLeft
-	clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
-	clampedTop = max(elTop + 2, winTop + 10)
-	clampedBottom = min(elBottom - 2, winBottom - 10)
-
-	# The UIA element spans the full chat area width, but the actual
-	# message bubble is narrower — left-aligned (received) or
-	# right-aligned (sent).  Use narrow increments to target bubbles.
-	# Positions at 1/6 and 5/6 hit the typical bubble centers;
-	# 1/4 and 3/4 cover wider bubbles; center is last resort.
-	pos_1_6 = elLeft + elWidth // 6
-	pos_5_6 = elLeft + 5 * elWidth // 6
-	pos_1_4 = elLeft + elWidth // 4
-	pos_3_4 = elLeft + 3 * elWidth // 4
-	pos_1_8 = elLeft + elWidth // 8
-	pos_1_10 = elLeft + elWidth // 10
-	pos_7_8 = elLeft + 7 * elWidth // 8
-	pos_9_10 = elLeft + 9 * elWidth // 10
-
-	clickPositions = [
-		(pos_1_6, clampedCenter, "1/6-left"),
-		(pos_5_6, clampedCenter, "5/6-right"),
-		(pos_1_4, clampedCenter, "1/4-left"),
-		(pos_3_4, clampedCenter, "3/4-right"),
-		(pos_9_10, clampedCenter, "9/10-right"),
-		(pos_7_8, clampedCenter, "7/8-right"),
-		(pos_1_10, clampedCenter, "1/10-left"),
-		(pos_1_8, clampedCenter, "1/8-left"),
-		(cx, clampedCenter, "center"),
-		(pos_1_6, clampedTop, "1/6-top"),
-		(pos_5_6, clampedBottom, "5/6-bottom"),
-	]
+	baseClickPositions = _buildMessageBubbleClickPositions(
+		(elLeft, elTop, elRight, elBottom),
+		winTop,
+		winBottom,
+		includeVerticalOffsets=True,
+	)
+	clickState = {"positions": baseClickPositions}
 	selectAllCount = [0]  # mutable counter for ≤2-item menus
-	messageOcrCache = {"done": False, "text": ""}
+	messageOcrCache = {"done": False, "text": "", "lines": []}
 
 	def _isCurrentRequest():
 		if requestId != _copyReadRequestId:
@@ -2675,6 +3177,8 @@ def _copyAndReadMessage(targetElement):
 			resizeFactor = recognizer.getResizeFactor(msgW, msgH)
 			if resizeFactor <= 0:
 				resizeFactor = 1
+			if resizeFactor < 2:
+				resizeFactor = 2
 
 			if resizeFactor > 1:
 				sb2 = screenBitmap.ScreenBitmap(
@@ -2718,12 +3222,35 @@ def _copyAndReadMessage(targetElement):
 			event.wait(timeout=2.5)
 
 			msgText = ""
+			ocrLines = []
 			result = resultHolder[0]
 			if result and not isinstance(result, Exception):
 				msgText = getattr(result, 'text', '') or ''
 				msgText = _removeCJKSpaces(msgText.strip())
+				ocrLines = _extractOcrLines(result)
 
 			messageOcrCache["text"] = msgText
+			messageOcrCache["lines"] = ocrLines
+			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
+				ocrLines,
+				(elLeft, elTop, elRight, elBottom),
+				winTop,
+				winBottom,
+			)
+			if ocrClickPositions:
+				log.debug(
+					f"LINE: copy-read OCR-derived bubble probes: "
+					f"{[label for _x, _y, label in ocrClickPositions]}"
+				)
+				clickState["positions"] = _mergeClickPositions(
+					ocrClickPositions,
+					baseClickPositions,
+				)
+			elif ocrLines:
+				log.debug(
+					f"LINE: copy-read OCR lines yielded no bubble probes: "
+					f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}"
+				)
 			log.debug(f"LINE: copy-read message OCR: {msgText!r}")
 			return msgText
 		except Exception as e:
@@ -2738,14 +3265,15 @@ def _copyAndReadMessage(targetElement):
 		"""Right-click at clickPositions[posIdx] and try to copy."""
 		if _abortIfStale("attemptCopyAtOffset", restoreClipboard=True):
 			return
-		if posIdx >= len(clickPositions):
+		positions = clickState["positions"]
+		if posIdx >= len(positions):
 			# All positions exhausted — fall back to OCR
 			log.info("LINE: copy-read all positions failed, falling back to OCR")
 			_restoreClipboard(origClip)
 			_ocrReadMessageFallback(targetElement)
 			return
 
-		clickX, clickY, posLabel = clickPositions[posIdx]
+		clickX, clickY, posLabel = positions[posIdx]
 		log.info(
 			f"LINE: copy-read right-clicking at "
 			f"({clickX}, {clickY}) [{posLabel}]"
@@ -2814,7 +3342,7 @@ def _copyAndReadMessage(targetElement):
 			if popupCandidates:
 				popupHwnd = popupCandidates[0]
 			else:
-				clickX, clickY, _ = clickPositions[posIdx]
+				clickX, clickY, _ = clickState["positions"][posIdx]
 				for dy in [0, -40, -80, 40, 80]:
 					pt = wintypes.POINT(clickX, clickY + dy)
 					candHwnd = ctypes.windll.user32.WindowFromPoint(pt)
@@ -2916,6 +3444,7 @@ def _copyAndReadMessage(targetElement):
 
 			# Find "複製" item by UIA text
 			copyItem = None
+			copyClickPoint = None
 			for item, text in menuItems:
 				if text and "複製" in text:
 					copyItem = item
@@ -2932,6 +3461,16 @@ def _copyAndReadMessage(targetElement):
 					popupW = int(popupRect.right - popupRect.left)
 					popupH = int(popupRect.bottom - popupRect.top)
 					if popupW > 0 and popupH > 0:
+						popupRectTuple = (
+							int(popupRect.left),
+							int(popupRect.top),
+							int(popupRect.right),
+							int(popupRect.bottom),
+						)
+						popupRowRects = _collectPopupMenuRowRects(
+							popupHwnd,
+							popupRectTuple,
+						)
 						import screenBitmap
 						from contentRecog import uwpOcr
 						import threading
@@ -2997,30 +3536,39 @@ def _copyAndReadMessage(targetElement):
 							event.wait(timeout=3.0)
 
 							ocrText = ""
+							popupOcrLines = []
 							result = resultHolder[0]
 							if result and not isinstance(result, Exception):
 								ocrText = getattr(result, 'text', '') or ''
 								ocrText = _removeCJKSpaces(ocrText.strip())
+								popupOcrLines = _extractOcrLines(result)
 
 							popupOcrText = ocrText
 							popupLines, popupLineMatches, popupOcrMatchedLabels = (
 								_extractMatchedMessageContextMenuLabels(ocrText)
 							)
 							log.debug(f"LINE: copy-read popup OCR: {ocrText!r}")
-							if "複製" in popupOcrMatchedLabels:
-								targetLineIdx = -1
-								for li, (_line, label) in enumerate(popupLineMatches):
-									if label == "複製":
-										targetLineIdx = li
-										break
-								if targetLineIdx >= 0:
-									nItems = len(menuItems)
-									itemIdx = min(targetLineIdx, nItems - 1)
-									copyItem = menuItems[itemIdx][0]
-									log.info(
-										f"LINE: copy-read matched '複製' via popup OCR, "
-										f"line {targetLineIdx} → item {itemIdx}/{nItems}"
-									)
+							copyTarget = _resolvePopupMenuLabelClickPoint(
+								"複製",
+								popupOcrLines,
+								popupRectTuple,
+								popupRowRects=popupRowRects,
+							)
+							if copyTarget:
+								copyClickPoint = copyTarget["clickPoint"]
+								log.info(
+									f"LINE: copy-read matched '複製' via popup OCR rows, "
+									f"item {copyTarget['index'] + 1}/{copyTarget['count']}"
+								)
+							elif "複製" in popupOcrMatchedLabels:
+								targetMatchIdx = popupOcrMatchedLabels.index("複製")
+								nItems = len(menuItems)
+								itemIdx = min(targetMatchIdx, nItems - 1)
+								copyItem = menuItems[itemIdx][0]
+								log.info(
+									f"LINE: copy-read matched '複製' via popup OCR order, "
+									f"matched item {itemIdx + 1}/{nItems}"
+								)
 							elif ocrText:
 								log.debug(
 									f"LINE: copy-read popup OCR did not resemble a message "
@@ -3033,7 +3581,7 @@ def _copyAndReadMessage(targetElement):
 					)
 
 			# Detect file / voice messages when Copy is unavailable
-			if not copyItem and menuItems and len(menuItems) >= 3:
+			if not copyItem and not copyClickPoint and menuItems and len(menuItems) >= 3:
 				popupOcrLooksLikeMenu = bool(popupOcrMatchedLabels)
 
 				def _menuHasText(keyword):
@@ -3072,14 +3620,21 @@ def _copyAndReadMessage(targetElement):
 								return
 
 			# If still no match, check if we got the wrong menu
-			if not copyItem:
+			if not copyItem and not copyClickPoint:
 				isSelectAll = len(menuItems) <= 2
 				if isSelectAll:
 					selectAllCount[0] += 1
-				if isSelectAll and selectAllCount[0] >= 6:
-					# ≤2-item menu seen 6+ times — likely a
-					# delete-only menu (call record) or wrong
-					# menu.  Check for call patterns first.
+				if (
+					isSelectAll
+					and selectAllCount[0] >= 6
+					and _hasExhaustedMessageBubbleFallbackProbes(
+						posIdx,
+						clickState["positions"],
+					)
+				):
+					# After the extra-left probes have also failed,
+					# treat repeated ≤2-item menus as a likely call
+					# record or otherwise non-copyable message.
 					_dismissMenu()
 					msgOcrText = _getMessageOcrText()
 					callAnnouncement = _getCallAnnouncementFromOcr(
@@ -3098,10 +3653,13 @@ def _copyAndReadMessage(targetElement):
 						f"LINE: copy-read wrong menu "
 						f"(≤2 items) seen "
 						f"{selectAllCount[0]} times, last "
-						f"at [{clickPositions[posIdx][2]}]"
+						f"at [{clickState['positions'][posIdx][2]}]"
 						f", skipping to OCR"
 					)
-					core.callLater(300, lambda: _attemptCopyAtOffset(len(clickPositions)))
+					core.callLater(
+						300,
+						lambda: _attemptCopyAtOffset(len(clickState["positions"])),
+					)
 					return
 				if len(menuItems) >= 3:
 					# Got a correct context menu (≥3 items)
@@ -3121,7 +3679,7 @@ def _copyAndReadMessage(targetElement):
 							f"message edge hit "
 							f"({len(menuItems)} items, "
 							f"has 收回 but no 複製) at "
-							f"[{clickPositions[posIdx][2]}]"
+							f"[{clickState['positions'][posIdx][2]}]"
 							f", trying next position"
 						)
 						_dismissMenu()
@@ -3138,14 +3696,20 @@ def _copyAndReadMessage(targetElement):
 					log.info(
 						f"LINE: copy-read correct menu "
 						f"({len(menuItems)} items) but no "
-						f"'複製' at [{clickPositions[posIdx][2]}]"
+						f"'複製' at [{clickState['positions'][posIdx][2]}]"
 						f", skipping to OCR"
 					)
 					_dismissMenu()
-					core.callLater(300, lambda: _attemptCopyAtOffset(len(clickPositions)))
+					core.callLater(
+						300,
+						lambda: _attemptCopyAtOffset(len(clickState["positions"])),
+					)
 					return
 				# Wrong menu or OCR couldn't find 複製, try next position
-				log.info(f"LINE: copy-read '複製' not found at [{clickPositions[posIdx][2]}]")
+				log.info(
+					f"LINE: copy-read '複製' not found at "
+					f"[{clickState['positions'][posIdx][2]}]"
+				)
 				_dismissMenu()
 				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
 				return
@@ -3153,9 +3717,12 @@ def _copyAndReadMessage(targetElement):
 			# Click the Copy item
 			if _abortIfStale("clickCopyItem", restoreClipboard=True, dismissMenu=True):
 				return
-			iRect = copyItem.CurrentBoundingRectangle
-			itemCx = int((iRect.left + iRect.right) / 2)
-			itemCy = int((iRect.top + iRect.bottom) / 2)
+			if copyClickPoint:
+				itemCx, itemCy = copyClickPoint
+			else:
+				iRect = copyItem.CurrentBoundingRectangle
+				itemCx = int((iRect.left + iRect.right) / 2)
+				itemCy = int((iRect.top + iRect.bottom) / 2)
 			log.info(f"LINE: copy-read clicking '複製' at ({itemCx}, {itemCy})")
 			ctypes.windll.user32.SetCursorPos(itemCx, itemCy)
 			time.sleep(0.05)
@@ -3214,6 +3781,7 @@ def _copyAndReadMessage(targetElement):
 				_copyReadClipboardOwnerId = 0
 
 	# Start the copy-read process
+	_getMessageOcrText()
 	_attemptCopyAtOffset(0)
 
 
@@ -4974,6 +5542,8 @@ class AppModule(appModuleHandler.AppModule):
 			
 			recognizer = uwpOcr.UwpOcr(language=ocrLang)
 			resizeFactor = recognizer.getResizeFactor(width, height)
+			if resizeFactor < 2:
+				resizeFactor = 2
 			
 			if resizeFactor > 1:
 				sb2 = screenBitmap.ScreenBitmap(
@@ -5877,13 +6447,24 @@ class AppModule(appModuleHandler.AppModule):
 		import core
 		core.callLater(500, self._activateMessageContextMenu)
 
-	def _activateMessageContextMenu(self, retriesLeft=3):
-		"""Find the message context menu popup and activate the virtual window."""
+	def _activateMessageContextMenu(
+		self,
+		retriesLeft=3,
+		onAction=None,
+		onFailure=None,
+		shouldAbort=None,
+	):
+		"""Find a keyboard-opened message context menu and activate the virtual window."""
 		import ctypes
 		import ctypes.wintypes as wintypes
 
+		if callable(shouldAbort) and shouldAbort():
+			return
+
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
+			if callable(onFailure):
+				onFailure()
 			return
 
 		pid = wintypes.DWORD()
@@ -5923,12 +6504,37 @@ class AppModule(appModuleHandler.AppModule):
 		if not popupCandidates:
 			if retriesLeft > 0:
 				import core
-				core.callLater(300, lambda: self._activateMessageContextMenu(retriesLeft - 1))
+				core.callLater(
+					300,
+					lambda: self._activateMessageContextMenu(
+						retriesLeft - 1,
+						onAction=onAction,
+						onFailure=onFailure,
+						shouldAbort=shouldAbort,
+					),
+				)
+			elif callable(onFailure):
+				onFailure()
+			return
+
+		if callable(shouldAbort) and shouldAbort():
 			return
 
 		best = max(popupCandidates, key=lambda c: c["height"])
 		popupRect = (best["left"], best["top"], best["right"], best["bottom"])
 		popupRowRects = _collectPopupMenuRowRects(best["hwnd"], popupRect)
+		if not _popupLooksLikeMessageContextMenu(self, hwnd, popupRect):
+			log.debug(
+				f"LINE: keyboard-opened popup did not resemble a message context menu "
+				f"at {popupRect}; dismissing"
+			)
+			try:
+				_sendGestureWithAddonSuppressed("escape")
+			except Exception:
+				pass
+			if callable(onFailure):
+				onFailure()
+			return
 
 		log.info(
 			f"LINE: message context menu popup found at "
@@ -5939,7 +6545,9 @@ class AppModule(appModuleHandler.AppModule):
 		VirtualWindow.currentWindow = MessageContextMenu(
 			popupRect,
 			rowRects=popupRowRects,
+			onAction=onAction,
 		)
+		return
 
 	# ── Read chat room name ────────────────────────────────────────────
 
@@ -6722,18 +7330,8 @@ class AppModule(appModuleHandler.AppModule):
 			ui.message(_("找不到目前的訊息"))
 			return
 
-		# Click positions to try, ordered by reliability.
-		# Center is tried first: it clicks on the message text,
-		# which produces the correct context menu (回覆/複製/分享/收回).
-		# Clicking outside the text bubble (far-right/far-left)
-		# produces the wrong menu (全選/背景設定), so those are
-		# last-resort fallbacks.
-		# Clamp Y within the LINE window to avoid clicking taskbar.
 		elLeft = int(rect.left)
 		elRight = int(rect.right)
-		clampedTop = max(elTop + 2, winTop + 10)
-		clampedBottom = min(elBottom - 2, winBottom - 10)
-		clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
 
 		# Wait for modifier keys (Ctrl, Shift, Alt) to be physically
 		# released before proceeding.  The user likely just pressed
@@ -6753,29 +7351,51 @@ class AppModule(appModuleHandler.AppModule):
 			time.sleep(0.05)
 		log.debug("LINE: modifiers released, proceeding with right-click")
 
-		# The UIA element spans the full chat area width, but the actual
-		# message bubble is narrower — left-aligned (received) or
-		# right-aligned (sent).  Use narrow increments to target bubbles.
-		# Positions at 1/6 and 5/6 hit the typical bubble centers;
-		# 1/4 and 3/4 cover wider bubbles; center is last resort.
-		elWidth = elRight - elLeft
-		pos_1_6 = elLeft + elWidth // 6
-		pos_5_6 = elLeft + 5 * elWidth // 6
-		pos_1_4 = elLeft + elWidth // 4
-		pos_3_4 = elLeft + 3 * elWidth // 4
-		pos_7_8 = elLeft + 7 * elWidth // 8
-		pos_9_10 = elLeft + 9 * elWidth // 10
-		clickPositions = [
-			(pos_1_6, clampedCenter, "1/6-left"),
-			(pos_5_6, clampedCenter, "5/6-right"),
-			(pos_1_4, clampedCenter, "1/4-left"),
-			(pos_3_4, clampedCenter, "3/4-right"),
-			(pos_9_10, clampedCenter, "9/10-right"),
-			(pos_7_8, clampedCenter, "7/8-right"),
-			(cx, clampedCenter, "center"),
-			(pos_1_6, clampedTop, "1/6-top"),
-			(pos_5_6, clampedBottom, "5/6-bottom"),
-		]
+		ocrLines = []
+		try:
+			ocrResult = self._ocrWindowAreaResult(
+				hwnd,
+				region=(
+					elLeft,
+					elTop,
+					max(elRight - elLeft, 0),
+					max(elBottom - elTop, 0),
+				),
+				sync=True,
+				timeout=2.0,
+			)
+			if ocrResult is not None and not isinstance(ocrResult, Exception):
+				ocrLines = _extractOcrLines(ocrResult)
+		except Exception as e:
+			log.debug(
+				f"LINE: failed to derive OCR bubble probes for {actionName}: {e}",
+				exc_info=True,
+			)
+		ocrClickPositions = _buildMessageBubbleOcrClickPositions(
+			ocrLines,
+			(elLeft, elTop, elRight, elBottom),
+			winTop,
+			winBottom,
+		)
+		if ocrClickPositions:
+			log.debug(
+				f"LINE: {actionName} OCR-derived bubble probes: "
+				f"{[label for _x, _y, label in ocrClickPositions]}"
+			)
+		elif ocrLines:
+			log.debug(
+				f"LINE: {actionName} OCR lines yielded no bubble probes: "
+				f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}"
+			)
+		clickPositions = _mergeClickPositions(
+			ocrClickPositions,
+			_buildMessageBubbleClickPositions(
+				(elLeft, elTop, elRight, elBottom),
+				winTop,
+				winBottom,
+				includeVerticalOffsets=True,
+			),
+		)
 
 		appModRef = self
 
@@ -7163,6 +7783,7 @@ class AppModule(appModuleHandler.AppModule):
 
 					# Strategy 1: Match by UIA text label
 					targetItem = None
+					targetClickPoint = None
 					popupOcrResult = ""
 					for item, text in menuItems:
 						if text and actionName in text:
@@ -7183,17 +7804,21 @@ class AppModule(appModuleHandler.AppModule):
 							"trying whole-popup OCR"
 						)
 						try:
-							popupRect = (
-								element.CurrentBoundingRectangle
-							)
-							popupW = int(
-								popupRect.right - popupRect.left
-							)
-							popupH = int(
-								popupRect.bottom - popupRect.top
-							)
+							popupRect = element.CurrentBoundingRectangle
+							popupW = int(popupRect.right - popupRect.left)
+							popupH = int(popupRect.bottom - popupRect.top)
 							if popupW > 0 and popupH > 0:
-								ocrText = appModRef._ocrWindowArea(
+								popupRectTuple = (
+									int(popupRect.left),
+									int(popupRect.top),
+									int(popupRect.right),
+									int(popupRect.bottom),
+								)
+								popupRowRects = _collectPopupMenuRowRects(
+									popupHwnd,
+									popupRectTuple,
+								)
+								ocrResult = appModRef._ocrWindowAreaResult(
 									popupHwnd,
 									region=(
 										int(popupRect.left),
@@ -7204,100 +7829,29 @@ class AppModule(appModuleHandler.AppModule):
 									sync=True,
 									timeout=3.0,
 								)
-								ocrText = _removeCJKSpaces(
-									ocrText.strip()
-								) if ocrText else ""
+								ocrText = ""
+								popupOcrLines = []
+								if ocrResult is not None and not isinstance(ocrResult, Exception):
+									ocrText = getattr(ocrResult, "text", "") or ""
+									ocrText = _removeCJKSpaces(ocrText.strip())
+									popupOcrLines = _extractOcrLines(ocrResult)
 								popupOcrResult = ocrText
 								log.debug(
 									f"LINE: popup OCR result: "
 									f"{ocrText!r}"
 								)
-								if ocrText and actionName in ocrText:
-									lines = ocrText.split("\n")
-									targetLineIdx = -1
-									for li, line in enumerate(lines):
-										if actionName in line:
-											targetLineIdx = li
-											break
-									if targetLineIdx >= 0:
-										nItems = len(menuItems)
-										nOcrLines = len(lines)
-										if nItems > 0:
-											if nItems == nOcrLines:
-												# Direct 1:1 mapping
-												itemIdx = min(
-													targetLineIdx,
-													nItems - 1,
-												)
-											else:
-												# Count mismatch (e.g.
-												# emoji reaction bar
-												# adds a menu item
-												# without OCR text).
-												# Use y-position to
-												# find the right item.
-												itemIdx = min(
-													targetLineIdx,
-													nItems - 1,
-												)
-												try:
-													fR = (
-														menuItems[0][0]
-														.CurrentBoundingRectangle
-													)
-													lR = (
-														menuItems[-1][0]
-														.CurrentBoundingRectangle
-													)
-													cTop = fR.top
-													cBot = lR.bottom
-													tH = cBot - cTop
-													if (
-														tH > 0
-														and nOcrLines > 0
-													):
-														estY = (
-															cTop
-															+ (targetLineIdx + 0.5)
-															* tH
-															/ nOcrLines
-														)
-														bestD = float("inf")
-														bestI = 0
-														for mi, (it, _) in enumerate(menuItems):
-															try:
-																r = it.CurrentBoundingRectangle
-																mY = (r.top + r.bottom) / 2
-																d = abs(mY - estY)
-																if d < bestD:
-																	bestD = d
-																	bestI = mi
-															except Exception:
-																pass
-														itemIdx = bestI
-												except Exception:
-													pass
-												log.debug(
-													f"LINE: OCR/item "
-													f"count mismatch "
-													f"({nOcrLines} vs "
-													f"{nItems}), "
-													f"y-matched to "
-													f"item {itemIdx}"
-												)
-											targetItem = (
-												menuItems[itemIdx][0]
-											)
-											log.info(
-												f"LINE: matched "
-												f"'{actionName}' "
-												f"via popup OCR, "
-												f"line "
-												f"{targetLineIdx}"
-												f" → "
-												f"item {itemIdx}"
-												f"/{nItems}"
-											)
+								ocrTarget = _resolvePopupMenuLabelClickPoint(
+									actionName,
+									popupOcrLines,
+									popupRectTuple,
+									popupRowRects=popupRowRects,
+								)
+								if ocrTarget:
+									targetClickPoint = ocrTarget["clickPoint"]
+									log.info(
+										f"LINE: matched '{actionName}' via popup OCR rows, "
+										f"item {ocrTarget['index'] + 1}/{ocrTarget['count']}"
+									)
 						except Exception as e:
 							log.debug(
 								f"LINE: popup OCR failed: {e}"
@@ -7310,6 +7864,7 @@ class AppModule(appModuleHandler.AppModule):
 					# Only if OCR confirmed the action is in the menu.
 					if (
 						not targetItem
+						and not targetClickPoint
 						and menuItems
 						and len(menuItems) >= 3
 						and actionName in appModRef._MENU_OFFSETS
@@ -7356,15 +7911,18 @@ class AppModule(appModuleHandler.AppModule):
 							except Exception:
 								pass
 
-					if targetItem:
+					if targetItem or targetClickPoint:
 						# Click the target item
-						iRect = targetItem.CurrentBoundingRectangle
-						itemCx = int(
-							(iRect.left + iRect.right) / 2
-						)
-						itemCy = int(
-							(iRect.top + iRect.bottom) / 2
-						)
+						if targetClickPoint:
+							itemCx, itemCy = targetClickPoint
+						else:
+							iRect = targetItem.CurrentBoundingRectangle
+							itemCx = int(
+								(iRect.left + iRect.right) / 2
+							)
+							itemCy = int(
+								(iRect.top + iRect.bottom) / 2
+							)
 						log.info(
 							f"LINE: clicking menu item "
 							f"'{actionName}' at "
@@ -7404,14 +7962,18 @@ class AppModule(appModuleHandler.AppModule):
 							"escape"
 						).send()
 						# Got wrong menu (≤2 items = 全選 or
-						# 背景設定).  If seen at 5+ positions,
-						# bail; otherwise try next position.
+						# 背景設定). After the dedicated edge/padding
+						# probes are exhausted, bail; otherwise try
+						# the next position.
 						isSelectAll = (
 							len(menuItems) <= 2
 						)
 						if (
 							isSelectAll
-							and posIdx >= 5
+							and _hasExhaustedMessageBubbleFallbackProbes(
+								posIdx,
+								clickPositions,
+							)
 						):
 							log.info(
 								f"LINE: wrong menu (≤2)"
@@ -8330,50 +8892,51 @@ class AppModule(appModuleHandler.AppModule):
 			)
 			return True
 
-		def _popupLooksLikeMessageContextMenu(popupRect):
-			left, top, right, bottom = popupRect
-			popupW = right - left
-			popupH = bottom - top
-			if popupW <= 0 or popupH <= 0:
-				return False
-			try:
-				ocrText = appModRef._ocrWindowArea(
-					hwnd,
-					region=(left, top, popupW, popupH),
-					sync=True,
-					timeout=2.0,
-				)
-				popupLines, _popupLineMatches, matchedLabels = (
-					_extractMatchedMessageContextMenuLabels(ocrText)
-				)
-				if matchedLabels:
-					log.info(
-						f"LINE: message context menu confirmed via popup OCR: "
-						f"lines={popupLines}, matched={matchedLabels}"
-					)
-					return True
-				log.debug(
-					f"LINE: popup OCR did not resemble a message context menu: "
-					f"{popupLines}"
-				)
-			except Exception as e:
-				log.debug(
-					f"LINE: popup OCR validation failed: {e}",
-					exc_info=True,
-				)
-			return False
-
-		clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
-		elWidth = elRight - elLeft
-		clickPositions = [
-			(elLeft + elWidth // 6, clampedCenter, "1/6-left"),
-			(elLeft + 5 * elWidth // 6, clampedCenter, "5/6-right"),
-			(elLeft + elWidth // 4, clampedCenter, "1/4-left"),
-			(elLeft + 3 * elWidth // 4, clampedCenter, "3/4-right"),
-			(elLeft + 9 * elWidth // 10, clampedCenter, "9/10-right"),
-			(elLeft + 7 * elWidth // 8, clampedCenter, "7/8-right"),
-			(cx, clampedCenter, "center"),
-		]
+		ocrLines = []
+		try:
+			ocrResult = self._ocrWindowAreaResult(
+				hwnd,
+				region=(
+					elLeft,
+					elTop,
+					max(elRight - elLeft, 0),
+					max(elBottom - elTop, 0),
+				),
+				sync=True,
+				timeout=2.0,
+			)
+			if ocrResult is not None and not isinstance(ocrResult, Exception):
+				ocrLines = _extractOcrLines(ocrResult)
+		except Exception as e:
+			log.debug(
+				f"LINE: failed to derive OCR bubble probes for message context menu: {e}",
+				exc_info=True,
+			)
+		ocrClickPositions = _buildMessageBubbleOcrClickPositions(
+			ocrLines,
+			(elLeft, elTop, elRight, elBottom),
+			winTop,
+			winBottom,
+		)
+		if ocrClickPositions:
+			log.debug(
+				"LINE: message context menu OCR-derived bubble probes: "
+				f"{[label for _x, _y, label in ocrClickPositions]}"
+			)
+		elif ocrLines:
+			log.debug(
+				"LINE: message context menu OCR lines yielded no bubble probes: "
+				f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}"
+			)
+		clickPositions = _mergeClickPositions(
+			ocrClickPositions,
+			_buildMessageBubbleClickPositions(
+				(elLeft, elTop, elRight, elBottom),
+				winTop,
+				winBottom,
+				includeVerticalOffsets=True,
+			),
+		)
 
 		VK_CONTROL = 0x11
 		VK_SHIFT = 0x10
@@ -8388,11 +8951,45 @@ class AppModule(appModuleHandler.AppModule):
 
 		appModRef = self
 
+		def _tryKeyboardFallback():
+			if _logAndAbortIfStale("keyboardFallback"):
+				return
+			log.info(
+				"LINE: mouse-based message context menu probes exhausted, "
+				"trying keyboard fallback"
+			)
+			try:
+				_sendGestureWithAddonSuppressed("applications")
+			except Exception as e:
+				log.debug(
+					f"LINE: keyboard fallback applications send failed: {e}",
+					exc_info=True,
+				)
+				ui.message(_("找不到訊息選單"))
+				return
+
+			def _activateKeyboardFallback():
+				if _logAndAbortIfStale("keyboardFallbackActivate"):
+					return
+				self._activateMessageContextMenu(
+					onAction=self._handleMessageContextMenuAction,
+					onFailure=lambda: (
+						None
+						if _logAndAbortIfStale("keyboardFallbackFailure")
+						else ui.message(_("找不到訊息選單"))
+					),
+					shouldAbort=lambda: _logAndAbortIfStale(
+						"keyboardFallbackPoll"
+					),
+				)
+
+			core.callLater(500, _activateKeyboardFallback)
+
 		def _attemptAtOffset(posIdx=0):
 			if _logAndAbortIfStale(f"attemptAtOffset[{posIdx}]"):
 				return
 			if posIdx >= len(clickPositions):
-				ui.message(_("找不到訊息選單"))
+				_tryKeyboardFallback()
 				return
 
 			clickX, clickY, posLabel = clickPositions[posIdx]
@@ -8531,14 +9128,17 @@ class AppModule(appModuleHandler.AppModule):
 						int(eRect.right),
 						int(eRect.bottom),
 					)
-					if itemCount < 3 and not _popupLooksLikeMessageContextMenu(popupRect):
+					if itemCount < 3 and not _popupLooksLikeMessageContextMenu(
+						appModRef,
+						hwnd,
+						popupRect,
+					):
 						# Wrong menu (e.g. 全選), dismiss and try next.
 						log.debug(
 							f"LINE: popup OCR did not confirm a message context menu "
 							f"at {popupRect}; dismissing and trying next position"
 						)
-						from keyboardHandler import KeyboardInputGesture
-						KeyboardInputGesture.fromName("escape").send()
+						_sendGestureWithAddonSuppressed("escape")
 						core.callLater(
 							300,
 							lambda: _attemptAtOffset(posIdx + 1),
@@ -8559,8 +9159,7 @@ class AppModule(appModuleHandler.AppModule):
 						f"beforeVirtualWindow[{posIdx}]"
 					):
 						try:
-							from keyboardHandler import KeyboardInputGesture
-							KeyboardInputGesture.fromName("escape").send()
+							_sendGestureWithAddonSuppressed("escape")
 						except Exception:
 							pass
 						return
@@ -8576,8 +9175,7 @@ class AppModule(appModuleHandler.AppModule):
 						exc_info=True,
 					)
 					try:
-						from keyboardHandler import KeyboardInputGesture
-						KeyboardInputGesture.fromName("escape").send()
+						_sendGestureWithAddonSuppressed("escape")
 					except Exception:
 						pass
 

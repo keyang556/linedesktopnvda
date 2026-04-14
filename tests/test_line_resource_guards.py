@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -127,6 +128,230 @@ def test_extract_matched_message_context_menu_labels_accepts_real_menu_rows():
 
 	assert line_matches == [("回覆", "回覆"), ("複製", "複製"), ("分享", "分享")]
 	assert matched_labels == ["回覆", "複製", "分享"]
+
+
+def test_resolve_popup_menu_label_click_point_returns_aligned_click_target():
+	ns = _load_line_symbols(
+		function_names={"_resolvePopupMenuLabelClickPoint"},
+		namespace={"log": _Log()},
+	)
+
+	row_rects = [
+		(639, 439, 837, 479),
+		(639, 480, 837, 520),
+		(639, 520, 837, 560),
+	]
+	calls = {}
+
+	def _fake_build_menu_elements(lines, popup_rect, rowRects=None):
+		calls["lines"] = lines
+		calls["popup_rect"] = popup_rect
+		calls["row_rects"] = rowRects
+		return [
+			{"name": "回覆", "clickPoint": (738, 459)},
+			{"name": "複製", "clickPoint": (738, 500)},
+			{"name": "分享", "clickPoint": (738, 540)},
+		]
+
+	target = ns["_resolvePopupMenuLabelClickPoint"](
+		"複製",
+		[
+			{"text": "50", "rect": (700, 430, 732, 450)},
+			{"text": "回覆", "rect": (706, 449, 742, 469)},
+			{"text": "複製", "rect": (706, 489, 742, 511)},
+			{"text": "分享", "rect": (706, 530, 742, 550)},
+		],
+		(624, 415, 852, 860),
+		popupRowRects=row_rects,
+		buildMenuElements=_fake_build_menu_elements,
+	)
+
+	assert calls["row_rects"] == row_rects
+	assert target == {
+		"clickPoint": (738, 500),
+		"index": 1,
+		"count": 3,
+	}
+
+
+def test_build_message_bubble_click_positions_preserves_existing_priority_before_new_left_fallbacks():
+	ns = _load_line_symbols(
+		function_names={"_buildMessageBubbleClickPositions"},
+	)
+
+	positions = ns["_buildMessageBubbleClickPositions"](
+		(547, 274, 1102, 397),
+		0,
+		1000,
+	)
+
+	assert [label for _x, _y, label in positions[:6]] == [
+		"1/6-left",
+		"5/6-right",
+		"1/4-left",
+		"3/4-right",
+		"9/10-right",
+		"7/8-right",
+	]
+	assert [label for _x, _y, label in positions[6:8]] == [
+		"1/10-left",
+		"1/8-left",
+	]
+	assert [label for _x, _y, label in positions[-1:]] == [
+		"center",
+	]
+
+
+def test_build_message_bubble_click_positions_adds_vertical_probes_only_when_requested():
+	ns = _load_line_symbols(
+		function_names={"_buildMessageBubbleClickPositions"},
+	)
+
+	basePositions = ns["_buildMessageBubbleClickPositions"](
+		(547, 274, 1102, 397),
+		0,
+		1000,
+	)
+	verticalPositions = ns["_buildMessageBubbleClickPositions"](
+		(547, 274, 1102, 397),
+		0,
+		1000,
+		includeVerticalOffsets=True,
+	)
+
+	assert [label for _x, _y, label in basePositions] == [
+		"1/6-left",
+		"5/6-right",
+		"1/4-left",
+		"3/4-right",
+		"9/10-right",
+		"7/8-right",
+		"1/10-left",
+		"1/8-left",
+		"center",
+	]
+	assert [label for _x, _y, label in verticalPositions] == [
+		"1/6-left",
+		"5/6-right",
+		"1/4-left",
+		"3/4-right",
+		"9/10-right",
+		"7/8-right",
+		"1/10-left",
+		"1/8-left",
+		"1/10-top",
+		"1/8-top",
+		"1/6-top",
+		"1/10-bottom",
+		"1/8-bottom",
+		"5/6-bottom",
+		"center",
+	]
+
+
+def test_build_message_bubble_click_positions_prioritizes_right_edge_vertical_probes_for_lower_bubbles():
+	ns = _load_line_symbols(
+		function_names={"_buildMessageBubbleClickPositions"},
+	)
+
+	verticalPositions = ns["_buildMessageBubbleClickPositions"](
+		(547, 274, 1102, 397),
+		0,
+		735,
+		includeVerticalOffsets=True,
+	)
+
+	assert [label for _x, _y, label in verticalPositions] == [
+		"1/6-left",
+		"5/6-right",
+		"1/4-left",
+		"3/4-right",
+		"9/10-right",
+		"7/8-right",
+		"1/10-left",
+		"1/8-left",
+		"5/6-top",
+		"5/6-bottom",
+		"1/10-top",
+		"1/8-top",
+		"1/6-top",
+		"1/10-bottom",
+		"1/8-bottom",
+		"center",
+	]
+
+
+def test_is_message_bubble_metadata_ocr_line_filters_timestamps_and_read_receipts():
+	ns = _load_line_symbols(
+		function_names={
+			"_normalizeMessageBubbleOcrLine",
+			"_isMessageBubbleMetadataOcrLine",
+		},
+		namespace={
+			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
+			"re": re,
+		},
+	)
+
+	assert ns["_isMessageBubbleMetadataOcrLine"]("下午 12 : 38") is True
+	assert ns["_isMessageBubbleMetadataOcrLine"](", 下午 12 : 38") is True
+	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀") is True
+	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀 下午 12 ℃ 5") is True
+	assert ns["_isMessageBubbleMetadataOcrLine"]("謝謝 !") is False
+
+
+def test_build_message_bubble_ocr_click_positions_targets_side_padding_for_right_aligned_content():
+	ns = _load_line_symbols(
+		function_names={
+			"_normalizeMessageBubbleOcrLine",
+			"_isMessageBubbleMetadataOcrLine",
+			"_buildMessageBubbleOcrClickPositions",
+		},
+		namespace={
+			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
+			"re": re,
+		},
+	)
+
+	positions = ns["_buildMessageBubbleOcrClickPositions"](
+		[
+			{"text": "謝謝 !", "rect": (996, 306, 1038, 333)},
+			{"text": ", 下午 12 : 38", "rect": (982, 336, 1060, 359)},
+		],
+		(547, 274, 1102, 397),
+		0,
+		735,
+	)
+
+	assert [label for _x, _y, label in positions] == [
+		"ocr-right-center",
+		"ocr-right-upper",
+		"ocr-right-lower",
+	]
+	assert all(x > 1038 for x, _y, _label in positions)
+	assert all(x < 1102 for x, _y, _label in positions)
+
+
+def test_has_exhausted_message_bubble_fallback_probes_ignores_trailing_center():
+	ns = _load_line_symbols(
+		function_names={
+			"_buildMessageBubbleClickPositions",
+			"_hasExhaustedMessageBubbleFallbackProbes",
+		},
+	)
+
+	positions = ns["_buildMessageBubbleClickPositions"](
+		(547, 274, 1102, 397),
+		0,
+		1000,
+		includeVerticalOffsets=True,
+	)
+
+	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](5, positions) is False
+	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](7, positions) is False
+	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](12, positions) is False
+	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](13, positions) is True
+	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](14, positions) is True
 
 
 def test_extract_recall_dialog_action_labels_handles_modern_dialog_without_matching_body_text():
@@ -296,6 +521,77 @@ def test_extract_ocr_rect_like_unions_word_rects_when_line_rect_is_missing():
 			]
 
 	assert ns["_extractOcrRectLike"](_Line()) == (480, 618, 560, 650)
+
+
+def test_extract_ocr_rect_like_supports_uppercase_xywh_rects():
+	ns = _load_line_symbols(function_names={"_extractOcrRectLike"})
+
+	class _Rect:
+		X = 996
+		Y = 306
+		Width = 42
+		Height = 27
+
+	class _Line:
+		boundingRect = _Rect()
+
+	assert ns["_extractOcrRectLike"](_Line()) == (996, 306, 1038, 333)
+
+
+def test_extract_ocr_rect_like_supports_tuple_location_rects():
+	ns = _load_line_symbols(function_names={"_extractOcrRectLike"})
+
+	class _Line:
+		location = (996, 306, 42, 27)
+
+	assert ns["_extractOcrRectLike"](_Line()) == (996, 306, 1038, 333)
+
+
+def test_extract_ocr_rect_like_unions_capitalized_word_polygons():
+	ns = _load_line_symbols(function_names={"_extractOcrRectLike"})
+
+	class _Word:
+		def __init__(self, polygon):
+			self.polygon = polygon
+
+	class _Line:
+		def __init__(self):
+			self.Words = [
+				_Word([480, 620, 520, 620, 520, 650, 480, 650]),
+				_Word([522, 618, 560, 618, 560, 648, 522, 648]),
+			]
+
+	assert ns["_extractOcrRectLike"](_Line()) == (480, 618, 560, 650)
+
+
+def test_extract_ocr_lines_supports_nvda_lines_words_result_shape():
+	ns = _load_line_symbols(
+		function_names={"_extractOcrRectLike", "_extractOcrLines"},
+		namespace={"_removeCJKSpaces": lambda text: text.replace(" ", "")},
+	)
+
+	class _Word:
+		def __init__(self, offset, left, top, width, height):
+			self.offset = offset
+			self.left = left
+			self.top = top
+			self.width = width
+			self.height = height
+
+	text = "謝謝 !\n, 下午 12 : 38\n"
+	result = SimpleNamespace(
+		text=text,
+		lines=[len("謝謝 !\n"), len(text)],
+		words=[
+			_Word(0, 996, 306, 42, 27),
+			_Word(len("謝謝 !\n"), 982, 336, 78, 23),
+		],
+	)
+
+	assert ns["_extractOcrLines"](result) == [
+		{"text": "謝謝 !", "rect": (996, 306, 1038, 333)},
+		{"text": ", 下午 12 : 38", "rect": (982, 336, 1060, 359)},
+	]
 
 
 def test_infer_recall_dialog_targets_by_geometry_recovers_modern_unlabeled_buttons():
@@ -724,6 +1020,185 @@ def test_perform_recall_confirmation_action_prefers_compact_modern_fallback_befo
 	assert clicks == [((222, 333), {"hwnd": 789})]
 
 
+def test_activate_message_context_menu_supports_keyboard_fallback_hooks():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	app_module = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	method = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_activateMessageContextMenu"
+	)
+
+	arg_names = [arg.arg for arg in method.args.args]
+	assert arg_names[:5] == ["self", "retriesLeft", "onAction", "onFailure", "shouldAbort"]
+
+	message_context_menu_calls = [
+		node
+		for node in ast.walk(method)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "MessageContextMenu"
+	]
+	assert message_context_menu_calls, "expected MessageContextMenu construction"
+	assert any(
+		any(keyword.arg == "onAction" for keyword in call.keywords)
+		for call in message_context_menu_calls
+	)
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_popupLooksLikeMessageContextMenu"
+		for node in ast.walk(method)
+	), "keyboard popup activation should validate popup OCR before opening the virtual window"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_popupLooksLikeMessageContextMenu"
+		and len(node.args) == 3
+		for node in ast.walk(method)
+	), "keyboard popup activation should pass app module, window handle, and popup rect into OCR validation"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_sendGestureWithAddonSuppressed"
+		and node.args
+		and isinstance(node.args[0], ast.Constant)
+		and node.args[0].value == "escape"
+		for node in ast.walk(method)
+	), "keyboard popup activation should dismiss invalid popups before failing"
+
+
+def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_exhaustion():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	app_module = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	method = [
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "script_messageContextMenu"
+	][-1]
+
+	keyboard_fallback = next(
+		node
+		for node in method.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_tryKeyboardFallback"
+	)
+
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_sendGestureWithAddonSuppressed"
+		and node.args
+		and isinstance(node.args[0], ast.Constant)
+		and node.args[0].value == "applications"
+		for node in ast.walk(keyboard_fallback)
+	), "keyboard fallback should send the applications key directly to LINE"
+
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Attribute)
+		and isinstance(node.func.value, ast.Name)
+		and node.func.value.id == "self"
+		and node.func.attr == "_activateMessageContextMenu"
+		for node in ast.walk(keyboard_fallback)
+	), "keyboard fallback should reactivate popup detection after sending the gesture"
+
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_tryKeyboardFallback"
+		for node in ast.walk(method)
+	), "mouse probe exhaustion should call the keyboard fallback helper"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_popupLooksLikeMessageContextMenu"
+		and len(node.args) == 3
+		for node in ast.walk(method)
+	), "mouse probe path should pass popup validation the app module, window handle, and popup rect"
+
+
+def test_copy_read_and_context_menu_actions_use_popup_label_click_point_resolution():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	app_module = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	copy_read = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
+	)
+	context_menu_action = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_contextMenuAction"
+	)
+
+	for function_node in (copy_read, context_menu_action):
+		assert any(
+			isinstance(node, ast.Call)
+			and isinstance(node.func, ast.Name)
+			and node.func.id == "_resolvePopupMenuLabelClickPoint"
+			for node in ast.walk(function_node)
+		), "popup OCR flows should resolve labels through the shared click-point helper"
+		assert any(
+			isinstance(node, ast.Call)
+			and isinstance(node.func, ast.Name)
+			and node.func.id == "_collectPopupMenuRowRects"
+			for node in ast.walk(function_node)
+		), "popup OCR flows should collect row rects before clicking popup menu items"
+
+
+def test_popup_validation_and_native_gesture_helpers_exist_for_message_context_menu():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+
+	popup_helper = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_popupLooksLikeMessageContextMenu"
+	)
+	send_helper = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_sendGestureWithAddonSuppressed"
+	)
+
+	assert [arg.arg for arg in popup_helper.args.args] == ["appMod", "hwnd", "popupRect"]
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_extractMatchedMessageContextMenuLabels"
+		for node in ast.walk(popup_helper)
+	), "popup validation helper should reuse message-menu label matching"
+
+	assert [arg.arg for arg in send_helper.args.args] == ["gestureName"]
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Attribute)
+		and isinstance(node.func.value, ast.Name)
+		and node.func.value.id == "KeyboardInputGesture"
+		and node.func.attr == "fromName"
+		for node in ast.walk(send_helper)
+	), "native gesture helper should synthesize keys by name"
+
+
 def test_detect_edit_field_label_message_hint_skips_notes_detection():
 	class _Rect:
 		left = 700
@@ -895,7 +1370,7 @@ def test_copy_read_stale_request_restores_clipboard_without_followup():
 
 	ns = _load_line_symbols(
 		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
-		function_names={"_copyAndReadMessage"},
+		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
 		namespace={
 			"api": SimpleNamespace(
 				getClipData=lambda: "orig",
