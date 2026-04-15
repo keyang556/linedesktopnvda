@@ -1233,6 +1233,105 @@ def _isMessageBubbleMetadataOcrLine(text):
 	return False
 
 
+_LINE_DATE_SEPARATOR_RE = re.compile(
+	r"^(?:"
+	r"(?:今天|昨天)"
+	r"|"
+	r"(?:(?:19|20)\d{2}(?:[./-]|年))?"
+	r"\d{1,2}(?:[./-]|月)"
+	r"\d{1,2}(?:日)?"
+	r"(?:(?:\([一二三四五六日天]\))|(?:星期[一二三四五六日天])|(?:週[一二三四五六日天]))?"
+	r")$"
+)
+
+
+def _normalizeLineDateSeparatorOcrText(text):
+	"""Normalize OCR text for LINE's centered date separator rows."""
+	normalized = _removeCJKSpaces((text or "").strip())
+	if not normalized:
+		return ""
+	normalized = (
+		normalized
+		.replace("（", "(")
+		.replace("）", ")")
+		.replace("／", "/")
+		.replace("．", ".")
+	)
+	normalized = re.sub(r"\s+", "", normalized)
+	return normalized
+
+
+def _looksLikeLineDateSeparatorText(text):
+	"""Return True when OCR text matches LINE's standalone date separator."""
+	normalized = _normalizeLineDateSeparatorOcrText(text)
+	if not normalized:
+		return False
+	return bool(_LINE_DATE_SEPARATOR_RE.fullmatch(normalized))
+
+
+def _isCenteredLineDateSeparatorOcr(text, ocrLines, rect):
+	"""Return True only for compact centered date chips, not normal bubbles."""
+	if not _looksLikeLineDateSeparatorText(text):
+		return False
+	if not ocrLines or not rect:
+		return False
+	try:
+		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
+	except Exception:
+		return False
+	if elRight <= elLeft or elBottom <= elTop:
+		return False
+
+	contentRects = []
+	normalizedLines = []
+	for line in ocrLines:
+		if not isinstance(line, dict):
+			continue
+		lineText = _normalizeLineDateSeparatorOcrText(line.get("text", ""))
+		if not lineText:
+			continue
+		lineRect = line.get("rect")
+		if not lineRect:
+			return False
+		try:
+			lineLeft, lineTop, lineRight, lineBottom = [
+				int(value) for value in lineRect
+			]
+		except Exception:
+			return False
+		lineLeft = max(elLeft, lineLeft)
+		lineTop = max(elTop, lineTop)
+		lineRight = min(elRight, lineRight)
+		lineBottom = min(elBottom, lineBottom)
+		if lineRight <= lineLeft or lineBottom <= lineTop:
+			return False
+		normalizedLines.append(lineText)
+		contentRects.append((lineLeft, lineTop, lineRight, lineBottom))
+
+	if not contentRects:
+		return False
+	if "".join(normalizedLines) != _normalizeLineDateSeparatorOcrText(text):
+		return False
+
+	contentLeft = min(lineRect[0] for lineRect in contentRects)
+	contentTop = min(lineRect[1] for lineRect in contentRects)
+	contentRight = max(lineRect[2] for lineRect in contentRects)
+	contentBottom = max(lineRect[3] for lineRect in contentRects)
+	rowWidth = max(1, elRight - elLeft)
+	rowHeight = max(1, elBottom - elTop)
+	contentWidth = max(1, contentRight - contentLeft)
+	contentHeight = max(1, contentBottom - contentTop)
+	rowCenterX = (elLeft + elRight) / 2.0
+	contentCenterX = (contentLeft + contentRight) / 2.0
+	centerTolerance = max(24, int(rowWidth * 0.12))
+	if abs(contentCenterX - rowCenterX) > centerTolerance:
+		return False
+	if contentWidth > int(rowWidth * 0.45):
+		return False
+	if contentHeight > max(40, int(rowHeight * 0.75)):
+		return False
+	return True
+
 def _buildMessageBubbleOcrClickPositions(ocrLines, rect, winTop, winBottom):
 	"""Build OCR-derived probes near the bubble padding instead of the text body."""
 	if not ocrLines or not rect:
@@ -1477,6 +1576,34 @@ def _getForegroundWindowInfo():
 		)
 	except Exception:
 		return None, "", None
+
+
+def _getWindowProcessId(hwnd):
+	"""Return the owning process ID for a window handle."""
+	try:
+		if not hwnd:
+			return 0
+		pid = ctypes.wintypes.DWORD()
+		ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+		return int(pid.value)
+	except Exception:
+		return 0
+
+
+def _shouldDismissCopyReadMenu(targetHwnd):
+	"""Return True only while the active popup still belongs to LINE."""
+	try:
+		currentHwnd = ctypes.windll.user32.GetForegroundWindow()
+	except Exception:
+		return False
+	if not currentHwnd or not targetHwnd:
+		return False
+	if currentHwnd == targetHwnd:
+		return True
+	targetPid = _getWindowProcessId(targetHwnd)
+	if not targetPid:
+		return False
+	return _getWindowProcessId(currentHwnd) == targetPid
 
 
 def _rectsIntersect(rectA, rectB):
@@ -3103,7 +3230,12 @@ def _copyAndReadMessage(targetElement):
 	)
 	clickState = {"positions": baseClickPositions}
 	selectAllCount = [0]  # mutable counter for ≤2-item menus
-	messageOcrCache = {"done": False, "text": "", "lines": []}
+	messageOcrCache = {
+		"done": False,
+		"text": "",
+		"lines": [],
+		"isDateSeparator": False,
+	}
 
 	def _isCurrentRequest():
 		if requestId != _copyReadRequestId:
@@ -3231,6 +3363,17 @@ def _copyAndReadMessage(targetElement):
 
 			messageOcrCache["text"] = msgText
 			messageOcrCache["lines"] = ocrLines
+			messageOcrCache["isDateSeparator"] = _isCenteredLineDateSeparatorOcr(
+				msgText,
+				ocrLines,
+				(elLeft, elTop, elRight, elBottom),
+			)
+			if messageOcrCache["isDateSeparator"]:
+				log.info(
+					f"LINE: copy-read detected centered date separator via OCR: "
+					f"{msgText!r}"
+				)
+				return msgText
 			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
 				ocrLines,
 				(elLeft, elTop, elRight, elBottom),
@@ -3759,7 +3902,9 @@ def _copyAndReadMessage(targetElement):
 			_ocrReadMessageFallback(targetElement)
 
 	def _dismissMenu():
-		"""Send Escape to dismiss context menu."""
+		"""Send Escape only while LINE still owns the active popup/menu."""
+		if not _shouldDismissCopyReadMenu(hwnd):
+			return
 		try:
 			from keyboardHandler import KeyboardInputGesture
 			KeyboardInputGesture.fromName("escape").send()
@@ -3781,7 +3926,12 @@ def _copyAndReadMessage(targetElement):
 				_copyReadClipboardOwnerId = 0
 
 	# Start the copy-read process
-	_getMessageOcrText()
+	initialOcrText = _getMessageOcrText()
+	if messageOcrCache["isDateSeparator"] and initialOcrText:
+		_restoreClipboard(origClip)
+		speech.cancelSpeech()
+		ui.message(initialOcrText.strip())
+		return
 	_attemptCopyAtOffset(0)
 
 

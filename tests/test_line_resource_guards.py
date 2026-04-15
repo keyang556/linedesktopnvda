@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -89,6 +90,30 @@ def test_rect_visibility_checks_overlap_with_foreground_window():
 
 	assert ns["_isRectVisibleInForegroundWindow"](150, 150, 300, 300) is True
 	assert ns["_isRectVisibleInForegroundWindow"](450, 450, 500, 500) is False
+
+
+def test_should_dismiss_copy_read_menu_requires_same_process_foreground():
+	ns = _load_line_symbols(
+		function_names={"_shouldDismissCopyReadMenu"},
+		namespace={
+			"ctypes": SimpleNamespace(
+				windll=SimpleNamespace(
+					user32=SimpleNamespace(GetForegroundWindow=lambda: 202)
+				)
+			),
+		},
+	)
+	ns["_getWindowProcessId"] = lambda hwnd: {
+		101: 7001,
+		202: 7001,
+		303: 7002,
+	}.get(hwnd, 0)
+
+	assert ns["_shouldDismissCopyReadMenu"](101) is True
+	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 303
+	assert ns["_shouldDismissCopyReadMenu"](101) is False
+	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 0
+	assert ns["_shouldDismissCopyReadMenu"](101) is False
 
 
 def test_extract_matched_message_context_menu_labels_ignores_message_body_text():
@@ -299,6 +324,63 @@ def test_is_message_bubble_metadata_ocr_line_filters_timestamps_and_read_receipt
 	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀 下午 12 ℃ 5") is True
 	assert ns["_isMessageBubbleMetadataOcrLine"]("謝謝 !") is False
 
+
+def test_looks_like_line_date_separator_text_matches_line_style_dates():
+	ns = _load_line_symbols(
+		assignment_names={"_LINE_DATE_SEPARATOR_RE"},
+		function_names={
+			"_normalizeLineDateSeparatorOcrText",
+			"_looksLikeLineDateSeparatorText",
+		},
+		namespace={
+			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
+			"re": re,
+		},
+	)
+
+	assert ns["_looksLikeLineDateSeparatorText"]("今天") is True
+	assert ns["_looksLikeLineDateSeparatorText"]("昨天") is True
+	assert ns["_looksLikeLineDateSeparatorText"]("4 月 8 日 ( 三 )") is True
+	assert ns["_looksLikeLineDateSeparatorText"]("2026 年 4 月 8 日 ( 三 )") is True
+	assert ns["_looksLikeLineDateSeparatorText"]("今天下午 5 : 28") is False
+	assert ns["_looksLikeLineDateSeparatorText"]("下午 5 : 28") is False
+	assert ns["_looksLikeLineDateSeparatorText"]("4 月 8 日 ( 三 ) 下午 5 : 28") is False
+
+
+def test_is_centered_line_date_separator_ocr_requires_compact_centered_geometry():
+	ns = _load_line_symbols(
+		assignment_names={"_LINE_DATE_SEPARATOR_RE"},
+		function_names={
+			"_normalizeLineDateSeparatorOcrText",
+			"_looksLikeLineDateSeparatorText",
+			"_isCenteredLineDateSeparatorOcr",
+		},
+		namespace={
+			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
+			"re": re,
+		},
+	)
+
+	assert ns["_isCenteredLineDateSeparatorOcr"](
+		"今天",
+		[{"text": "今天", "rect": (803, 164, 847, 186)}],
+		(547, 142, 1102, 211),
+	) is True
+	assert ns["_isCenteredLineDateSeparatorOcr"](
+		"4 月 8 日 ( 三 )",
+		[{"text": "4 月 8 日 ( 三 )", "rect": (782, 164, 867, 186)}],
+		(547, 142, 1102, 211),
+	) is True
+	assert ns["_isCenteredLineDateSeparatorOcr"](
+		"4 月 8 日 ( 三 )",
+		[{"text": "4 月 8 日 ( 三 )", "rect": (980, 164, 1065, 186)}],
+		(547, 142, 1102, 211),
+	) is False
+	assert ns["_isCenteredLineDateSeparatorOcr"](
+		"OK",
+		[{"text": "OK", "rect": (982, 336, 1038, 359)}],
+		(547, 274, 1102, 397),
+	) is False
 
 def test_build_message_bubble_ocr_click_positions_targets_side_padding_for_right_aligned_content():
 	ns = _load_line_symbols(
@@ -1344,8 +1426,9 @@ def test_schedule_query_invalidates_active_copy_read():
 	assert focus_calls == ["focus"]
 
 
-def test_copy_read_stale_request_restores_clipboard_without_followup():
+def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_windows():
 	copy_calls = []
+	escape_calls = []
 	scheduled = []
 	fallback_calls = []
 
@@ -1367,34 +1450,50 @@ def test_copy_read_stale_request_restores_clipboard_without_followup():
 		SetCursorPos=lambda _x, _y: None,
 		mouse_event=lambda *_args: None,
 	)
-
-	ns = _load_line_symbols(
-		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
-		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
-		namespace={
-			"api": SimpleNamespace(
-				getClipData=lambda: "orig",
-				copyToClip=lambda value: copy_calls.append(value),
-			),
-			"core": SimpleNamespace(
-				callLater=lambda _delay, callback: scheduled.append(callback),
-			),
-			"ctypes": SimpleNamespace(windll=SimpleNamespace(user32=user32)),
-			"time": SimpleNamespace(sleep=lambda _seconds: None),
-			"log": _Log(),
-			"_getElementRuntimeId": lambda _element: (1, 2, 3),
-			"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
-			"_ocrReadMessageFallback": lambda _element: fallback_calls.append("fallback"),
-		},
+	previousKeyboardHandler = sys.modules.get("keyboardHandler")
+	sys.modules["keyboardHandler"] = SimpleNamespace(
+		KeyboardInputGesture=SimpleNamespace(
+			fromName=lambda name: SimpleNamespace(
+				send=lambda: escape_calls.append(name)
+			)
+		)
 	)
 
-	ns["_copyAndReadMessage"](_Target())
-	assert copy_calls == [""]
-	assert len(scheduled) == 1
+	try:
+		ns = _load_line_symbols(
+			assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
+			function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
+			namespace={
+				"api": SimpleNamespace(
+					getClipData=lambda: "orig",
+					copyToClip=lambda value: copy_calls.append(value),
+				),
+				"core": SimpleNamespace(
+					callLater=lambda _delay, callback: scheduled.append(callback),
+				),
+				"ctypes": SimpleNamespace(windll=SimpleNamespace(user32=user32)),
+				"time": SimpleNamespace(sleep=lambda _seconds: None),
+				"log": _Log(),
+				"_getElementRuntimeId": lambda _element: (1, 2, 3),
+				"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
+				"_ocrReadMessageFallback": lambda _element: fallback_calls.append("fallback"),
+				"_shouldDismissCopyReadMenu": lambda _hwnd: False,
+			},
+		)
 
-	ns["_copyReadRequestId"] += 1
-	scheduled[0]()
+		ns["_copyAndReadMessage"](_Target())
+		assert copy_calls == [""]
+		assert len(scheduled) == 1
 
-	assert copy_calls == ["", "orig"]
-	assert fallback_calls == []
-	assert ns["_copyReadClipboardOwnerId"] == 0
+		ns["_copyReadRequestId"] += 1
+		scheduled[0]()
+
+		assert copy_calls == ["", "orig"]
+		assert escape_calls == []
+		assert fallback_calls == []
+		assert ns["_copyReadClipboardOwnerId"] == 0
+	finally:
+		if previousKeyboardHandler is None:
+			sys.modules.pop("keyboardHandler", None)
+		else:
+			sys.modules["keyboardHandler"] = previousKeyboardHandler
