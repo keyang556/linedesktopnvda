@@ -1693,6 +1693,18 @@ _currentChatRoomName = None
 # Flag to suppress addon while a file dialog is open
 _suppressAddon = False
 
+# Google AI API key used by NVDA+Windows+I image description.
+# This is an AI Studio key bundled for end-user convenience.
+_IMAGE_DESCRIPTION_API_KEY = (
+	"AQ.Ab8RN6KSiZcHSBEjCN7rZN5kP201HIwQJFGPBKdXgxShFZD7HA"
+)
+_IMAGE_DESCRIPTION_MODEL = "gemma-4-31b-it"
+_IMAGE_DESCRIPTION_ENDPOINT = (
+	"https://generativelanguage.googleapis.com/v1beta/models/"
+	"{model}:generateContent?key={key}"
+)
+_IMAGE_DESCRIPTION_PROMPT = "請用繁體中文簡要描述這張圖片的內容。"
+
 _NOTES_WINDOW_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
 _NOTES_OCR_KEYWORDS = (
 	"記事本", "相簿", "已儲存",
@@ -1714,6 +1726,151 @@ _nameRecursionGuard = set()
 # Thread-level recursion depth counter as ultimate safety net
 _nameRecursionDepth = 0
 _MAX_NAME_RECURSION_DEPTH = 5
+
+
+def _captureRegionAsPng(left, top, width, height):
+	"""Capture the given screen rect and return PNG bytes, or None on failure.
+
+	Uses NVDA's ``screenBitmap`` to grab pixels and encodes them to PNG
+	with only the standard library (``struct`` + ``zlib``).  Keeping the
+	encoder self-contained avoids taking a hard dependency on Pillow,
+	which is not bundled with NVDA.
+	"""
+	if width <= 0 or height <= 0:
+		return None
+
+	try:
+		import ctypes as _ctypes
+		import screenBitmap
+		sb = screenBitmap.ScreenBitmap(width, height)
+		pixels = sb.captureImage(left, top, width, height)
+		# pixels is a ctypes array of RGBQUAD (BGRA, 4 bytes per pixel).
+		bgra = bytearray(_ctypes.string_at(pixels, width * height * 4))
+	except Exception as e:
+		log.debug(
+			f"LINE: _captureRegionAsPng capture failed: {e}",
+			exc_info=True,
+		)
+		return None
+
+	try:
+		import struct
+		import zlib
+		# Swap B <-> R channels in place to turn BGRA into RGBA.
+		# Tuple assignment evaluates the RHS fully before assigning.
+		bgra[0::4], bgra[2::4] = bgra[2::4], bgra[0::4]
+		rgba = bgra
+
+		stride = width * 4
+		raw = bytearray(height * (stride + 1))
+		# Prepend a 0x00 filter byte to every scanline (filter type: None).
+		for y in range(height):
+			srcStart = y * stride
+			dstStart = y * (stride + 1)
+			raw[dstStart] = 0
+			raw[dstStart + 1:dstStart + 1 + stride] = (
+				rgba[srcStart:srcStart + stride]
+			)
+
+		def _chunk(tag, data):
+			return (
+				struct.pack(">I", len(data))
+				+ tag
+				+ data
+				+ struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+			)
+
+		signature = b"\x89PNG\r\n\x1a\n"
+		ihdr = struct.pack(
+			">IIBBBBB",
+			width, height,
+			8,  # bit depth
+			6,  # color type: RGBA
+			0, 0, 0,  # compression, filter, interlace
+		)
+		idat = zlib.compress(bytes(raw), 6)
+		return (
+			signature
+			+ _chunk(b"IHDR", ihdr)
+			+ _chunk(b"IDAT", idat)
+			+ _chunk(b"IEND", b"")
+		)
+	except Exception as e:
+		log.debug(
+			f"LINE: _captureRegionAsPng encode failed: {e}",
+			exc_info=True,
+		)
+		return None
+
+
+def _describeImageBytes(pngBytes, timeout=30.0):
+	"""Send PNG image bytes to Google AI and return the description, or None."""
+	if not pngBytes:
+		return None
+	try:
+		import base64
+		import json
+		import urllib.request
+		url = _IMAGE_DESCRIPTION_ENDPOINT.format(
+			model=_IMAGE_DESCRIPTION_MODEL,
+			key=_IMAGE_DESCRIPTION_API_KEY,
+		)
+		body = {
+			"contents": [
+				{
+					"parts": [
+						{"text": _IMAGE_DESCRIPTION_PROMPT},
+						{
+							"inline_data": {
+								"mime_type": "image/png",
+								"data": base64.b64encode(pngBytes).decode(
+									"ascii"
+								),
+							}
+						},
+					]
+				}
+			]
+		}
+		req = urllib.request.Request(
+			url,
+			data=json.dumps(body).encode("utf-8"),
+			headers={"Content-Type": "application/json"},
+			method="POST",
+		)
+		with urllib.request.urlopen(req, timeout=timeout) as resp:
+			raw = resp.read()
+		data = json.loads(raw.decode("utf-8", errors="replace"))
+	except Exception as e:
+		log.warning(
+			f"LINE: image description request failed: {e}",
+			exc_info=True,
+		)
+		return None
+
+	try:
+		candidates = data.get("candidates") or []
+		if not candidates:
+			log.info(
+				f"LINE: image description returned no candidates: {data!r}"
+			)
+			return None
+		parts = (
+			candidates[0].get("content", {}).get("parts", [])
+			if isinstance(candidates[0], dict)
+			else []
+		)
+		for part in parts:
+			if isinstance(part, dict):
+				text = part.get("text")
+				if text:
+					return text.strip()
+	except Exception as e:
+		log.warning(
+			f"LINE: image description response parse failed: {e}",
+			exc_info=True,
+		)
+	return None
 
 
 def _getDpiScale(hwnd=None):
@@ -8475,6 +8632,66 @@ class AppModule(appModuleHandler.AppModule):
 			self._suppressAddonForFileDialog("Save As selected")
 
 		self._contextMenuAction(0, "另存新檔", afterCallback=_afterSaveAs)
+
+	@script(
+		gesture="kb:NVDA+windows+i",
+		# Translators: Input help message for the image-description command.
+		description=_("Describe the current image message using Google AI"),
+		category="LINE",
+	)
+	def script_describeImage(self, gesture):
+		"""Send the focused message bubble to Google AI and speak the result.
+
+		Captures the UIA bounding rect of the currently focused message,
+		encodes it as PNG, and asks the configured Gemma vision model to
+		describe the image.  The HTTP request runs on a worker thread so
+		NVDA's main loop stays responsive; the reply is announced via
+		``wx.CallAfter(ui.message, ...)`` to stay on the UI thread.
+		"""
+		if _suppressAddon:
+			return
+
+		try:
+			handler = UIAHandler.handler
+			rawEl = handler.clientObject.GetFocusedElement()
+			if not rawEl:
+				ui.message(_("找不到目前的訊息"))
+				return
+			rect = rawEl.CurrentBoundingRectangle
+			left = int(rect.left)
+			top = int(rect.top)
+			width = int(rect.right - rect.left)
+			height = int(rect.bottom - rect.top)
+		except Exception as e:
+			log.debug(
+				f"LINE: script_describeImage getElement failed: {e}",
+				exc_info=True,
+			)
+			ui.message(_("找不到目前的訊息"))
+			return
+
+		if width <= 0 or height <= 0:
+			ui.message(_("找不到目前的訊息"))
+			return
+
+		pngBytes = _captureRegionAsPng(left, top, width, height)
+		if not pngBytes:
+			ui.message(_("擷取圖片失敗"))
+			return
+
+		ui.message(_("描述圖片中，請稍候"))
+
+		import threading
+
+		def _worker():
+			import wx
+			description = _describeImageBytes(pngBytes)
+			if description:
+				wx.CallAfter(ui.message, description)
+			else:
+				wx.CallAfter(ui.message, _("圖片描述失敗"))
+
+		threading.Thread(target=_worker, daemon=True).start()
 
 	def _isVoiceDurationLine(self, text):
 		"""Return True when OCR text looks like a voice duration label."""
