@@ -21,7 +21,9 @@ Detailed documentation is available in the following languages:
 - 支援語音與視訊通話快速鍵 (`NVDA+Windows+C/V`)。
 - 支援來電接聽與拒絕 (`NVDA+Windows+A/D`)。
 - 跳到通話視窗 (`NVDA+Windows+F`)。
+- 支援訊息閱讀器，可匯出聊天室並在視窗中逐則閱讀 (`NVDA+Windows+J`)。
 - 通話中麥克風與相機狀態播報。
+- 收回訊息與圖片轉文字提示支援臨時單鍵操作 (`Y/N/P`, `A/D`)。
 - 使用 OCR 技術輔助讀取介面文字。
 - **注意**：OCR 並非 100% 準確。
 
@@ -31,7 +33,9 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - Shortcuts for voice and video calls (`NVDA+Windows+C/V`).
 - Answer/reject incoming calls (`NVDA+Windows+A/D`).
 - Focus call window (`NVDA+Windows+F`).
+- Message Reader for exporting and browsing chats (`NVDA+Windows+J`).
 - Microphone and camera status announcements during calls.
+- Temporary single-key confirmations for recall and photo-to-text prompts (`Y/N/P`, `A/D`).
 - OCR-assisted text reading for the Qt6 interface.
 - **Note**: OCR is not perfectly accurate.
 
@@ -41,7 +45,9 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - 音声・ビデオ通話のショートカット (`NVDA+Windows+C/V`)。
 - 着信への応答・拒否 (`NVDA+Windows+A/D`)。
 - 通話ウィンドウにフォーカス (`NVDA+Windows+F`)。
+- チャットを書き出して閲覧できるメッセージリーダー (`NVDA+Windows+J`)。
 - 通話中のマイクとカメラの状態読み上げ。
+- 取り消し確認と画像のテキスト化通知に一時キー (`Y/N/P`, `A/D`)。
 - OCR 技術によるインターフェース文字の読み上げ補助。
 - **注意**: OCR は完全に正確ではありません。
 
@@ -51,7 +57,9 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - คีย์ลัดสำหรับการโทรด้วยเสียงและวิดีโอ (`NVDA+Windows+C/V`)
 - รับสาย/ปฏิเสธสายเรียกเข้า (`NVDA+Windows+A/D`)
 - ไปยังหน้าต่างการโทร (`NVDA+Windows+F`)
+- มีโปรแกรมอ่านข้อความสำหรับส่งออกและเปิดอ่านแชท (`NVDA+Windows+J`)
 - แจ้งสถานะไมโครโฟนและกล้องระหว่างการโทร
+- มีคีย์ชั่วคราวสำหรับยืนยันการเรียกคืนและการแจ้งเตือนแปลงเป็นข้อความ (`Y/N/P`, `A/D`)
 - อ่านข้อความด้วย OCR สำหรับอินเทอร์เฟซ Qt6
 - **หมายเหตุ**: OCR ไม่ถูกต้อง 100%
 

@@ -14,6 +14,9 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Incoming Call Handling**: Answer and reject incoming calls, and check caller information.
 * **OCR Support**: Automatically attempts to read text that cannot be accessed through standard accessibility APIs.
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
+* **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
+* **Context-Sensitive Confirmation Keys**: Temporarily provides single-key actions for recall and "Convert to text" consent dialogs.
+* **Status Feedback**: Announces tab changes plus microphone/camera state, and plays a short sound after a message is actually sent.
 
 ## Usage Tips and Reminders
 
@@ -33,6 +36,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 * **Default (Copy Success)**: If the message is read via the context menu copy method, no special sound effect is played.
 * **OCR Fallback Sound**: If the message is read via OCR, the `ocr.wav` sound effect will be played to indicate that the content may not be fully accurate.
+* **Send Sound**: When you press `Enter` in the message input and LINE really sends the message, the add-on plays a short sound. If `Enter` only confirms IME composition, no sound is played.
 
 > [!WARNING]
 > OCR (Optical Character Recognition) results are **not 100% accurate**. If you hear the `ocr.wav` sound effect, be aware that the text may differ from the actual message content. To verify the exact content, it is recommended to check the message on your phone or another platform.
@@ -42,6 +46,14 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Reading Messages**: When navigating through the message list, the add-on uses a "copy-first" approach to read messages. It automatically right-clicks the message → selects "Copy" → reads the clipboard content. The original clipboard content is restored after reading.
 * **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu.
 * **OCR Fallback**: If copying via the context menu fails (e.g., the menu or menu item cannot be found), the add-on will automatically fall back to OCR (Optical Character Recognition) to read the message content.
+
+## Message Reader, Context Menus, and Temporary Keys
+
+* **Message Reader (`NVDA+Windows+J`)**: The add-on opens the chat room's "More options" menu, chooses "Save chat", parses the exported text, and opens an accessible reader dialog.
+* **Reader Navigation**: In the message reader, use `UpArrow` and `DownArrow` to move between messages and `Escape` to close the window. Date separators are preserved, and the current position is announced.
+* **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, this opens a virtual context menu for the focused message, making actions such as copy, reply, recall, and "Convert to text" easier to use.
+* **Recall Confirmation Keys**: After you choose recall, the add-on temporarily binds `Y` = Recall, `N` = Cancel, and `P` = Stealth recall (Premium required). If you do nothing for 10 seconds, the add-on cancels the action automatically.
+* **Photo-to-Text Consent Keys**: When LINE shows the first-run "Convert to text" photo upload notice, the add-on temporarily binds `A` = Agree and `D` = Decline. If you do nothing for 10 seconds, the add-on declines automatically.
 
 ## Virtual Windows
 
@@ -74,7 +86,7 @@ This add-on currently provides the following virtual windows:
 ## Keyboard Shortcuts
 
 > [!NOTE]
-> In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, and "LINE" indicates built-in LINE Desktop shortcuts.
+> In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, "Add-on (temporary)" indicates context-specific shortcuts that are only active while a dialog is open, and "LINE" indicates built-in LINE Desktop shortcuts.
 
 > [!TIP]
 > You can customize these shortcuts through "NVDA Menu → Preferences → Input Gestures".
@@ -89,8 +101,8 @@ This add-on currently provides the following virtual windows:
 | **NVDA+Windows+D** | Add-on | Reject an incoming call |
 | **NVDA+Windows+S** | Add-on | Check caller information |
 | **NVDA+Windows+F** | Add-on | Focus the call window |
-| **Ctrl+Shift+A** | LINE | Toggle microphone on/off |
-| **Ctrl+Shift+V** | LINE | Toggle camera on/off |
+| **Ctrl+Shift+A** | LINE | Toggle microphone on/off; during calls the add-on announces the new state |
+| **Ctrl+Shift+V** | LINE | Toggle camera on/off; during calls the add-on announces the new state |
 
 ### Message Actions
 
@@ -101,6 +113,17 @@ This add-on currently provides the following virtual windows:
 | **NVDA+Windows+Delete** | Add-on | Recall (unsend) the current message |
 | **NVDA+Windows+T** | Add-on | Read current chat room name |
 | **NVDA+Windows+K** | Add-on | Open Save As dialog (Files can only be downloaded for 7 days after upload) |
+| **Applications / Shift+F10** | Add-on | Open the virtual context menu for the current message |
+
+### Temporary Confirmation Keys
+
+| Shortcut | Category | Action |
+|---|---|---|
+| **Y** | Add-on (temporary) | Confirm message recall |
+| **N** | Add-on (temporary) | Cancel message recall |
+| **P** | Add-on (temporary) | Stealth recall (Premium required) |
+| **A** | Add-on (temporary) | Agree to LINE's photo upload notice for "Convert to text" |
+| **D** | Add-on (temporary) | Decline LINE's photo upload notice for "Convert to text" |
 
 ### Basic Shortcuts
 
@@ -136,6 +159,8 @@ This add-on currently provides the following virtual windows:
 
 | Shortcut | Category | Action |
 |---|---|---|
+| **Enter** | LINE | Send message; the add-on plays a sound only when sending succeeds |
+| **NVDA+Windows+J** | Add-on | Open the message reader |
 | **NVDA+Windows+O** | Add-on | Click more options button |
 | **Shift+Enter** | LINE | New line |
 | **Ctrl+F** | LINE | Search |
@@ -191,6 +216,7 @@ This add-on currently provides the following virtual windows:
 | Shortcut | Category | Action |
 |---|---|---|
 | **NVDA+Shift+K** | Add-on | Debug: Check UIA and OCR (contents dumped to clipboard) |
+| **NVDA+Shift+V** | Add-on | Report LINE version, language, window type, and Qt accessibility status |
 | **NVDA+Shift+J** | Global | Report information about the currently focused app and process |
 
 ## Community and Support
