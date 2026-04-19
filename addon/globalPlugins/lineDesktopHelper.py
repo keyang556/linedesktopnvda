@@ -110,21 +110,42 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		# Qt accessibility env var
 		wantSet = bool(self._qtCheck.GetValue())
 		if wantSet != _isQtAccessibleSet():
-			_setQtAccessible(wantSet)
+			if not _setQtAccessible(wantSet):
+				gui.messageBox(
+					# Translators: Error shown when writing Qt accessibility env var fails
+					_("設定 Qt 無障礙環境變數失敗，請確認系統權限。"),
+					# Translators: Title of the settings error dialog
+					_("LINE Desktop - 設定錯誤"),
+					wx.OK | wx.ICON_ERROR,
+					self,
+				)
 
 		# Image description API key
 		try:
 			from appModules.line import getUserImageApiKey, setUserImageApiKey
+			newKey = self._apiKeyText.GetValue().strip()
+			currentKey = getUserImageApiKey() or ""
+			if newKey != currentKey:
+				if not setUserImageApiKey(newKey):
+					gui.messageBox(
+						# Translators: Error shown when saving the image API key fails
+						_("儲存圖片描述 API Key 失敗，請重試。"),
+						_("LINE Desktop - 設定錯誤"),
+						wx.OK | wx.ICON_ERROR,
+						self,
+					)
 		except Exception:
 			log.warning(
 				"LINE: cannot load image API key helpers from settings panel",
 				exc_info=True,
 			)
-			return
-		newKey = self._apiKeyText.GetValue().strip()
-		currentKey = getUserImageApiKey() or ""
-		if newKey != currentKey:
-			setUserImageApiKey(newKey)
+			gui.messageBox(
+				# Translators: Error shown when the API key module cannot be loaded
+				_("無法載入 API Key 設定，請確認附加元件完整性。"),
+				_("LINE Desktop - 設定錯誤"),
+				wx.OK | wx.ICON_ERROR,
+				self,
+			)
 
 
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
