@@ -10,7 +10,7 @@ ci:
   submodules: true
 
 default_language_version:
-  python: python3.13
+  python: python3.11
 
 repos:
 - repo: https://github.com/pre-commit-ci/pre-commit-ci-config

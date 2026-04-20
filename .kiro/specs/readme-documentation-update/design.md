@@ -433,16 +433,16 @@ def test_input_gesture_tip_present():
 def test_virtual_window_section_structure():
     content = read_file('addon/doc/zh_TW/readme.md')
     sections = extract_sections(content)
-    
+
     # 驗證虛擬視窗章節存在
     assert '虛擬視窗' in [s.title for s in sections]
-    
+
     # 驗證章節順序
     section_titles = [s.title for s in sections]
     msg_idx = section_titles.index('訊息閱讀與複製')
     vw_idx = section_titles.index('虛擬視窗')
     kb_idx = section_titles.index('鍵盤快速鍵')
-    
+
     assert msg_idx < vw_idx < kb_idx
 ```
 
@@ -458,11 +458,11 @@ def test_virtual_window_section_structure():
 def test_sound_effects_integrated():
     content = read_file('addon/doc/zh_TW/readme.md')
     sections = extract_sections(content)
-    
+
     # 驗證沒有獨立的音效提示章節
     section_titles = [s.title for s in sections]
     assert '音效提示' not in section_titles
-    
+
     # 驗證使用技巧章節包含音效提示內容
     usage_section = next(s for s in sections if '使用技巧' in s.title)
     assert 'ocr.wav' in usage_section.content
@@ -489,21 +489,21 @@ from hypothesis import given, strategies as st
 def test_structural_consistency(lang1, lang2):
     """
     Feature: readme-documentation-update
-    Property 1: For any pair of language versions, the chapter structure 
+    Property 1: For any pair of language versions, the chapter structure
     and order should be identical
     """
     if lang1 == lang2:
         return  # Skip same language comparison
-    
+
     content1 = read_file(f'addon/doc/{lang1}/readme.md')
     content2 = read_file(f'addon/doc/{lang2}/readme.md')
-    
+
     sections1 = extract_section_structure(content1)
     sections2 = extract_section_structure(content2)
-    
+
     # 驗證章節數量相同
     assert len(sections1) == len(sections2)
-    
+
     # 驗證章節層級結構相同
     for s1, s2 in zip(sections1, sections2):
         assert s1.level == s2.level
@@ -528,15 +528,15 @@ def test_structural_consistency(lang1, lang2):
 def test_shortcut_key_consistency(shortcut):
     """
     Feature: readme-documentation-update
-    Property 2: For any keyboard shortcut key combination, the key string 
+    Property 2: For any keyboard shortcut key combination, the key string
     should be identical across all versions
     """
     languages = ['zh_TW', 'en', 'ja', 'th']
-    
+
     for lang in languages:
         content = read_file(f'addon/doc/{lang}/readme.md')
         shortcuts = extract_shortcuts(content)
-        
+
         # 如果該快速鍵存在，驗證鍵組合字串完全相同
         if shortcut in shortcuts:
             assert shortcuts[shortcut].key == shortcut
@@ -554,21 +554,21 @@ def test_shortcut_key_consistency(shortcut):
 def test_markdown_format_consistency(lang):
     """
     Feature: readme-documentation-update
-    Property 3: For any newly added content, the Markdown formatting 
+    Property 3: For any newly added content, the Markdown formatting
     should conform to existing conventions
     """
     content = read_file(f'addon/doc/{lang}/readme.md')
-    
+
     # 驗證表格格式一致
     tables = extract_tables(content)
     for table in tables:
         # 所有表格應該有相同的欄位數
         column_counts = [len(row) for row in table.rows]
         assert len(set(column_counts)) == 1
-        
+
         # 表格分隔行應該使用正確格式
         assert table.separator_row.count('|') == column_counts[0] + 1
-    
+
     # 驗證標題層級正確
     headings = extract_headings(content)
     for i in range(len(headings) - 1):

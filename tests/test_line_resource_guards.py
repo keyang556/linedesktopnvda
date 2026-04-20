@@ -16,11 +16,7 @@ def _load_line_symbols(*, assignment_names=(), function_names=(), namespace=None
 
 	for node in module.body:
 		if isinstance(node, ast.Assign):
-			names = {
-				target.id
-				for target in node.targets
-				if isinstance(target, ast.Name)
-			}
+			names = {target.id for target in node.targets if isinstance(target, ast.Name)}
 			if names & set(assignment_names):
 				exec(
 					compile(
@@ -98,8 +94,8 @@ def test_should_dismiss_copy_read_menu_requires_same_process_foreground():
 		namespace={
 			"ctypes": SimpleNamespace(
 				windll=SimpleNamespace(
-					user32=SimpleNamespace(GetForegroundWindow=lambda: 202)
-				)
+					user32=SimpleNamespace(GetForegroundWindow=lambda: 202),
+				),
 			),
 		},
 	)
@@ -127,9 +123,7 @@ def test_extract_matched_message_context_menu_labels_ignores_message_body_text()
 	)
 
 	popup_lines, line_matches, matched_labels = ns["_extractMatchedMessageContextMenuLabels"](
-		"本次更新新增了訊息右鍵選單\n"
-		"天、回覆、複製、收回等重要站點\n"
-		"日期：2026 年 3 月 27 日"
+		"本次更新新增了訊息右鍵選單\n天、回覆、複製、收回等重要站點\n日期：2026 年 3 月 27 日",
 	)
 
 	assert popup_lines[1] == "天、回覆、複製、收回等重要站點"
@@ -148,7 +142,7 @@ def test_extract_matched_message_context_menu_labels_accepts_real_menu_rows():
 	)
 
 	_popup_lines, line_matches, matched_labels = ns["_extractMatchedMessageContextMenuLabels"](
-		"回覆\n複製\n分享"
+		"回覆\n複製\n分享",
 	)
 
 	assert line_matches == [("回覆", "回覆"), ("複製", "複製"), ("分享", "分享")]
@@ -366,31 +360,47 @@ def test_is_centered_line_date_separator_ocr_requires_compact_centered_geometry(
 		},
 	)
 
-	assert ns["_isCenteredLineDateSeparatorOcr"](
-		"今天",
-		[{"text": "今天", "rect": (803, 164, 847, 186)}],
-		(547, 142, 1102, 211),
-	) is True
-	assert ns["_isCenteredLineDateSeparatorOcr"](
-		"阼天",
-		[{"text": "阼天", "rect": (803, 164, 847, 186)}],
-		(547, 142, 1102, 211),
-	) is True
-	assert ns["_isCenteredLineDateSeparatorOcr"](
-		"4 月 8 日 ( 三 )",
-		[{"text": "4 月 8 日 ( 三 )", "rect": (782, 164, 867, 186)}],
-		(547, 142, 1102, 211),
-	) is True
-	assert ns["_isCenteredLineDateSeparatorOcr"](
-		"4 月 8 日 ( 三 )",
-		[{"text": "4 月 8 日 ( 三 )", "rect": (980, 164, 1065, 186)}],
-		(547, 142, 1102, 211),
-	) is False
-	assert ns["_isCenteredLineDateSeparatorOcr"](
-		"OK",
-		[{"text": "OK", "rect": (982, 336, 1038, 359)}],
-		(547, 274, 1102, 397),
-	) is False
+	assert (
+		ns["_isCenteredLineDateSeparatorOcr"](
+			"今天",
+			[{"text": "今天", "rect": (803, 164, 847, 186)}],
+			(547, 142, 1102, 211),
+		)
+		is True
+	)
+	assert (
+		ns["_isCenteredLineDateSeparatorOcr"](
+			"阼天",
+			[{"text": "阼天", "rect": (803, 164, 847, 186)}],
+			(547, 142, 1102, 211),
+		)
+		is True
+	)
+	assert (
+		ns["_isCenteredLineDateSeparatorOcr"](
+			"4 月 8 日 ( 三 )",
+			[{"text": "4 月 8 日 ( 三 )", "rect": (782, 164, 867, 186)}],
+			(547, 142, 1102, 211),
+		)
+		is True
+	)
+	assert (
+		ns["_isCenteredLineDateSeparatorOcr"](
+			"4 月 8 日 ( 三 )",
+			[{"text": "4 月 8 日 ( 三 )", "rect": (980, 164, 1065, 186)}],
+			(547, 142, 1102, 211),
+		)
+		is False
+	)
+	assert (
+		ns["_isCenteredLineDateSeparatorOcr"](
+			"OK",
+			[{"text": "OK", "rect": (982, 336, 1038, 359)}],
+			(547, 274, 1102, 397),
+		)
+		is False
+	)
+
 
 def test_build_message_bubble_ocr_click_positions_targets_side_padding_for_right_aligned_content():
 	ns = _load_line_symbols(
@@ -464,7 +474,7 @@ def test_extract_recall_dialog_action_labels_handles_modern_dialog_without_match
 		"依對方使用的LINE版本而定，有可能無法收回訊息。\n"
 		"無痕收回 Premium\n"
 		"收回\n"
-		"關閉"
+		"關閉",
 	)
 
 	assert labels == ["無痕收回", "收回", "取消"]
@@ -510,7 +520,7 @@ def test_extract_photo_text_consent_action_labels_ignores_title_and_body_mention
 		"使用本功能會將照片傳至本公司伺服器進行處理\n"
 		"您要同意本功能的服務規定並開始使用嗎？\n"
 		"同意\n"
-		"不同意"
+		"不同意",
 	)
 
 	assert labels == ["同意", "不同意"]
@@ -522,18 +532,24 @@ def test_is_photo_text_consent_dialog_text_requires_upload_notice_and_buttons():
 		namespace={"_removeCJKSpaces": lambda text: text.replace(" ", "")},
 	)
 
-	assert ns["_isPhotoTextConsentDialogText"](
-		"同意提供照片\n"
-		"使用本功能會將照片傳至本公司伺服器進行處理\n"
-		"您要同意本功能的服務規定並開始使用嗎？\n"
-		"同意\n"
-		"不同意",
-		["同意", "不同意"],
-	) is True
-	assert ns["_isPhotoTextConsentDialogText"](
-		"同意提供照片\n同意\n不同意",
-		["同意", "不同意"],
-	) is False
+	assert (
+		ns["_isPhotoTextConsentDialogText"](
+			"同意提供照片\n"
+			"使用本功能會將照片傳至本公司伺服器進行處理\n"
+			"您要同意本功能的服務規定並開始使用嗎？\n"
+			"同意\n"
+			"不同意",
+			["同意", "不同意"],
+		)
+		is True
+	)
+	assert (
+		ns["_isPhotoTextConsentDialogText"](
+			"同意提供照片\n同意\n不同意",
+			["同意", "不同意"],
+		)
+		is False
+	)
 
 
 def test_get_photo_text_consent_prompt_mentions_upload_notice_and_a_d_shortcuts():
@@ -543,8 +559,7 @@ def test_get_photo_text_consent_prompt_mentions_upload_notice_and_a_d_shortcuts(
 	)
 
 	assert (
-		ns["_getPhotoTextConsentPrompt"]()
-		== "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
+		ns["_getPhotoTextConsentPrompt"]() == "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
 	)
 
 
@@ -588,14 +603,17 @@ def test_is_modern_recall_dialog_text_accepts_compact_two_button_modern_layout()
 		namespace={"_removeCJKSpaces": lambda text: text.replace(" ", "")},
 	)
 
-	assert ns["_isModernRecallDialogText"](
-		"確定要收回此訊息嗎 ?\n"
-		"收回已讀訊息時, 對方將會收到通知。\n"
-		"依對方使用的LINE版本而定, 有可能無法收回訊息。\n"
-		"收回\n"
-		"關閉",
-		["收回", "取消"],
-	) is True
+	assert (
+		ns["_isModernRecallDialogText"](
+			"確定要收回此訊息嗎 ?\n"
+			"收回已讀訊息時, 對方將會收到通知。\n"
+			"依對方使用的LINE版本而定, 有可能無法收回訊息。\n"
+			"收回\n"
+			"關閉",
+			["收回", "取消"],
+		)
+		is True
+	)
 
 
 def test_is_compact_modern_recall_dialog_requires_two_button_modern_state():
@@ -952,9 +970,7 @@ def test_begin_recall_confirmation_binds_y_n_p_shortcuts():
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	begin_method = next(
 		node
@@ -973,8 +989,7 @@ def test_begin_recall_confirmation_binds_y_n_p_shortcuts():
 			continue
 		first_arg, second_arg = node.args[:2]
 		if all(
-			isinstance(arg, ast.Constant) and isinstance(arg.value, str)
-			for arg in (first_arg, second_arg)
+			isinstance(arg, ast.Constant) and isinstance(arg.value, str) for arg in (first_arg, second_arg)
 		):
 			bind_calls.add((first_arg.value, second_arg.value))
 
@@ -988,9 +1003,7 @@ def test_begin_photo_text_consent_binds_a_d_shortcuts():
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	begin_method = next(
 		node
@@ -1009,8 +1022,7 @@ def test_begin_photo_text_consent_binds_a_d_shortcuts():
 			continue
 		first_arg, second_arg = node.args[:2]
 		if all(
-			isinstance(arg, ast.Constant) and isinstance(arg.value, str)
-			for arg in (first_arg, second_arg)
+			isinstance(arg, ast.Constant) and isinstance(arg.value, str) for arg in (first_arg, second_arg)
 		):
 			bind_calls.add((first_arg.value, second_arg.value))
 
@@ -1023,9 +1035,7 @@ def test_end_recall_confirmation_defers_user_feedback_until_post_click_verificat
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	end_method = next(
 		node
@@ -1054,9 +1064,7 @@ def test_perform_recall_confirmation_action_prefers_ocr_click_point_for_legacy_r
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1114,9 +1122,7 @@ def test_perform_recall_confirmation_action_prefers_ocr_click_point_for_modern_r
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1174,9 +1180,7 @@ def test_perform_recall_confirmation_action_prefers_compact_modern_fallback_befo
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1231,7 +1235,7 @@ def test_perform_recall_confirmation_action_prefers_compact_modern_fallback_befo
 
 	assert perform(_Self(), "收回") is True
 	assert fallback_calls == [
-		("收回", (50, 50, 350, 350), {"isModernDialog": True, "availableActions": ["收回", "取消"]})
+		("收回", (50, 50, 350, 350), {"isModernDialog": True, "availableActions": ["收回", "取消"]}),
 	]
 	assert clicks == [((222, 333), {"hwnd": 789})]
 
@@ -1241,9 +1245,7 @@ def test_handle_message_context_menu_action_starts_photo_consent_watch_for_conve
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1282,9 +1284,7 @@ def test_perform_photo_text_consent_action_prefers_ocr_click_point():
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1336,9 +1336,7 @@ def test_activate_message_context_menu_supports_keyboard_fallback_hooks():
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = next(
 		node
@@ -1358,8 +1356,7 @@ def test_activate_message_context_menu_supports_keyboard_fallback_hooks():
 	]
 	assert message_context_menu_calls, "expected MessageContextMenu construction"
 	assert any(
-		any(keyword.arg == "onAction" for keyword in call.keywords)
-		for call in message_context_menu_calls
+		any(keyword.arg == "onAction" for keyword in call.keywords) for call in message_context_menu_calls
 	)
 	assert any(
 		isinstance(node, ast.Call)
@@ -1390,9 +1387,7 @@ def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_e
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	method = [
 		node
@@ -1445,9 +1440,7 @@ def test_copy_read_and_context_menu_actions_use_popup_label_click_point_resoluti
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
 	copy_read = next(
 		node
@@ -1577,7 +1570,7 @@ def test_detect_edit_field_label_message_hint_skips_notes_detection():
 		},
 	)
 	ns["_isNotesWindowContext"] = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-		AssertionError("notes detection should not run for message fast-path")
+		AssertionError("notes detection should not run for message fast-path"),
 	)
 
 	handler = SimpleNamespace(clientObject=_Client())
@@ -1701,9 +1694,9 @@ def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_win
 	sys.modules["keyboardHandler"] = SimpleNamespace(
 		KeyboardInputGesture=SimpleNamespace(
 			fromName=lambda name: SimpleNamespace(
-				send=lambda: escape_calls.append(name)
-			)
-		)
+				send=lambda: escape_calls.append(name),
+			),
+		),
 	)
 
 	try:
