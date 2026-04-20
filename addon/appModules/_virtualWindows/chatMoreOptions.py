@@ -7,16 +7,16 @@ import re
 from typing import Any
 
 _CJK_CHAR = (
-	r'[\u2E80-\u9FFF\uF900-\uFAFF'
-	r'\U00020000-\U0002A6DF\U0002A700-\U0002EBEF\U00030000-\U000323AF]'
+	r"[\u2E80-\u9FFF\uF900-\uFAFF"
+	r"\U00020000-\U0002A6DF\U0002A700-\U0002EBEF\U00030000-\U000323AF]"
 )
 _CJK_SPACE_RE = re.compile(
-	r'(?<=' + _CJK_CHAR + r') (?=' + _CJK_CHAR + r')'
+	r"(?<=" + _CJK_CHAR + r") (?=" + _CJK_CHAR + r")",
 )
 
 
 def _removeCJKSpaces(text):
-	return _CJK_SPACE_RE.sub('', text)
+	return _CJK_SPACE_RE.sub("", text)
 
 
 _KNOWN_MENU_LABELS = (
@@ -134,10 +134,12 @@ def _extractOcrLines(result: Any) -> list[dict[str, Any]]:
 		text = text.strip()
 		if not text:
 			continue
-		extracted.append({
-			"text": text,
-			"rect": _extractRectLike(rawLine),
-		})
+		extracted.append(
+			{
+				"text": text,
+				"rect": _extractRectLike(rawLine),
+			},
+		)
 	return extracted
 
 
@@ -223,7 +225,7 @@ def _buildMenuElements(
 			normalized = _normalizeLineText(rawText)
 			if normalized and not _NOISE_LINE_RE.fullmatch(normalized):
 				log.debug(
-					f"LINE: ChatMoreOptions skipping non-menu OCR line: {rawText!r}"
+					f"LINE: ChatMoreOptions skipping non-menu OCR line: {rawText!r}",
 				)
 			continue
 
@@ -231,12 +233,7 @@ def _buildMenuElements(
 		lineCenterY = None
 		if rect:
 			lineLeft, lineTop, lineRight, lineBottom = rect
-			if (
-				lineRight <= left
-				or lineLeft >= right
-				or lineBottom <= top
-				or lineTop >= bottom
-			):
+			if lineRight <= left or lineLeft >= right or lineBottom <= top or lineTop >= bottom:
 				rect = None
 			else:
 				clickY = int((lineTop + lineBottom) / 2)
@@ -246,12 +243,14 @@ def _buildMenuElements(
 			clickY = None
 			clickX = centerX
 
-		elements.append({
-			"name": menuLabel,
-			"role": None,
-			"clickPoint": (clickX, clickY) if clickY is not None else None,
-			"_lineCenterY": lineCenterY,
-		})
+		elements.append(
+			{
+				"name": menuLabel,
+				"role": None,
+				"clickPoint": (clickX, clickY) if clickY is not None else None,
+				"_lineCenterY": lineCenterY,
+			},
+		)
 
 	if elements:
 		_assignRowRectsToElements(elements, rowRects)
@@ -273,12 +272,14 @@ def _buildMenuElements(
 		if _NOISE_LINE_RE.fullmatch(normalized):
 			continue
 		itemCenterY = int(top + itemHeight * index + itemHeight / 2)
-		elements.append({
-			"name": text,
-			"role": None,
-			"clickPoint": (centerX, itemCenterY),
-			"_lineCenterY": None,
-		})
+		elements.append(
+			{
+				"name": text,
+				"role": None,
+				"clickPoint": (centerX, itemCenterY),
+				"_lineCenterY": None,
+			},
+		)
 	_assignRowRectsToElements(elements, rowRects)
 	for element in elements:
 		element.pop("_lineCenterY", None)
@@ -286,7 +287,7 @@ def _buildMenuElements(
 
 
 class ChatMoreOptions(VirtualWindow):
-	title = '更多選項'
+	title = "更多選項"
 
 	@staticmethod
 	def isMatchLineScreen(obj):
@@ -315,13 +316,9 @@ class ChatMoreOptions(VirtualWindow):
 
 		lineInfos = _extractOcrLines(result)
 		if not lineInfos:
-			text = getattr(result, 'text', '') or ''
+			text = getattr(result, "text", "") or ""
 			text = _removeCJKSpaces(text.strip())
-			lineInfos = [
-				{"text": line.strip(), "rect": None}
-				for line in text.split('\n')
-				if line.strip()
-			]
+			lineInfos = [{"text": line.strip(), "rect": None} for line in text.split("\n") if line.strip()]
 
 		if not lineInfos:
 			log.debug("LINE: ChatMoreOptions OCR returned no lines")
@@ -334,10 +331,12 @@ class ChatMoreOptions(VirtualWindow):
 		)
 		log.debug(
 			f"LINE: ChatMoreOptions click points: "
-			f"{[(e['name'], e.get('clickPoint')) for e in self.elements]}"
+			f"{[(e['name'], e.get('clickPoint')) for e in self.elements]}",
 		)
 
-		log.info(f"LINE: ChatMoreOptions found {len(self.elements)} items: {[e['name'] for e in self.elements]}")
+		log.info(
+			f"LINE: ChatMoreOptions found {len(self.elements)} items: {[e['name'] for e in self.elements]}",
+		)
 
 		if self.elements:
 			self.pos = 0

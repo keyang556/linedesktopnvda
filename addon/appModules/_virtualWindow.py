@@ -1,6 +1,5 @@
 from ._utils import message
 
-from logHandler import log
 import api
 from inputCore import decide_executeGesture, InputGesture
 import mouseHandler
@@ -10,14 +9,15 @@ import pkgutil
 from importlib import import_module
 
 # Key sets used for gesture matching
-_PREVIOUS_KEYS = {'kb:uparrow', 'kb:shift+tab'}
-_NEXT_KEYS = {'kb:downarrow', 'kb:tab'}
-_CLICK_KEYS = {'kb:enter', 'kb:space'}
-_ESCAPE_KEYS = {'kb:escape'}
+_PREVIOUS_KEYS = {"kb:uparrow", "kb:shift+tab"}
+_NEXT_KEYS = {"kb:downarrow", "kb:tab"}
+_CLICK_KEYS = {"kb:enter", "kb:space"}
+_ESCAPE_KEYS = {"kb:escape"}
 _HANDLED_KEYS = _PREVIOUS_KEYS | _NEXT_KEYS | _CLICK_KEYS | _ESCAPE_KEYS
 
+
 class VirtualWindow:
-	'''
+	"""
 	VirtualWindow is a base class for creating virtual windows for different screens in the Line App. It allows users to navigate and interact with elements on the screen using keyboard gestures.
 	To create a virtual window for a specific screen, subclass VirtualWindow and implement the following methods:
 	- isMatchLineScreen(cls, obj): A class method that determines if the current Line App screen matches the virtual window. It should return True if it matches, False otherwise.
@@ -27,7 +27,8 @@ class VirtualWindow:
 	- Next Element: kb:down or kb:tab
 	- Click Element: kb:enter or kb:space
 	- Dismiss: kb:escape
-	'''
+	"""
+
 	title = None
 
 	windowClasses = tuple()
@@ -35,15 +36,15 @@ class VirtualWindow:
 
 	@classmethod
 	def initialize(cls):
-		'''
+		"""
 		Initializes the VirtualWindow system by dynamically importing all virtual window classes and registering the gesture handler.
 		Should be called once during the initialization of the Line AppModule.
-		'''
+		"""
 		# Dynamically import all virtual window classes from the virtualWindows package.
 		assert __package__
-		pkg = import_module(__package__ + '._virtualWindows')
+		pkg = import_module(__package__ + "._virtualWindows")
 		for importer, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
-			import_module(f'{__package__}._virtualWindows.{modname}')
+			import_module(f"{__package__}._virtualWindows.{modname}")
 
 		cls.windowClasses = tuple(VirtualWindow.__subclasses__())
 
@@ -51,18 +52,18 @@ class VirtualWindow:
 
 	@classmethod
 	def handleGesture(cls, gesture: InputGesture):
-		'''
+		"""
 		This method is called by inputCore.decide_executeGesture.
 		When a virtual window is active, navigation and action keys are
 		consumed (return False) so that the AppModule scripts do not
 		also process them. Other keys pass through normally.
-		'''
+		"""
 		if not cls.currentWindow:
 			return True
 
 		try:
 			foreground = api.getForegroundObject()
-			if foreground.appModule.appName != 'line':
+			if foreground.appModule.appName != "line":
 				return True
 		except Exception:
 			return True
@@ -70,6 +71,7 @@ class VirtualWindow:
 		ids = gesture.normalizedIdentifiers
 		if _HANDLED_KEYS.intersection(ids):
 			import core
+
 			core.callLater(1, cls.processKey, gesture)
 			return False
 
@@ -77,16 +79,16 @@ class VirtualWindow:
 
 	@classmethod
 	def processKey(cls, gesture: InputGesture):
-		'''
+		"""
 		Processes a keyboard gesture for the current virtual window.
 
-		'''
+		"""
 		if not cls.currentWindow:
 			return
 
 		try:
 			foreground = api.getForegroundObject()
-			if foreground.appModule.appName != 'line':
+			if foreground.appModule.appName != "line":
 				return
 		except Exception:
 			return
@@ -106,11 +108,11 @@ class VirtualWindow:
 
 	@classmethod
 	def onFocusChanged(cls, obj):
-		'''
+		"""
 		Called when the focus changes in the Line App. It checks if the new focused screen matches any virtual window and activates it if it does.
-		'''
+		"""
 		window = cls.getWindowClass(obj)
-		if getattr(cls.currentWindow, '__class__', None) is window:
+		if getattr(cls.currentWindow, "__class__", None) is window:
 			return
 
 		cls.currentWindow = window(obj) if window else None
@@ -120,8 +122,6 @@ class VirtualWindow:
 		for windowClass in cls.windowClasses:
 			if windowClass.isMatchLineScreen(obj):
 				return windowClass
-
-
 
 	@staticmethod
 	def isMatchLineScreen(obj):
@@ -136,7 +136,7 @@ class VirtualWindow:
 		message(self.title) if self.title else None
 
 	def makeElements(self):
-		'''
+		"""
 		This method should be overridden by subclasses to populate the elements list based on the current Line App screen.
 
 		elements should be a list of dictionaries with at least 'name' and optionally 'role' and 'clickPoint' keys, for example:
@@ -145,7 +145,7 @@ class VirtualWindow:
 			{'name': 'Button 2', 'role': roleObject, 'clickPoint': (x, y)},
 			...
 		]
-		'''
+		"""
 		raise NotImplementedError()
 
 	def rectGetCenterPoint(self, rect):
@@ -178,9 +178,9 @@ class VirtualWindow:
 		if not element:
 			return
 
-		role = element.get('role')
-		roleName = role.displayString if role else ''
-		displayText = f'{element["name"]}' + (f' ({roleName})' if roleName else '')
+		role = element.get("role")
+		roleName = role.displayString if role else ""
+		displayText = f"{element['name']}" + (f" ({roleName})" if roleName else "")
 		message(displayText)
 
 	@property
@@ -191,24 +191,25 @@ class VirtualWindow:
 		return self.elements[self.pos]
 
 	def click(self):
-		'''
+		"""
 		Simulates a click on the current element by executing mouse events at the element's click point.
-		'''
+		"""
 		element = self.element
-		if not element or not element.get('clickPoint'):
+		if not element or not element.get("clickPoint"):
 			return
 
 		originalPos = winUser.getCursorPos()
-		winUser.setCursorPos(*element.get('clickPoint'))
+		winUser.setCursorPos(*element.get("clickPoint"))
 		mouseHandler.executeMouseEvent(winUser.MOUSEEVENTF_LEFTDOWN, 0, 0)
 		mouseHandler.executeMouseEvent(winUser.MOUSEEVENTF_LEFTUP, 0, 0)
 		winUser.setCursorPos(*originalPos)
 
 	def dismiss(self):
-		'''
+		"""
 		Dismisses the virtual window and sends Escape to close any popup.
 		Subclasses can override this for custom dismiss behavior.
-		'''
+		"""
 		VirtualWindow.currentWindow = None
 		from keyboardHandler import KeyboardInputGesture
+
 		KeyboardInputGesture.fromName("escape").send()

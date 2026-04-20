@@ -22,11 +22,11 @@ class MessageReaderDialog(wx.Dialog):
 		self._messages = messages
 		self._pos = 0 if messages else -1
 		self._cleanupPath = cleanupPath
-		self._messageCount = sum(1 for msg in messages if msg.get('type') != 'date')
+		self._messageCount = sum(1 for msg in messages if msg.get("type") != "date")
 		self._messageIndexMap = []
 		messageIndex = 0
 		for msg in messages:
-			if msg.get('type') != 'date':
+			if msg.get("type") != "date":
 				messageIndex += 1
 			self._messageIndexMap.append(messageIndex)
 
@@ -58,8 +58,8 @@ class MessageReaderDialog(wx.Dialog):
 		self._textCtrl.SetFocus()
 
 	def _formatMessage(self, msg):
-		if msg.get('type') == 'date':
-			return msg.get('content', '')
+		if msg.get("type") == "date":
+			return msg.get("content", "")
 		return f"{msg['name']} {msg['content']} {msg['time']}"
 
 	def _getProgressLabel(self):
@@ -67,7 +67,7 @@ class MessageReaderDialog(wx.Dialog):
 		if self._messageCount <= 0 or self._pos < 0:
 			return ""
 		currentMessageIndex = self._messageIndexMap[self._pos]
-		if self._messages[self._pos].get('type') == 'date':
+		if self._messages[self._pos].get("type") == "date":
 			if currentMessageIndex < self._messageCount:
 				currentMessageIndex += 1
 			else:
@@ -88,6 +88,7 @@ class MessageReaderDialog(wx.Dialog):
 	def _speakMessage(self, text):
 		try:
 			import speech
+
 			speech.cancelSpeech()
 			speech.speakMessage(text)
 		except Exception:
@@ -134,6 +135,7 @@ class MessageReaderDialog(wx.Dialog):
 		if self._cleanupPath:
 			try:
 				import os
+
 				if os.path.isfile(self._cleanupPath):
 					os.remove(self._cleanupPath)
 					log.debug(f"Deleted temp chat export: {self._cleanupPath}")
@@ -153,6 +155,7 @@ def openMessageReader(messages, title=None, cleanupPath=None):
 		title: Dialog window title
 		cleanupPath: Optional file path to delete when dialog closes
 	"""
+
 	def _show():
 		global _readerDlg
 		if _readerDlg and _readerDlg.IsShown():
@@ -161,4 +164,5 @@ def openMessageReader(messages, title=None, cleanupPath=None):
 		_readerDlg = MessageReaderDialog(messages, title=title, cleanupPath=cleanupPath)
 		_readerDlg.Show()
 		_readerDlg.Raise()
+
 	wx.CallAfter(_show)

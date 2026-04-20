@@ -23,11 +23,7 @@ def _load_image_menu_helpers():
 
 	for node in module.body:
 		if isinstance(node, ast.Assign):
-			names = {
-				target.id
-				for target in node.targets
-				if isinstance(target, ast.Name)
-			}
+			names = {target.id for target in node.targets if isinstance(target, ast.Name)}
 			if names & needed_assignments:
 				exec(
 					compile(
@@ -66,10 +62,7 @@ def _load_find_copy_menu_item():
 
 
 def _target_has_name(target, name):
-	return any(
-		isinstance(node, ast.Name) and node.id == name
-		for node in ast.walk(target)
-	)
+	return any(isinstance(node, ast.Name) and node.id == name for node in ast.walk(target))
 
 
 class _UnderscoreAssignmentVisitor(ast.NodeVisitor):
@@ -128,19 +121,19 @@ class _UnderscoreAssignmentVisitor(ast.NodeVisitor):
 def test_image_attachment_menu_is_detected_from_photo_actions():
 	assert helpers["_looksLikeImageAttachmentMenu"](
 		"回覆\n分享\n刪除\n轉為文字\n掃描行動條碼\n另存新檔\n"
-		"傳送至 Keep 筆記\n儲存至記事本\n新增至相簿\n設為聊天室背景"
+		"傳送至 Keep 筆記\n儲存至記事本\n新增至相簿\n設為聊天室背景",
 	)
 
 
 def test_self_sent_message_menu_is_not_treated_as_image_attachment():
 	assert not helpers["_looksLikeImageAttachmentMenu"](
-		"回覆\n分享\n收回\n刪除\n翻譯\n傳送至 Keep 筆記\n儲存至記事本\n設為公告"
+		"回覆\n分享\n收回\n刪除\n翻譯\n傳送至 Keep 筆記\n儲存至記事本\n設為公告",
 	)
 
 
 def test_generic_save_as_menu_without_photo_actions_is_not_treated_as_image_attachment():
 	assert not helpers["_looksLikeImageAttachmentMenu"](
-		"回覆\n另存新檔\n傳送至 Keep 筆記\n儲存至記事本"
+		"回覆\n另存新檔\n傳送至 Keep 筆記\n儲存至記事本",
 	)
 
 

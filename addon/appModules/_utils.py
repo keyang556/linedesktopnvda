@@ -1,10 +1,11 @@
 from logHandler import log
 
+
 def ocrGetText(left, top, width, height, onResult):
-	'''
+	"""
 	Performs OCR on the specified screen region and calls the onResult callback with the OCR result.
 	onResult should be a function that takes a single argument, which will be the OCR result object.
-	'''
+	"""
 	try:
 		import screenBitmap
 		from contentRecog import uwpOcr
@@ -61,7 +62,7 @@ def ocrGetText(left, top, width, height, onResult):
 		if resizeFactor > 1:
 			sb = screenBitmap.ScreenBitmap(
 				width * resizeFactor,
-				height * resizeFactor
+				height * resizeFactor,
 			)
 			ocrPixels = sb.captureImage(left, top, width, height)
 		else:
@@ -71,17 +72,17 @@ def ocrGetText(left, top, width, height, onResult):
 		recognizer.recognize(ocrPixels, imgInfo, onResult)
 	except Exception:
 		log.debug("OCR fallback failed", exc_info=True)
-	
+
 
 def message(text):
-	'''
+	"""
 	Same as ui.message, but without the time limit for braille display.
-	'''
+	"""
 	import speech
 	import braille
-	
+
 	speech.speakMessage(text)
-	
+
 	handler = braille.handler
 	assert handler
 	try:

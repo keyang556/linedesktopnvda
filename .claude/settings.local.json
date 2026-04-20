@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('addon/globalPlugins/lineDesktopHelper.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(gh pr create --title 'Move Qt accessibility and image API key settings to preferences panel' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(grep -n ' $' addon/globalPlugins/lineDesktopHelper.py)",
+      "Bash(grep -Pn '[ \\\\t]+$' addon/globalPlugins/lineDesktopHelper.py)",
+      "Bash(python -c ' *)",
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "Bash(SKIP=\"no-commit-to-branch,pyright\" python -m pre_commit run --all-files)",
+      "Bash(where python *)",
+      "Bash(SKIP=\"no-commit-to-branch,pyright\" python -m pre_commit run --all-files --config .pre-commit-config-tmp.yaml)",
+      "Bash(rm -f .pre-commit-config-tmp.yaml)"
+    ]
+  }
+}

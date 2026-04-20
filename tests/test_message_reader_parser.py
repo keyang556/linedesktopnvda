@@ -10,12 +10,7 @@ from addon.appModules._chatParser import parseChatFile
 
 def _load_message_reader_module():
 	module_name = "addon.appModules._messageReader"
-	module_path = (
-		Path(__file__).resolve().parents[1]
-		/ "addon"
-		/ "appModules"
-		/ "_messageReader.py"
-	)
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "_messageReader.py"
 
 	gui_mod = types.ModuleType("gui")
 	gui_mod.mainFrame = object()
@@ -58,7 +53,7 @@ def test_parse_chat_file_keeps_date_rows_in_original_positions(tmp_path):
 				"09:00 Alice 早安",
 				"2026.04.10 星期五",
 				"10:30 Bob 已收回訊息",
-			]
+			],
 		),
 		encoding="utf-8",
 	)
@@ -82,7 +77,7 @@ def test_parse_chat_file_appends_continuation_lines_only_to_messages(tmp_path):
 				"2026.04.10 星期五",
 				"日期後面的孤立文字",
 				"10:00 Bob 新的一天",
-			]
+			],
 		),
 		encoding="utf-8",
 	)
@@ -103,12 +98,13 @@ def test_parse_chat_file_appends_continuation_lines_only_to_messages(tmp_path):
 def test_message_reader_formats_date_rows_without_removing_original_text():
 	dialog = object.__new__(message_reader.MessageReaderDialog)
 
-	assert dialog._formatMessage({"type": "date", "content": "2026.04.09 星期四"}) == (
-		"2026.04.09 星期四"
+	assert dialog._formatMessage({"type": "date", "content": "2026.04.09 星期四"}) == ("2026.04.09 星期四")
+	assert (
+		dialog._formatMessage(
+			{"type": "message", "name": "Alice", "content": "早安", "time": "09:00"},
+		)
+		== "Alice 早安 09:00"
 	)
-	assert dialog._formatMessage(
-		{"type": "message", "name": "Alice", "content": "早安", "time": "09:00"}
-	) == "Alice 早安 09:00"
 
 
 def test_message_reader_progress_counts_only_real_messages():

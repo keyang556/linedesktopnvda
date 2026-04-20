@@ -32,7 +32,10 @@ def _isQtAccessibleSet():
 	"""Check if QT_ACCESSIBILITY=1 is set in user environment variables."""
 	try:
 		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ
+			winreg.HKEY_CURRENT_USER,
+			"Environment",
+			0,
+			winreg.KEY_READ,
 		) as key:
 			value, _ = winreg.QueryValueEx(key, _QT_ACCESSIBILITY_ENV_NAME)
 			return str(value) == "1"
@@ -46,13 +49,18 @@ def _setQtAccessible(enable=True):
 	"""Set or remove QT_ACCESSIBILITY in user environment variables."""
 	try:
 		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER, "Environment", 0,
-			winreg.KEY_SET_VALUE | winreg.KEY_READ
+			winreg.HKEY_CURRENT_USER,
+			"Environment",
+			0,
+			winreg.KEY_SET_VALUE | winreg.KEY_READ,
 		) as key:
 			if enable:
 				winreg.SetValueEx(
-					key, _QT_ACCESSIBILITY_ENV_NAME, 0,
-					winreg.REG_SZ, "1"
+					key,
+					_QT_ACCESSIBILITY_ENV_NAME,
+					0,
+					winreg.REG_SZ,
+					"1",
 				)
 			else:
 				try:
@@ -60,8 +68,13 @@ def _setQtAccessible(enable=True):
 				except FileNotFoundError:
 					pass
 		ctypes.windll.user32.SendMessageTimeoutW(
-			_HWND_BROADCAST, _WM_SETTINGCHANGE, 0,
-			"Environment", _SMTO_ABORTIFHUNG, 5000, None
+			_HWND_BROADCAST,
+			_WM_SETTINGCHANGE,
+			0,
+			"Environment",
+			_SMTO_ABORTIFHUNG,
+			5000,
+			None,
 		)
 		return True
 	except Exception:
@@ -72,8 +85,10 @@ def _setQtAccessible(enable=True):
 def _getLineAppModule():
 	"""Find and return the LINE appModule instance, or None."""
 	for app in appModuleHandler.runningTable.values():
-		if app and getattr(app, 'appName', '').lower() in (
-			'line', 'line_app', 'linecall',
+		if app and getattr(app, "appName", "").lower() in (
+			"line",
+			"line_app",
+			"linecall",
 		):
 			return app
 	return None
@@ -101,6 +116,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 	def _loadCurrentApiKey(self):
 		try:
 			from appModules.line import getUserImageApiKey
+
 			return getUserImageApiKey() or ""
 		except Exception:
 			log.debug("LINE: cannot load user API key for settings panel", exc_info=True)
@@ -123,6 +139,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		# Image description API key
 		try:
 			from appModules.line import getUserImageApiKey, setUserImageApiKey
+
 			newKey = self._apiKeyText.GetValue().strip()
 			currentKey = getUserImageApiKey() or ""
 			if newKey != currentKey:
@@ -293,46 +310,74 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 			# Bind events
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onAllChats, self._allChatsItem
+				wx.EVT_MENU,
+				self._onAllChats,
+				self._allChatsItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onFriends, self._friendsItem
+				wx.EVT_MENU,
+				self._onFriends,
+				self._friendsItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onGroups, self._groupsItem
+				wx.EVT_MENU,
+				self._onGroups,
+				self._groupsItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onCommunities, self._communitiesItem
+				wx.EVT_MENU,
+				self._onCommunities,
+				self._communitiesItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onOfficial, self._officialItem
+				wx.EVT_MENU,
+				self._onOfficial,
+				self._officialItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onVoiceCall, self._voiceCallItem
+				wx.EVT_MENU,
+				self._onVoiceCall,
+				self._voiceCallItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onVideoCall, self._videoCallItem
+				wx.EVT_MENU,
+				self._onVideoCall,
+				self._videoCallItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onMoreOptions, self._moreOptionsItem
+				wx.EVT_MENU,
+				self._onMoreOptions,
+				self._moreOptionsItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onMessageReader, self._messageReaderItem
+				wx.EVT_MENU,
+				self._onMessageReader,
+				self._messageReaderItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onReadChatName, self._readChatNameItem
+				wx.EVT_MENU,
+				self._onReadChatName,
+				self._readChatNameItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onAnswerCall, self._answerCallItem
+				wx.EVT_MENU,
+				self._onAnswerCall,
+				self._answerCallItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onRejectCall, self._rejectCallItem
+				wx.EVT_MENU,
+				self._onRejectCall,
+				self._rejectCallItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onCheckCaller, self._checkCallerItem
+				wx.EVT_MENU,
+				self._onCheckCaller,
+				self._checkCallerItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU, self._onFocusCallWindow, self._focusCallItem
+				wx.EVT_MENU,
+				self._onFocusCallWindow,
+				self._focusCallItem,
 			)
 
 			# Add the submenu to NVDA's Tools menu
@@ -383,12 +428,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doNavigateTab(self, tabName):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab(tabName):
 					ui.message(tabName)
 				else:
@@ -405,6 +451,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doVoiceCall(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -421,6 +468,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doVideoCall(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -437,6 +485,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doMessageReader(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -452,6 +501,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doMoreOptions(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -468,6 +518,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doReadChatName(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -483,6 +534,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doAnswerCall(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -502,6 +554,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doRejectCall(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -521,6 +574,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doCheckCaller(self):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -542,6 +596,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		import ui
 		import core
 		import speech
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -549,6 +604,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		try:
 			import ctypes
 			import ctypes.wintypes
+
 			hwnd = lineApp._findIncomingCallWindow()
 			if not hwnd:
 				ui.message(_("未偵測到通話視窗"))
@@ -589,22 +645,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	@script(
 		# Translators: Description of a debug script to report focused object info
 		description=_("Debug: Report focused object's appModule and executable"),
-		gesture="kb:NVDA+shift+j"
+		gesture="kb:NVDA+shift+j",
 	)
 	def script_reportFocusInfo(self, gesture):
 		import api
 		import ui
+
 		obj = api.getFocusObject()
 		app = obj.appModule
 		appName = app.appName if app else "None"
 		processID = app.processID if app else "None"
 		moduleName = app.__class__.__module__ if app else "None"
 		className = app.__class__.__name__ if app else "None"
-		
-		msg = (
-			f"App: {appName}, PID: {processID}, "
-			f"Module: {moduleName}.{className}"
-		)
+
+		msg = f"App: {appName}, PID: {processID}, Module: {moduleName}.{className}"
 		log.info(f"LINE Debug Focus Info: {msg}")
 		ui.message(msg)
 
@@ -618,6 +672,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_answerCall(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -640,6 +695,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_rejectCall(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -662,6 +718,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_checkCaller(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -684,6 +741,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_focusCallWindow(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -702,6 +760,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_readChatRoomName(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -720,6 +779,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_openMessageReader(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -738,6 +798,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_clickMoreOptions(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
@@ -758,12 +819,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_navigateAllChats(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab("全部"):
 					ui.message(_("全部"))
 				else:
@@ -783,12 +845,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_navigateFriends(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab("好友"):
 					ui.message(_("好友"))
 				else:
@@ -807,12 +870,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_navigateGroups(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab("群組"):
 					ui.message(_("群組"))
 				else:
@@ -831,12 +895,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_navigateCommunities(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab("社群"):
 					ui.message(_("社群"))
 				else:
@@ -855,12 +920,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_navigateOfficial(self, gesture):
 		import ui
+
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if hasattr(lineApp, '_navigateToChatTab'):
+			if hasattr(lineApp, "_navigateToChatTab"):
 				if lineApp._navigateToChatTab("官方帳號"):
 					ui.message(_("官方帳號"))
 				else:

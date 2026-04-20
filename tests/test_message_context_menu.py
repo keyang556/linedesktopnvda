@@ -131,10 +131,7 @@ def test_build_menu_elements_keeps_image_attachment_actions_in_virtual_window():
 		}
 		for index, label in enumerate(menu_labels)
 	]
-	row_rects = [
-		(639, 439 + index * 40, 837, 479 + index * 40)
-		for index in range(len(menu_labels))
-	]
+	row_rects = [(639, 439 + index * 40, 837, 479 + index * 40) for index in range(len(menu_labels))]
 
 	elements = message_context_menu._buildMenuElements(
 		lines,
@@ -155,6 +152,5 @@ def test_build_menu_elements_keeps_image_attachment_actions_in_virtual_window():
 		"設為聊天室背景",
 	]
 	assert [element["clickPoint"] for element in elements] == [
-		((left + right) // 2, (top + bottom) // 2)
-		for left, top, right, bottom in row_rects
+		((left + right) // 2, (top + bottom) // 2) for left, top, right, bottom in row_rects
 	]
