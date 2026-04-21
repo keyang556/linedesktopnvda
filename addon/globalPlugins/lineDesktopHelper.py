@@ -203,12 +203,16 @@ class LineDesktopSettingsPanel(SettingsPanel):
 
 		# Image description model
 		try:
-			from appModules.line import getUserImageModel, setUserImageModel
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				getUserImageModel,
+				setUserImageModel,
+			)
 
 			selectedIndex = self._modelChoice.GetSelection()
 			if selectedIndex != wx.NOT_FOUND and self._modelChoices:
 				newModel = self._modelChoices[selectedIndex]
-				currentModel = getUserImageModel() or ""
+				currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 				if newModel != currentModel:
 					if not setUserImageModel(newModel):
 						gui.messageBox(

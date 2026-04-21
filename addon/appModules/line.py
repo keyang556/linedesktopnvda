@@ -1701,8 +1701,12 @@ _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 # Models exposed in the settings panel dropdown. The order here is the order
 # the user sees. Strings are the actual model IDs sent to the API endpoint.
-# NOTE: "gemma-3-27b-it" maps to the UI label "Gemma 3 27B" — confirm the
-# exact API model ID before trusting it for production use.
+# VERIFY all IDs against: GET https://generativelanguage.googleapis.com/v1beta/models
+# Notable uncertainties: "gemini-3-flash-preview" (vs "gemini-3.1-…" naming style),
+# "gemini-flash-latest"/"gemini-flash-lite-latest" (versionless aliases),
+# "gemini-2.5-flash-lite" (may need a "-preview" suffix),
+# "gemma-4-26b-a4b-it"/"gemma-4-31b-it" (availability in Generative Language API),
+# "gemma-3-27b-it" (Gemma 3 27B — confirm exact API model ID).
 _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-3-flash-preview",
 	"gemini-3.1-flash-lite-preview",
@@ -1891,8 +1895,12 @@ def getUserImageModel():
 	return value
 
 
+_cachedEffectiveImageModel = _NOT_COMPUTED
+
+
 def setUserImageModel(name):
 	"""Persist a user-selected model. Empty/None or the default clears the file."""
+	global _cachedEffectiveImageModel
 	path = _getImageModelStorePath()
 	if not path:
 		return False
@@ -1900,12 +1908,14 @@ def setUserImageModel(name):
 		if not name or name == _IMAGE_DESCRIPTION_DEFAULT_MODEL:
 			if os.path.isfile(path):
 				os.remove(path)
+			_cachedEffectiveImageModel = _IMAGE_DESCRIPTION_DEFAULT_MODEL
 			return True
 		if name not in _IMAGE_DESCRIPTION_AVAILABLE_MODELS:
 			log.warning(f"LINE: refusing to save unknown image model {name!r}")
 			return False
 		with open(path, "w", encoding="utf-8") as f:
 			f.write(name)
+		_cachedEffectiveImageModel = name
 		return True
 	except Exception as e:
 		log.warning(f"LINE: failed to save user image model: {e}", exc_info=True)
@@ -1913,8 +1923,11 @@ def setUserImageModel(name):
 
 
 def _getEffectiveImageModel():
-	"""Return the model ID to use for image description requests."""
-	return getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+	"""Return the cached model ID; lazily resolved from disk on first call."""
+	global _cachedEffectiveImageModel
+	if _cachedEffectiveImageModel is _NOT_COMPUTED:
+		_cachedEffectiveImageModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+	return _cachedEffectiveImageModel
 
 
 _NOTES_WINDOW_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
