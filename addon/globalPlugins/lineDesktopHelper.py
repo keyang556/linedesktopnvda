@@ -113,6 +113,24 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		self._apiKeyText = sHelper.addLabeledControl(apiLabel, wx.TextCtrl)
 		self._apiKeyText.SetValue(self._loadCurrentApiKey())
 
+		self._modelChoices, defaultModel, currentModel = self._loadModelOptions()
+		# Translators: Dropdown label for selecting the image-description model
+		modelLabel = _("圖片描述模型 (&M)")
+		self._modelChoice = sHelper.addLabeledControl(
+			modelLabel,
+			wx.Choice,
+			choices=list(self._modelChoices),
+		)
+		try:
+			selectIndex = self._modelChoices.index(currentModel)
+		except ValueError:
+			try:
+				selectIndex = self._modelChoices.index(defaultModel)
+			except ValueError:
+				selectIndex = 0
+		if self._modelChoices:
+			self._modelChoice.SetSelection(selectIndex)
+
 	def _loadCurrentApiKey(self):
 		try:
 			from appModules.line import getUserImageApiKey
@@ -121,6 +139,25 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		except Exception:
 			log.debug("LINE: cannot load user API key for settings panel", exc_info=True)
 			return ""
+
+	def _loadModelOptions(self):
+		"""Return (choices_tuple, default_model_id, currently_selected_model_id)."""
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				getUserImageModel,
+			)
+
+			current = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+			return (
+				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				current,
+			)
+		except Exception:
+			log.debug("LINE: cannot load image model options", exc_info=True)
+			return ((), "", "")
 
 	def onSave(self):
 		# Qt accessibility env var
@@ -162,6 +199,33 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_("LINE Desktop - 設定錯誤"),
 				wx.OK | wx.ICON_ERROR,
 				self,
+			)
+
+		# Image description model
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				getUserImageModel,
+				setUserImageModel,
+			)
+
+			selectedIndex = self._modelChoice.GetSelection()
+			if selectedIndex != wx.NOT_FOUND and self._modelChoices:
+				newModel = self._modelChoices[selectedIndex]
+				currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+				if newModel != currentModel:
+					if not setUserImageModel(newModel):
+						gui.messageBox(
+							# Translators: Error shown when saving the image model fails
+							_("儲存圖片描述模型失敗，請重試。"),
+							_("LINE Desktop - 設定錯誤"),
+							wx.OK | wx.ICON_ERROR,
+							self,
+						)
+		except Exception:
+			log.warning(
+				"LINE: cannot load image model helpers from settings panel",
+				exc_info=True,
 			)
 
 

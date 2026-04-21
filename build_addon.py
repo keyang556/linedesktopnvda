@@ -10,7 +10,7 @@ import subprocess
 import markdown
 
 ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addon")
-OUTPUT_NAME = "lineDesktop-1.2.3.nvda-addon"
+OUTPUT_NAME = "lineDesktop-1.2.4-beta2.nvda-addon"
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_NAME)
 
 # Manifest content matching the format of working NVDA add-ons
@@ -21,7 +21,7 @@ description = \"\"\"Enhances NVDA accessibility support for the LINE desktop app
 Provides improved navigation for chat lists, messages, contacts, and message input.\"\"\"
 author = "張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭<tommytsaitou>"
 url = https://keyang556.github.io/linedesktopnvda/
-version = 1.2.3
+version = 1.2.4-beta2
 changelog = \"\"\"Initial release with LINE desktop accessibility support.\"\"\"
 docFileName = readme.html
 minimumNVDAVersion = 2019.3
