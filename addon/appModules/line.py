@@ -2103,15 +2103,36 @@ def _captureRegionAsPng(left, top, width, height):
 		return None
 
 
-def _describeImageBytes(pngBytes, timeout=30.0):
-	"""Send PNG image bytes to Google AI and return (description, error_msg).
+def _buildInitialImageContents(pngBytes, prompt=None):
+	"""Build the initial multi-turn ``contents`` payload for image description.
+
+	The returned list contains a single user turn bearing the configured
+	prompt text and the inline PNG bytes, matching the Gemini API schema.
+	"""
+	import base64
+
+	return [
+		{
+			"role": "user",
+			"parts": [
+				{"text": prompt if prompt is not None else _getEffectiveImagePrompt()},
+				{
+					"inline_data": {
+						"mime_type": "image/png",
+						"data": base64.b64encode(pngBytes).decode("ascii"),
+					},
+				},
+			],
+		},
+	]
+
+
+def _callImageDescriptionApi(contents, timeout=30.0):
+	"""Send a pre-built ``contents`` list to Google AI and return (text, error_msg).
 
 	Returns (text, None) on success or (None, error_msg) on failure.
 	"""
-	if not pngBytes:
-		return None, _("無法取得圖片資料")
 	try:
-		import base64
 		import json
 		import urllib.request
 		import urllib.error
@@ -2124,23 +2145,7 @@ def _describeImageBytes(pngBytes, timeout=30.0):
 			model=_getEffectiveImageModel(),
 			key=apiKey,
 		)
-		body = {
-			"contents": [
-				{
-					"parts": [
-						{"text": _getEffectiveImagePrompt()},
-						{
-							"inline_data": {
-								"mime_type": "image/png",
-								"data": base64.b64encode(pngBytes).decode(
-									"ascii",
-								),
-							},
-						},
-					],
-				},
-			],
-		}
+		body = {"contents": contents}
 		req = urllib.request.Request(
 			url,
 			data=json.dumps(body).encode("utf-8"),
@@ -2186,6 +2191,17 @@ def _describeImageBytes(pngBytes, timeout=30.0):
 			exc_info=True,
 		)
 	return None, _("圖片描述失敗")
+
+
+def _describeImageBytes(pngBytes, timeout=30.0):
+	"""Send PNG image bytes to Google AI and return (description, error_msg).
+
+	Returns (text, None) on success or (None, error_msg) on failure.
+	"""
+	if not pngBytes:
+		return None, _("無法取得圖片資料")
+	contents = _buildInitialImageContents(pngBytes)
+	return _callImageDescriptionApi(contents, timeout=timeout)
 
 
 def _getDpiScale(hwnd=None):
@@ -9099,9 +9115,18 @@ class AppModule(appModuleHandler.AppModule):
 		def _worker():
 			import wx
 
-			description, errMsg = _describeImageBytes(pngBytes)
+			prompt = _getEffectiveImagePrompt()
+			initialContents = _buildInitialImageContents(pngBytes, prompt)
+			description, errMsg = _callImageDescriptionApi(initialContents)
 			if description:
-				wx.CallAfter(ui.message, description)
+				from ._imageDescriptionDialog import openImageDescriptionDialog
+
+				openImageDescriptionDialog(
+					_callImageDescriptionApi,
+					initialContents,
+					prompt,
+					description,
+				)
 			else:
 				wx.CallAfter(ui.message, errMsg or _("圖片描述失敗"))
 
