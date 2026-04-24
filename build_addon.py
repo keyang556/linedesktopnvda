@@ -10,7 +10,7 @@ import subprocess
 import markdown
 
 ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addon")
-OUTPUT_NAME = "lineDesktop-1.2.4-beta3.nvda-addon"
+OUTPUT_NAME = "lineDesktop-1.2.4-beta4.nvda-addon"
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_NAME)
 
 # Manifest content matching the format of working NVDA add-ons

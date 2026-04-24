@@ -325,47 +325,107 @@ def _removeCJKSpaces(text):
 	return _CJK_SPACE_RE.sub("", text)
 
 
+_CALL_OCR_LOG_NOISE_MARKERS = (
+	"INFO -",
+	"DEBUG -",
+	"WARNING -",
+	"ERROR -",
+	"Traceback",
+	"File \"",
+	"ConfigManager",
+	"Loading config",
+	"Config loaded",
+	"Confiq loaded",
+	"AppData\\Roaming",
+	"\\Users\\",
+	".pyc",
+	"__main__",
+	"addonHandler.",
+	"external:",
+)
+
+_CALL_CHAT_CLOCK_RE = re.compile(
+	r"^(?:(?:[上下][午牛年干])|午|am|pm)[0-9IiLlOo]{1,2}:\d{2}$",
+	re.IGNORECASE,
+)
+_CALL_DURATION_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
+_CALL_DURATION_NOISE_LINES = {
+	"全選",
+	"已",
+	"已讀",
+	"已謴",
+}
+
+
+def _looksLikeOcrLogNoise(text):
+	"""Return True for OCR snippets that are clearly logs, not LINE call records."""
+	if not text:
+		return False
+
+	normalized = _removeCJKSpaces(str(text).strip())
+	if not normalized:
+		return False
+
+	lower = normalized.lower()
+	if any(marker.lower() in lower for marker in _CALL_OCR_LOG_NOISE_MARKERS):
+		return True
+	if re.search(r"[A-Za-z]:\\", normalized):
+		return True
+	return bool(re.search(r"^(?:INFO|DEBUG|WARNING|ERROR)\s*[-:]", normalized, re.MULTILINE))
+
+
+def _normalizeCallOcrLine(rawLine):
+	line = _removeCJKSpaces(str(rawLine).strip())
+	line = re.sub(
+		r"(?<=\d)\s*[:：•\.。．·･]+\s*(?=\d)",
+		":",
+		line,
+	)
+	line = re.sub(r"\s+", "", line)
+	return re.sub(r":{2,}", ":", line)
+
+
+def _isChatClockTimeLine(line):
+	return bool(_CALL_CHAT_CLOCK_RE.fullmatch(line or ""))
+
+
+def _isCallDurationFallbackNoiseLine(line):
+	if not line:
+		return True
+	if line in _CALL_DURATION_NOISE_LINES:
+		return True
+	if line.startswith("已") and len(line) <= 3:
+		return True
+	return bool(re.fullmatch(r"[\d:：•\.。．·･\W_]+", line))
+
+
 def _extractCallDuration(text):
 	"""Extract a normalized call duration from OCR text, ignoring clock timestamps."""
 	if not text:
 		return None
 
 	normalized = _removeCJKSpaces(str(text).strip())
+	if _looksLikeOcrLogNoise(normalized):
+		return None
 	lines = []
 	for rawLine in normalized.splitlines():
-		line = rawLine.strip()
+		line = _normalizeCallOcrLine(rawLine)
 		if not line:
 			continue
-		line = re.sub(
-			r"(?<=\d)\s*[:：•\.。．·･]+\s*(?=\d)",
-			":",
-			line,
-		)
-		line = re.sub(r"\s+", "", line)
-		line = re.sub(r":{2,}", ":", line)
-		if line:
-			lines.append(line)
+		lines.append(line)
 
-	clockTimeRe = re.compile(
-		r"^(?:(?:[上下]午)|午|am|pm)\d{1,2}:\d{2}$",
-		re.IGNORECASE,
-	)
-	durationRe = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
 	match = None
 	for line in lines:
-		if clockTimeRe.fullmatch(line):
+		if _isChatClockTimeLine(line):
 			continue
-		if durationRe.fullmatch(line):
-			match = durationRe.fullmatch(line)
+		if _CALL_DURATION_RE.fullmatch(line):
+			match = _CALL_DURATION_RE.fullmatch(line)
 			break
 	else:
-		collapsed = "".join(lines)
-		collapsed = re.sub(
-			r"(?:(?:[上下]午)|午|am|pm)\d{1,2}:\d{2}",
-			"",
-			collapsed,
-			flags=re.IGNORECASE,
-		)
+		remainingLines = [line for line in lines if not _isChatClockTimeLine(line)]
+		if any(not _isCallDurationFallbackNoiseLine(line) for line in remainingLines):
+			return None
+		collapsed = "".join(remainingLines)
 		match = re.search(r"(?<!\d)(\d{1,2}(?::\d{2}){1,2})(?!\d)", collapsed)
 	if not match:
 		return None
@@ -384,6 +444,8 @@ def _getCallAnnouncementFromOcr(text):
 		return None
 
 	normalized = _removeCJKSpaces(str(text).strip())
+	if _looksLikeOcrLogNoise(normalized):
+		return None
 	if re.search(r"取消(?:的)?通話", normalized):
 		return "取消的通話"
 	if "取消" in normalized and re.search(
@@ -1644,6 +1706,62 @@ def _getFocusedElementRuntimeId():
 		return None
 
 
+def _messageProbePointHitsTargetElement(handler, targetElement, x, y, targetRuntimeId):
+	"""Return False only when UIA can prove a probe point targets an edit field.
+
+	LINE/Qt often reports bubble hit-test elements outside the focused
+	ListItem's UIA subtree.  Treat those as usable unless the point clearly
+	lands in an Edit control such as the message input or chat search field.
+	"""
+	if targetRuntimeId is None:
+		targetRuntimeId = _getElementRuntimeId(targetElement)
+	try:
+		client = getattr(handler, "clientObject", None)
+		if client is None or not hasattr(client, "ElementFromPoint"):
+			return True
+		point = ctypes.wintypes.POINT(int(x), int(y))
+		hitElement = client.ElementFromPoint(point)
+	except Exception:
+		log.debug("LINE: copy-read probe hit-test failed", exc_info=True)
+		return True
+	if hitElement is None:
+		return True
+
+	try:
+		walker = client.RawViewWalker
+	except Exception:
+		walker = None
+
+	current = hitElement
+	for _depth in range(12):
+		if targetRuntimeId is not None and _getElementRuntimeId(current) == targetRuntimeId:
+			return True
+		try:
+			if current.CurrentControlType == 50004:  # Edit
+				return False
+		except Exception:
+			pass
+		if walker is None:
+			break
+		try:
+			current = walker.GetParentElement(current)
+		except Exception:
+			break
+		if current is None:
+			break
+	return True
+
+
+def _restoreFocusToElement(element, expectedRuntimeId=None):
+	"""Best-effort focus restore after an unsafe copy-read probe."""
+	try:
+		if expectedRuntimeId is not None and _getElementRuntimeId(element) != expectedRuntimeId:
+			return
+		element.SetFocus()
+	except Exception:
+		log.debug("LINE: copy-read focus restore failed", exc_info=True)
+
+
 # Global variable to track the last focused object
 # This is needed because api.getFocusObject() sometimes returns the main Window
 # even when we handled a gainFocus event for a ListItem.
@@ -2234,6 +2352,7 @@ def _scheduleQueryAndSpeakUIAFocus(delay=100):
 	"""Schedule a focus query, dropping stale callbacks when navigation repeats quickly."""
 	global _focusQueryRequestId
 	_invalidateActiveCopyRead()
+	_invalidateActiveMessageContextMenu()
 	_focusQueryRequestId += 1
 	requestId = _focusQueryRequestId
 
@@ -2249,6 +2368,12 @@ def _invalidateActiveCopyRead():
 	"""Expire any in-flight copy-read chain before new focus work begins."""
 	global _copyReadRequestId
 	_copyReadRequestId += 1
+
+
+def _invalidateActiveMessageContextMenu():
+	"""Expire any in-flight message context-menu chain before new focus work begins."""
+	global _messageContextMenuRequestId
+	_messageContextMenuRequestId += 1
 
 
 def _getForegroundWindowInfo():
@@ -2315,6 +2440,21 @@ def _isRectVisibleInForegroundWindow(left, top, right, bottom):
 	if not fgRect:
 		return True
 	return _rectsIntersect((left, top, right, bottom), fgRect)
+
+
+def _isElementVisibleInForegroundWindow(element):
+	"""Return False when UIA gives a virtualized/off-window element rect."""
+	try:
+		rect = element.CurrentBoundingRectangle
+		left = int(rect.left)
+		top = int(rect.top)
+		right = int(rect.right)
+		bottom = int(rect.bottom)
+	except Exception:
+		return True
+	if right <= left or bottom <= top:
+		return False
+	return _isRectVisibleInForegroundWindow(left, top, right, bottom)
 
 
 def _getEditPlaceholder(element):
@@ -3799,6 +3939,12 @@ def _queryAndSpeakUIAFocus():
 				except Exception:
 					pass
 			if isMessageItem:
+				if not _isElementVisibleInForegroundWindow(targetElement):
+					log.debug(
+						f"LINE UIA focus: skipping off-window message ListItem "
+						f"runtimeId={elementId}",
+					)
+					return
 				log.info(
 					f"LINE UIA focus: ct={ct} (message ListItem), "
 					f"runtimeId={elementId}, using copy-first read",
@@ -3934,6 +4080,7 @@ def _copyAndReadMessage(targetElement):
 	)
 	clickState = {"positions": baseClickPositions}
 	selectAllCount = [0]  # mutable counter for ≤2-item menus
+	keyboardFallbackTried = [False]
 	messageOcrCache = {
 		"done": False,
 		"text": "",
@@ -3958,6 +4105,8 @@ def _copyAndReadMessage(targetElement):
 	def _abortIfStale(stage, restoreClipboard=False, dismissMenu=False):
 		if _isCurrentRequest():
 			return False
+		sameRequest = requestId == _copyReadRequestId
+		shouldRestoreFocus = sameRequest and _shouldDismissCopyReadMenu(hwnd)
 		log.debug(
 			f"LINE: abandoning stale copy-read during {stage}; "
 			f"requestId={requestId}, currentRequestId={_copyReadRequestId}, "
@@ -3968,7 +4117,17 @@ def _copyAndReadMessage(targetElement):
 			_dismissMenu()
 		if restoreClipboard:
 			_restoreClipboard(origClip)
+		if shouldRestoreFocus:
+			_restoreFocusToElement(targetElement, targetRuntimeId)
 		return True
+
+	def _getPositionLabel(posIdx):
+		try:
+			if posIdx < 0:
+				return "keyboard-fallback"
+			return clickState["positions"][posIdx][2]
+		except Exception:
+			return "keyboard-fallback"
 
 	def _getMessageOcrText():
 		"""OCR the message bubble to detect file/voice message hints."""
@@ -4113,16 +4272,59 @@ def _copyAndReadMessage(targetElement):
 			messageOcrCache["text"] = ""
 			return ""
 
+	def _startMouseCopyProbes(reason, dismissMenu=False):
+		if _abortIfStale(
+			f"mouseCopyProbeFallback:{reason}",
+			restoreClipboard=True,
+			dismissMenu=dismissMenu,
+		):
+			return
+		if dismissMenu:
+			_dismissMenu()
+		log.info(
+			f"LINE: copy-read keyboard menu failed ({reason}); trying mouse probes",
+		)
+		core.callLater(300, lambda: _attemptCopyAtOffset(0))
+
+	def _tryKeyboardCopyFallback():
+		if keyboardFallbackTried[0]:
+			log.info("LINE: copy-read keyboard fallback exhausted, falling back to OCR")
+			_restoreClipboard(origClip)
+			_ocrReadMessageFallback(targetElement)
+			return
+		if _abortIfStale(
+			"keyboardCopyFallback",
+			restoreClipboard=True,
+			dismissMenu=True,
+		):
+			return
+		keyboardFallbackTried[0] = True
+		log.info(
+			"LINE: copy-read trying keyboard context menu before mouse probes",
+		)
+		try:
+			_sendGestureWithAddonSuppressed("applications")
+		except Exception as e:
+			log.debug(
+				f"LINE: copy-read keyboard fallback applications send failed: {e}",
+				exc_info=True,
+			)
+			_startMouseCopyProbes("applications send failed")
+			return
+
+		core.callLater(
+			500,
+			lambda: _findCopyMenuItem(-1, retriesLeft=4),
+		)
+
 	def _attemptCopyAtOffset(posIdx=0):
 		"""Right-click at clickPositions[posIdx] and try to copy."""
 		if _abortIfStale("attemptCopyAtOffset", restoreClipboard=True):
 			return
 		positions = clickState["positions"]
 		if posIdx >= len(positions):
-			# All positions exhausted — fall back to OCR
-			log.info("LINE: copy-read all positions failed, falling back to OCR")
-			_restoreClipboard(origClip)
-			_ocrReadMessageFallback(targetElement)
+			# All mouse positions exhausted; keyboard menu can still target the row.
+			_tryKeyboardCopyFallback()
 			return
 
 		clickX, clickY, posLabel = positions[posIdx]
@@ -4130,6 +4332,20 @@ def _copyAndReadMessage(targetElement):
 			f"LINE: copy-read right-clicking at ({clickX}, {clickY}) [{posLabel}]",
 		)
 		if _abortIfStale("right click", restoreClipboard=True):
+			return
+
+		if not _messageProbePointHitsTargetElement(
+			UIAHandler.handler,
+			targetElement,
+			clickX,
+			clickY,
+			targetRuntimeId,
+		):
+			log.info(
+				f"LINE: copy-read skipping probe over edit field "
+				f"at ({clickX}, {clickY}) [{posLabel}]",
+			)
+			core.callLater(50, lambda: _attemptCopyAtOffset(posIdx + 1))
 			return
 
 		# Perform right-click
@@ -4194,13 +4410,14 @@ def _copyAndReadMessage(targetElement):
 			if popupCandidates:
 				popupHwnd = popupCandidates[0]
 			else:
-				clickX, clickY, _positionLabel = clickState["positions"][posIdx]
-				for dy in [0, -40, -80, 40, 80]:
-					pt = wintypes.POINT(clickX, clickY + dy)
-					candHwnd = ctypes.windll.user32.WindowFromPoint(pt)
-					if candHwnd and candHwnd != hwnd:
-						popupHwnd = candHwnd
-						break
+				if 0 <= posIdx < len(clickState["positions"]):
+					clickX, clickY, _positionLabel = clickState["positions"][posIdx]
+					for dy in [0, -40, -80, 40, 80]:
+						pt = wintypes.POINT(clickX, clickY + dy)
+						candHwnd = ctypes.windll.user32.WindowFromPoint(pt)
+						if candHwnd and candHwnd != hwnd:
+							popupHwnd = candHwnd
+							break
 
 			if not popupHwnd:
 				if retriesLeft > 0:
@@ -4210,6 +4427,9 @@ def _copyAndReadMessage(targetElement):
 					)
 					return
 				# No popup found, try next position
+				if posIdx < 0:
+					_startMouseCopyProbes("keyboard popup not found")
+					return
 				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
 				return
 
@@ -4221,6 +4441,9 @@ def _copyAndReadMessage(targetElement):
 						lambda: _findCopyMenuItem(posIdx, retriesLeft - 1),
 					)
 					return
+				if posIdx < 0:
+					_startMouseCopyProbes("keyboard popup element unavailable", dismissMenu=True)
+					return
 				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
 				return
 
@@ -4231,6 +4454,9 @@ def _copyAndReadMessage(targetElement):
 				eW = int(eRect.right - eRect.left)
 				eH = int(eRect.bottom - eRect.top)
 				if pCt == 50033 or eW < 50 or eH < 30:
+					if posIdx < 0:
+						_startMouseCopyProbes("keyboard popup was not a context menu", dismissMenu=True)
+						return
 					core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
 					return
 			except Exception:
@@ -4292,6 +4518,9 @@ def _copyAndReadMessage(targetElement):
 						200,
 						lambda: _findCopyMenuItem(posIdx, retriesLeft - 1),
 					)
+					return
+				if posIdx < 0:
+					_startMouseCopyProbes("keyboard popup had no menu items", dismissMenu=True)
 					return
 
 			# Find "複製" item by UIA text
@@ -4500,13 +4729,16 @@ def _copyAndReadMessage(targetElement):
 
 			# If still no match, check if we got the wrong menu
 			if not copyItem and not copyClickPoint:
+				if posIdx < 0:
+					_startMouseCopyProbes("keyboard menu lacked Copy", dismissMenu=True)
+					return
 				isSelectAll = len(menuItems) <= 2
 				if isSelectAll and messageOcrCache["callAnnouncement"]:
 					log.info(
 						f"LINE: copy-read detected call record early: "
 						f"{messageOcrCache['callAnnouncement']!r} "
 						f"after small menu at "
-						f"[{clickState['positions'][posIdx][2]}]",
+						f"[{_getPositionLabel(posIdx)}]",
 					)
 					_dismissMenu()
 					_restoreClipboard(origClip)
@@ -4545,7 +4777,7 @@ def _copyAndReadMessage(targetElement):
 						f"LINE: copy-read wrong menu "
 						f"(≤2 items) seen "
 						f"{selectAllCount[0]} times, last "
-						f"at [{clickState['positions'][posIdx][2]}]"
+						f"at [{_getPositionLabel(posIdx)}]"
 						f", skipping to OCR",
 					)
 					core.callLater(
@@ -4567,7 +4799,7 @@ def _copyAndReadMessage(targetElement):
 							f"message edge hit "
 							f"({len(menuItems)} items, "
 							f"has 收回 but no 複製) at "
-							f"[{clickState['positions'][posIdx][2]}]"
+							f"[{_getPositionLabel(posIdx)}]"
 							f", trying next position",
 						)
 						_dismissMenu()
@@ -4584,7 +4816,7 @@ def _copyAndReadMessage(targetElement):
 					log.info(
 						f"LINE: copy-read correct menu "
 						f"({len(menuItems)} items) but no "
-						f"'複製' at [{clickState['positions'][posIdx][2]}]"
+						f"'複製' at [{_getPositionLabel(posIdx)}]"
 						f", skipping to OCR",
 					)
 					_dismissMenu()
@@ -4595,7 +4827,7 @@ def _copyAndReadMessage(targetElement):
 					return
 				# Wrong menu or OCR couldn't find 複製, try next position
 				log.info(
-					f"LINE: copy-read '複製' not found at [{clickState['positions'][posIdx][2]}]",
+					f"LINE: copy-read '複製' not found at [{_getPositionLabel(posIdx)}]",
 				)
 				_dismissMenu()
 				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
@@ -4622,6 +4854,9 @@ def _copyAndReadMessage(targetElement):
 
 		except Exception as e:
 			log.debug(f"LINE: copy-read menu detection failed: {e}", exc_info=True)
+			if posIdx < 0:
+				_startMouseCopyProbes("keyboard menu detection failed", dismissMenu=True)
+				return
 			_dismissMenu()
 			_restoreClipboard(origClip)
 			_ocrReadMessageFallback(targetElement)
@@ -4677,7 +4912,7 @@ def _copyAndReadMessage(targetElement):
 		speech.cancelSpeech()
 		ui.message(initialOcrText.strip())
 		return
-	_attemptCopyAtOffset(0)
+	_tryKeyboardCopyFallback()
 
 
 def _ocrReadMessageFallback(targetElement):
@@ -8334,6 +8569,7 @@ class AppModule(appModuleHandler.AppModule):
 				return
 
 			hwnd = ctypes.windll.user32.GetForegroundWindow()
+			targetRuntimeId = _getElementRuntimeId(rawEl)
 
 			# Get LINE window rect to clamp click positions
 			import ctypes.wintypes as wintypes
@@ -8495,6 +8731,19 @@ class AppModule(appModuleHandler.AppModule):
 			log.info(
 				f"LINE: right-clicking message at ({clickX}, {clickY}) [{posLabel}] for {actionName}",
 			)
+			if not _messageProbePointHitsTargetElement(
+				UIAHandler.handler,
+				rawEl,
+				clickX,
+				clickY,
+				targetRuntimeId,
+			):
+				log.info(
+					f"LINE: skipping {actionName} probe over edit field "
+					f"at ({clickX}, {clickY}) [{posLabel}]",
+				)
+				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
+				return
 			appModRef._rightClickAtPosition(
 				clickX,
 				clickY,
@@ -10363,6 +10612,8 @@ class AppModule(appModuleHandler.AppModule):
 		def _logAndAbortIfStale(stage):
 			if _isCurrentRequest():
 				return False
+			if requestId == _messageContextMenuRequestId and _shouldDismissCopyReadMenu(hwnd):
+				_restoreFocusToElement(rawEl, targetRuntimeId)
 			log.debug(
 				f"LINE: messageContextMenu abandoning stale request during "
 				f"{stage}; requestId={requestId}, currentRequestId={_messageContextMenuRequestId}, "
@@ -10427,12 +10678,25 @@ class AppModule(appModuleHandler.AppModule):
 			time.sleep(0.05)
 
 		appModRef = self
+		keyboardFallbackTried = [False]
+
+		def _startMouseContextMenuProbes(reason):
+			if _logAndAbortIfStale(f"mouseContextMenuFallback:{reason}"):
+				return
+			log.info(
+				f"LINE: keyboard message context menu failed ({reason}); trying mouse probes",
+			)
+			core.callLater(300, lambda: _attemptAtOffset(0))
 
 		def _tryKeyboardFallback():
 			if _logAndAbortIfStale("keyboardFallback"):
 				return
+			if keyboardFallbackTried[0]:
+				ui.message(_("找不到訊息選單"))
+				return
+			keyboardFallbackTried[0] = True
 			log.info(
-				"LINE: mouse-based message context menu probes exhausted, trying keyboard fallback",
+				"LINE: trying keyboard message context menu before mouse probes",
 			)
 			try:
 				_sendGestureWithAddonSuppressed("applications")
@@ -10441,7 +10705,7 @@ class AppModule(appModuleHandler.AppModule):
 					f"LINE: keyboard fallback applications send failed: {e}",
 					exc_info=True,
 				)
-				ui.message(_("找不到訊息選單"))
+				_startMouseContextMenuProbes("applications send failed")
 				return
 
 			def _activateKeyboardFallback():
@@ -10449,10 +10713,8 @@ class AppModule(appModuleHandler.AppModule):
 					return
 				self._activateMessageContextMenu(
 					onAction=self._handleMessageContextMenuAction,
-					onFailure=lambda: (
-						None
-						if _logAndAbortIfStale("keyboardFallbackFailure")
-						else ui.message(_("找不到訊息選單"))
+					onFailure=lambda: _startMouseContextMenuProbes(
+						"keyboard popup not found",
 					),
 					shouldAbort=lambda: _logAndAbortIfStale(
 						"keyboardFallbackPoll",
@@ -10465,13 +10727,29 @@ class AppModule(appModuleHandler.AppModule):
 			if _logAndAbortIfStale(f"attemptAtOffset[{posIdx}]"):
 				return
 			if posIdx >= len(clickPositions):
-				_tryKeyboardFallback()
+				if keyboardFallbackTried[0]:
+					ui.message(_("找不到訊息選單"))
+				else:
+					_tryKeyboardFallback()
 				return
 
 			clickX, clickY, posLabel = clickPositions[posIdx]
 			log.info(
 				f"LINE: right-clicking message at ({clickX}, {clickY}) [{posLabel}] for context menu",
 			)
+			if not _messageProbePointHitsTargetElement(
+				UIAHandler.handler,
+				rawEl,
+				clickX,
+				clickY,
+				targetRuntimeId,
+			):
+				log.info(
+					f"LINE: skipping context menu probe over edit field "
+					f"at ({clickX}, {clickY}) [{posLabel}]",
+				)
+				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
+				return
 			appModRef._rightClickAtPosition(clickX, clickY, hwnd)
 
 			def _findPopupAndActivate(retriesLeft=4):
@@ -10655,7 +10933,7 @@ class AppModule(appModuleHandler.AppModule):
 
 			core.callLater(300, _findPopupAndActivate)
 
-		_attemptAtOffset(0)
+		_tryKeyboardFallback()
 
 	def script_toggleMicAndAnnounce(self, gesture):
 		"""Pass Ctrl+Shift+A to LINE, then OCR the call window to announce mic status."""

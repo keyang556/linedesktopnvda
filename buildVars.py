@@ -24,7 +24,7 @@ addon_info = AddonInfo(
 	addon_description=_("""Enhances NVDA accessibility support for the LINE desktop application on Windows.
 Provides improved navigation for chat lists, messages, contacts, and message input."""),
 	# version
-	addon_version="1.2.4-beta3",
+	addon_version="1.2.4-beta4",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""See changelog.md for details."""),

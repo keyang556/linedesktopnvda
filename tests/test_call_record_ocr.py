@@ -10,7 +10,15 @@ def _load_call_helpers():
 	needed = {
 		"_CJK_CHAR",
 		"_CJK_SPACE_RE",
+		"_CALL_OCR_LOG_NOISE_MARKERS",
+		"_CALL_CHAT_CLOCK_RE",
+		"_CALL_DURATION_RE",
+		"_CALL_DURATION_NOISE_LINES",
 		"_removeCJKSpaces",
+		"_looksLikeOcrLogNoise",
+		"_normalizeCallOcrLine",
+		"_isChatClockTimeLine",
+		"_isCallDurationFallbackNoiseLine",
 		"_extractCallDuration",
 		"_getCallAnnouncementFromOcr",
 	}
@@ -70,6 +78,19 @@ class CallRecordOcrTests(unittest.TestCase):
 
 	def test_plain_cancel_text_is_not_treated_as_call_record(self):
 		self.assertIsNone(HELPERS["_getCallAnnouncementFromOcr"]("取消"))
+
+	def test_log_ocr_noise_is_not_treated_as_call_record(self):
+		text = (
+			"- conng.conngManager._loaaconTlg 1 : zy : 45\n"
+			"Loading config: C:\\lJsers\\chang\\AppData\\Roaming\\\n"
+			"INFO - config.ConfigManager._loadConfig ( 1 1 : 29 : 45\n"
+			"Confiq loaded (after upqrade, and in the state itwill"
+		)
+		self.assertIsNone(HELPERS["_getCallAnnouncementFromOcr"](text))
+
+	def test_message_body_with_ocr_clock_suffix_is_not_treated_as_call_record(self):
+		text = "已讀\n關於江同學的事情\n上牛 12 : 17"
+		self.assertIsNone(HELPERS["_getCallAnnouncementFromOcr"](text))
 
 
 if __name__ == "__main__":

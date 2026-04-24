@@ -112,6 +112,90 @@ def test_should_dismiss_copy_read_menu_requires_same_process_foreground():
 	assert ns["_shouldDismissCopyReadMenu"](101) is False
 
 
+def test_message_probe_hit_test_rejects_edit_fields_but_allows_qt_hit_test_drift():
+	class _Element:
+		def __init__(self, runtime_id, control_type=50007):
+			self.runtime_id = runtime_id
+			self.CurrentControlType = control_type
+
+		def GetRuntimeId(self):
+			return self.runtime_id
+
+	class _Walker:
+		def __init__(self, parents):
+			self.parents = parents
+
+		def GetParentElement(self, element):
+			return self.parents.get(element)
+
+	class _Client:
+		def __init__(self, hit_element, walker):
+			self.hit_element = hit_element
+			self.RawViewWalker = walker
+
+		def ElementFromPoint(self, _point):
+			return self.hit_element
+
+	target = _Element((1, 2, 3))
+	target_child = _Element((1, 2, 4))
+	other = _Element((9, 9, 9))
+	edit = _Element((8, 8, 8), control_type=50004)
+	walker = _Walker({target_child: target})
+	client = _Client(target_child, walker)
+	handler = SimpleNamespace(clientObject=client)
+
+	ns = _load_line_symbols(
+		function_names={
+			"_normalizeRuntimeId",
+			"_getElementRuntimeId",
+			"_messageProbePointHitsTargetElement",
+		},
+		namespace={
+			"ctypes": SimpleNamespace(
+				wintypes=SimpleNamespace(
+					POINT=lambda x, y: SimpleNamespace(x=x, y=y),
+				),
+			),
+			"log": _Log(),
+		},
+	)
+	target_id = ns["_getElementRuntimeId"](target)
+
+	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is True
+	client.hit_element = other
+	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is True
+	client.hit_element = edit
+	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is False
+
+
+def test_message_probe_hit_test_preserves_existing_behavior_when_uia_hit_test_fails():
+	class _Client:
+		RawViewWalker = None
+
+		def ElementFromPoint(self, _point):
+			raise RuntimeError("UIA unavailable")
+
+	ns = _load_line_symbols(
+		function_names={"_messageProbePointHitsTargetElement"},
+		namespace={
+			"ctypes": SimpleNamespace(
+				wintypes=SimpleNamespace(
+					POINT=lambda x, y: SimpleNamespace(x=x, y=y),
+				),
+			),
+			"log": _Log(),
+		},
+	)
+
+	assert ns["_messageProbePointHitsTargetElement"](
+		SimpleNamespace(clientObject=_Client()),
+		object(),
+		10,
+		20,
+		(1, 2, 3),
+	) is True
+
+
 def test_extract_matched_message_context_menu_labels_ignores_message_body_text():
 	known_labels = {"回覆", "複製", "分享", "刪除", "收回"}
 	ns = _load_line_symbols(
@@ -1382,7 +1466,7 @@ def test_activate_message_context_menu_supports_keyboard_fallback_hooks():
 	), "keyboard popup activation should dismiss invalid popups before failing"
 
 
-def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_exhaustion():
+def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
@@ -1400,6 +1484,19 @@ def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_e
 		for node in method.body
 		if isinstance(node, ast.FunctionDef) and node.name == "_tryKeyboardFallback"
 	)
+	start_mouse_probes = next(
+		node
+		for node in method.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_startMouseContextMenuProbes"
+	)
+
+	assert any(
+		isinstance(node, ast.Expr)
+		and isinstance(node.value, ast.Call)
+		and isinstance(node.value.func, ast.Name)
+		and node.value.func.id == "_tryKeyboardFallback"
+		for node in method.body
+	), "message context menu should try the native applications key before mouse probes"
 
 	assert any(
 		isinstance(node, ast.Call)
@@ -1409,7 +1506,7 @@ def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_e
 		and isinstance(node.args[0], ast.Constant)
 		and node.args[0].value == "applications"
 		for node in ast.walk(keyboard_fallback)
-	), "keyboard fallback should send the applications key directly to LINE"
+	), "keyboard-first path should send the applications key directly to LINE"
 
 	assert any(
 		isinstance(node, ast.Call)
@@ -1418,14 +1515,20 @@ def test_message_context_menu_script_keeps_keyboard_fallback_after_mouse_probe_e
 		and node.func.value.id == "self"
 		and node.func.attr == "_activateMessageContextMenu"
 		for node in ast.walk(keyboard_fallback)
-	), "keyboard fallback should reactivate popup detection after sending the gesture"
+	), "keyboard-first path should activate popup detection after sending the gesture"
 
 	assert any(
 		isinstance(node, ast.Call)
 		and isinstance(node.func, ast.Name)
-		and node.func.id == "_tryKeyboardFallback"
-		for node in ast.walk(method)
-	), "mouse probe exhaustion should call the keyboard fallback helper"
+		and node.func.id == "_startMouseContextMenuProbes"
+		for node in ast.walk(keyboard_fallback)
+	), "keyboard failure should hand off to mouse probe fallback"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_attemptAtOffset"
+		for node in ast.walk(start_mouse_probes)
+	), "mouse probe fallback should use the multi-coordinate probe path"
 	assert any(
 		isinstance(node, ast.Call)
 		and isinstance(node.func, ast.Name)
@@ -1646,19 +1749,25 @@ def test_schedule_query_invalidates_active_copy_read():
 	focus_calls = []
 
 	ns = _load_line_symbols(
-		assignment_names={"_copyReadRequestId", "_focusQueryRequestId"},
-		function_names={"_invalidateActiveCopyRead", "_scheduleQueryAndSpeakUIAFocus"},
+		assignment_names={"_copyReadRequestId", "_focusQueryRequestId", "_messageContextMenuRequestId"},
+		function_names={
+			"_invalidateActiveCopyRead",
+			"_invalidateActiveMessageContextMenu",
+			"_scheduleQueryAndSpeakUIAFocus",
+		},
 		namespace={
 			"core": SimpleNamespace(callLater=lambda _delay, callback: scheduled.append(callback)),
 		},
 	)
 	ns["_queryAndSpeakUIAFocus"] = lambda: focus_calls.append("focus")
 	ns["_copyReadRequestId"] = 7
+	ns["_messageContextMenuRequestId"] = 11
 	ns["_focusQueryRequestId"] = 0
 
 	ns["_scheduleQueryAndSpeakUIAFocus"](50)
 
 	assert ns["_copyReadRequestId"] == 8
+	assert ns["_messageContextMenuRequestId"] == 12
 	assert ns["_focusQueryRequestId"] == 1
 	assert len(scheduled) == 1
 
@@ -1716,8 +1825,11 @@ def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_win
 				"log": _Log(),
 				"_getElementRuntimeId": lambda _element: (1, 2, 3),
 				"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
+				"_messageProbePointHitsTargetElement": lambda *_args: True,
 				"_ocrReadMessageFallback": lambda _element: fallback_calls.append("fallback"),
+				"_restoreFocusToElement": lambda *_args: None,
 				"_shouldDismissCopyReadMenu": lambda _hwnd: False,
+				"UIAHandler": SimpleNamespace(handler=object()),
 			},
 		)
 
@@ -1737,3 +1849,221 @@ def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_win
 			sys.modules.pop("keyboardHandler", None)
 		else:
 			sys.modules["keyboardHandler"] = previousKeyboardHandler
+
+
+def test_copy_read_does_not_restore_focus_when_line_is_not_foreground():
+	copy_calls = []
+	focus_restores = []
+	scheduled = []
+	current_runtime_id = [(1, 2, 3)]
+
+	class _Rect:
+		left = 100
+		top = 200
+		right = 400
+		bottom = 260
+
+	class _Target:
+		CurrentBoundingRectangle = _Rect()
+
+		def GetRuntimeId(self):
+			return (1, 2, 3)
+
+	user32 = SimpleNamespace(
+		GetForegroundWindow=lambda: 101,
+		SetForegroundWindow=lambda _hwnd: None,
+		SetCursorPos=lambda _x, _y: None,
+		mouse_event=lambda *_args: None,
+	)
+
+	ns = _load_line_symbols(
+		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
+		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
+		namespace={
+			"api": SimpleNamespace(
+				getClipData=lambda: "orig",
+				copyToClip=lambda value: copy_calls.append(value),
+			),
+			"core": SimpleNamespace(
+				callLater=lambda _delay, callback: scheduled.append(callback),
+			),
+			"ctypes": SimpleNamespace(windll=SimpleNamespace(user32=user32)),
+			"time": SimpleNamespace(sleep=lambda _seconds: None),
+			"log": _Log(),
+			"_getElementRuntimeId": lambda _element: (1, 2, 3),
+			"_getFocusedElementRuntimeId": lambda: current_runtime_id[0],
+			"_messageProbePointHitsTargetElement": lambda *_args: True,
+			"_ocrReadMessageFallback": lambda _element: None,
+			"_restoreFocusToElement": lambda *_args: focus_restores.append("restore"),
+			"_shouldDismissCopyReadMenu": lambda _hwnd: False,
+			"UIAHandler": SimpleNamespace(handler=object()),
+		},
+	)
+
+	ns["_copyAndReadMessage"](_Target())
+	assert len(scheduled) == 1
+
+	current_runtime_id[0] = (9, 9, 9)
+	scheduled[0]()
+
+	assert copy_calls == ["", "orig"]
+	assert focus_restores == []
+
+
+def test_copy_read_skips_probe_when_hit_test_finds_different_element():
+	copy_calls = []
+	cursor_moves = []
+	mouse_events = []
+	scheduled = []
+
+	class _Rect:
+		left = 100
+		top = 200
+		right = 400
+		bottom = 260
+
+	class _Target:
+		CurrentBoundingRectangle = _Rect()
+
+		def GetRuntimeId(self):
+			return (1, 2, 3)
+
+	def _get_window_rect(_hwnd, rect):
+		rect.left = 0
+		rect.top = 0
+		rect.right = 1200
+		rect.bottom = 900
+		return True
+
+	user32 = SimpleNamespace(
+		GetForegroundWindow=lambda: 101,
+		GetWindowRect=_get_window_rect,
+		SetForegroundWindow=lambda _hwnd: None,
+		SetCursorPos=lambda x, y: cursor_moves.append((x, y)),
+		mouse_event=lambda *args: mouse_events.append(args),
+	)
+
+	ns = _load_line_symbols(
+		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
+		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
+		namespace={
+			"api": SimpleNamespace(
+				getClipData=lambda: "orig",
+				copyToClip=lambda value: copy_calls.append(value),
+			),
+			"core": SimpleNamespace(
+				callLater=lambda _delay, callback: scheduled.append(callback),
+			),
+			"ctypes": SimpleNamespace(
+				windll=SimpleNamespace(user32=user32),
+				byref=lambda value: value,
+			),
+			"time": SimpleNamespace(sleep=lambda _seconds: None),
+			"log": _Log(),
+			"_getElementRuntimeId": lambda _element: (1, 2, 3),
+			"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
+			"_messageProbePointHitsTargetElement": lambda *_args: False,
+			"_ocrReadMessageFallback": lambda _element: None,
+			"_restoreFocusToElement": lambda *_args: None,
+			"_shouldDismissCopyReadMenu": lambda _hwnd: False,
+			"UIAHandler": SimpleNamespace(handler=object()),
+		},
+	)
+
+	ns["_copyAndReadMessage"](_Target())
+
+	assert copy_calls == [""]
+	assert cursor_moves == []
+	assert mouse_events == []
+	assert len(scheduled) == 1
+
+
+def test_copy_read_tries_keyboard_menu_before_mouse_probes():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	copy_read = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
+	)
+	keyboard_fallback = next(
+		node
+		for node in copy_read.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_tryKeyboardCopyFallback"
+	)
+	start_mouse_probes = next(
+		node
+		for node in copy_read.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_startMouseCopyProbes"
+	)
+	attempt_copy = next(
+		node
+		for node in copy_read.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_attemptCopyAtOffset"
+	)
+
+	assert any(
+		isinstance(node, ast.Expr)
+		and isinstance(node.value, ast.Call)
+		and isinstance(node.value.func, ast.Name)
+		and node.value.func.id == "_tryKeyboardCopyFallback"
+		for node in copy_read.body
+	), "copy-read should try the native applications key before mouse probes"
+
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_sendGestureWithAddonSuppressed"
+		and node.args
+		and isinstance(node.args[0], ast.Constant)
+		and node.args[0].value == "applications"
+		for node in ast.walk(keyboard_fallback)
+	), "copy-read keyboard-first path should send the native applications key"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_findCopyMenuItem"
+		for node in ast.walk(keyboard_fallback)
+	), "copy-read keyboard-first path should reuse copy menu detection"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_attemptCopyAtOffset"
+		for node in ast.walk(start_mouse_probes)
+	), "copy-read keyboard failure should hand off to mouse probe fallback"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_tryKeyboardCopyFallback"
+		for node in ast.walk(attempt_copy)
+	), "copy-read should fall back to OCR after mouse probes exhaust the already-tried keyboard path"
+
+
+def test_message_focus_skips_off_window_elements_before_copy_read():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	query_focus = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_queryAndSpeakUIAFocus"
+	)
+
+	visible_checks = [
+		node
+		for node in ast.walk(query_focus)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_isElementVisibleInForegroundWindow"
+	]
+	copy_read_calls = [
+		node
+		for node in ast.walk(query_focus)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_copyAndReadMessage"
+	]
+
+	assert visible_checks, "message focus should guard against virtualized off-window UIA rects"
+	assert copy_read_calls, "message focus should still use copy-read for visible message items"
