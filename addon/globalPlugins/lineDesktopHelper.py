@@ -394,6 +394,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# Translators: Menu item for reading chat room name
 				_("讀出聊天室名稱(&T)") + "\tNVDA+Windows+T",
 			)
+			self._describeImageItem = self._lineSubMenu.Append(
+				wx.ID_ANY,
+				# Translators: Menu item for describing the current image message
+				_("圖片描述(&I)") + "\tNVDA+Windows+I",
+			)
 
 			self._lineSubMenu.AppendSeparator()
 
@@ -469,6 +474,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				wx.EVT_MENU,
 				self._onReadChatName,
 				self._readChatNameItem,
+			)
+			gui.mainFrame.sysTrayIcon.Bind(
+				wx.EVT_MENU,
+				self._onDescribeImage,
+				self._describeImageItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU,
@@ -639,6 +649,22 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
 			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
+
+	def _onDescribeImage(self, evt):
+		wx.CallAfter(self._doDescribeImage)
+
+	def _doDescribeImage(self):
+		import ui
+
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message(_("LINE 未執行"))
+			return
+		try:
+			lineApp.script_describeImage(None)
+		except Exception as e:
+			log.warning(f"LINE describeImage error: {e}", exc_info=True)
+			ui.message(_("圖片描述功能錯誤: {error}").format(error=e))
 
 	def _onAnswerCall(self, evt):
 		wx.CallAfter(self._doAnswerCall)
