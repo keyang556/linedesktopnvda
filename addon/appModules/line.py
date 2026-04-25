@@ -331,7 +331,7 @@ _CALL_OCR_LOG_NOISE_MARKERS = (
 	"WARNING -",
 	"ERROR -",
 	"Traceback",
-	"File \"",
+	'File "',
 	"ConfigManager",
 	"Loading config",
 	"Config loaded",
@@ -1800,24 +1800,43 @@ _currentChatRoomName = None
 # Flag to suppress addon while a file dialog is open
 _suppressAddon = False
 
-# Google AI API key used by NVDA+Windows+I image description.
-# The bundled convenience key is encrypted with a PBKDF2-HMAC-SHA256 derived
+# Image description backend providers exposed in the settings panel.
+_IMAGE_DESCRIPTION_PROVIDER_GOOGLE = "google"
+_IMAGE_DESCRIPTION_PROVIDER_OLLAMA = "ollama"
+_IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
+	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE,
+	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+)
+_IMAGE_DESCRIPTION_DEFAULT_PROVIDER = _IMAGE_DESCRIPTION_PROVIDER_GOOGLE
+_IMAGE_DESCRIPTION_PROVIDER_LABELS = {
+	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE: "Google AI",
+	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA: "Ollama Cloud",
+}
+_IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME = "line_desktop_image_provider.txt"
+
+# API keys used by NVDA+Windows+I image description.
+# The bundled convenience keys are encrypted with a PBKDF2-HMAC-SHA256 derived
 # keystream plus HMAC integrity tag, using a per-blob random salt, so the
-# ciphertext is opaque to naive string / pattern extraction. It is NOT a
-# cryptographic secret: this is an open-source addon and a determined reader
-# can still recover it by running the decryption code. Its purpose is to
+# ciphertext is opaque to naive string / pattern extraction. They are NOT
+# cryptographic secrets: this is an open-source addon and a determined reader
+# can still recover them by running the decryption code. The purpose is to
 # raise the bar for casual extraction and to spare end-users from having to
-# obtain their own key. Users can override it at any time through the
-# "設定圖片描述 API Key" menu item; their key is persisted (also encrypted)
-# under NVDA's user config directory.
+# obtain their own key. Users can override either key at any time through the
+# settings panel; their key is persisted (also encrypted) under NVDA's user
+# config directory.
 _IMAGE_DESCRIPTION_DEFAULT_KEY_BLOB = (
 	"g+Ku1l+8YmbpO4/JPwy+ZyMlZw4Nfm9gO5bbn8K/vPkz7VFoMRpiFsx2hgfKpUqbxmWqQGo2h8Ph7YjZljEEFkmc3+HlxuE="
 )
+_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB = "oLtfHW4hFhTMLQ0mKKcEqd70nU8Z9EsEjjSKfueLCUCnJD9oee2CTd3GtTi0LyS6ZJMuee/jIxFiXDH9kzdyFOMVRfIjMRxJzqZxnccS+p5B1gjbWxYyMLY="
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
+_IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
+_IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME = "line_desktop_ollama_model.txt"
 _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
-# Default model used when the user has not picked one in the settings panel.
+# Default Google model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+# Default Ollama Cloud model used when the user has not picked one in the settings panel.
+_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemini-3-flash-preview:cloud"
 # Models exposed in the settings panel dropdown. The order here is the order
 # the user sees. Strings are the actual model IDs sent to the API endpoint.
 # VERIFY all IDs against: GET https://generativelanguage.googleapis.com/v1beta/models
@@ -1839,9 +1858,17 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemma-4-31b-it",
 	"gemma-3-27b-it",
 )
+# Vision-capable models commonly available on Ollama Cloud. Users can pick
+# whichever they have access to; unavailable IDs surface as an HTTP error.
+_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
+	"gemini-3-flash-preview:cloud",
+	"qwen3.5:397b-cloud",
+	"gemma4:31b-cloud",
+)
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 )
+_IMAGE_DESCRIPTION_OLLAMA_ENDPOINT = "https://ollama.com/api/chat"
 _IMAGE_DESCRIPTION_DEFAULT_PROMPT = "請用繁體中文簡要描述這張圖片的內容。"
 # Maximum length accepted from user-supplied prompts, to avoid pathological
 # payloads being sent to the API.
@@ -1856,6 +1883,9 @@ _NOT_COMPUTED = object()
 # Populated once at AppModule.__init__ via _initEffectiveImageApiKey().
 # After that, _getEffectiveImageApiKey() is a pure memory read (no PBKDF2).
 _cachedEffectiveImageApiKey = _NOT_COMPUTED
+_cachedEffectiveOllamaApiKey = _NOT_COMPUTED
+_cachedEffectiveImageProvider = _NOT_COMPUTED
+_cachedEffectiveOllamaModel = _NOT_COMPUTED
 
 
 def _deriveImageApiKeyMaterial(salt, length):
@@ -1972,17 +2002,146 @@ def setUserImageApiKey(plain):
 
 
 def _initEffectiveImageApiKey():
-	"""Decrypt and cache the effective API key. Called once at addon startup."""
+	"""Decrypt and cache the effective Google API key. Called once at addon startup."""
 	global _cachedEffectiveImageApiKey
 	userKey = getUserImageApiKey()
 	_cachedEffectiveImageApiKey = userKey or _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_DEFAULT_KEY_BLOB)
 
 
 def _getEffectiveImageApiKey():
-	"""Return the cached API key; falls back to lazy init if not yet computed."""
+	"""Return the cached Google API key; falls back to lazy init if not yet computed."""
 	if _cachedEffectiveImageApiKey is _NOT_COMPUTED:
 		_initEffectiveImageApiKey()
 	return _cachedEffectiveImageApiKey
+
+
+def _getOllamaApiKeyStorePath():
+	"""Return the filesystem path for the user-supplied Ollama API key file."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME)
+
+
+def getUserOllamaApiKey():
+	"""Return the plain Ollama API key previously set by the user, or None."""
+	path = _getOllamaApiKeyStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			blob = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Ollama API key: {e}", exc_info=True)
+		return None
+	return _deobfuscateImageApiKey(blob)
+
+
+def setUserOllamaApiKey(plain):
+	"""Persist a user-supplied Ollama API key (obfuscated). Empty/None clears it."""
+	global _cachedEffectiveOllamaApiKey
+	path = _getOllamaApiKeyStorePath()
+	if not path:
+		return False
+	try:
+		if not plain:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveOllamaApiKey = _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB)
+		else:
+			blob = _obfuscateImageApiKey(plain)
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(blob)
+			_cachedEffectiveOllamaApiKey = plain
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Ollama API key: {e}", exc_info=True)
+		return False
+
+
+def _initEffectiveOllamaApiKey():
+	"""Decrypt and cache the effective Ollama API key."""
+	global _cachedEffectiveOllamaApiKey
+	userKey = getUserOllamaApiKey()
+	_cachedEffectiveOllamaApiKey = userKey or _deobfuscateImageApiKey(
+		_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB
+	)
+
+
+def _getEffectiveOllamaApiKey():
+	"""Return the cached Ollama API key; falls back to lazy init if not yet computed."""
+	if _cachedEffectiveOllamaApiKey is _NOT_COMPUTED:
+		_initEffectiveOllamaApiKey()
+	return _cachedEffectiveOllamaApiKey
+
+
+def _getImageProviderStorePath():
+	"""Return the filesystem path for the user-selected provider preference."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME)
+
+
+def getUserImageProvider():
+	"""Return the provider ID previously chosen by the user, or None."""
+	path = _getImageProviderStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user image provider: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	if value not in _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS:
+		log.debug(f"LINE: stored image provider {value!r} is not in the allowed list")
+		return None
+	return value
+
+
+def setUserImageProvider(provider):
+	"""Persist the user-selected provider. Empty/None or default clears the file."""
+	global _cachedEffectiveImageProvider
+	path = _getImageProviderStorePath()
+	if not path:
+		return False
+	try:
+		if not provider or provider == _IMAGE_DESCRIPTION_DEFAULT_PROVIDER:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveImageProvider = _IMAGE_DESCRIPTION_DEFAULT_PROVIDER
+			return True
+		if provider not in _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS:
+			log.warning(f"LINE: refusing to save unknown image provider {provider!r}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(provider)
+		_cachedEffectiveImageProvider = provider
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user image provider: {e}", exc_info=True)
+		return False
+
+
+def _getEffectiveImageProvider():
+	"""Return the cached provider ID; lazily resolved from disk on first call."""
+	global _cachedEffectiveImageProvider
+	if _cachedEffectiveImageProvider is _NOT_COMPUTED:
+		_cachedEffectiveImageProvider = getUserImageProvider() or _IMAGE_DESCRIPTION_DEFAULT_PROVIDER
+	return _cachedEffectiveImageProvider
 
 
 def _getImageModelStorePath():
@@ -2050,6 +2209,70 @@ def _getEffectiveImageModel():
 	if _cachedEffectiveImageModel is _NOT_COMPUTED:
 		_cachedEffectiveImageModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 	return _cachedEffectiveImageModel
+
+
+def _getOllamaModelStorePath():
+	"""Return the filesystem path for the user-selected Ollama model preference."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME)
+
+
+def getUserOllamaModel():
+	"""Return the Ollama model ID previously chosen by the user, or None."""
+	path = _getOllamaModelStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Ollama model: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	if value not in _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS:
+		log.debug(f"LINE: stored Ollama model {value!r} is not in the allowed list")
+		return None
+	return value
+
+
+def setUserOllamaModel(name):
+	"""Persist a user-selected Ollama model. Empty/None or default clears the file."""
+	global _cachedEffectiveOllamaModel
+	path = _getOllamaModelStorePath()
+	if not path:
+		return False
+	try:
+		if not name or name == _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveOllamaModel = _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
+			return True
+		if name not in _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS:
+			log.warning(f"LINE: refusing to save unknown Ollama model {name!r}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(name)
+		_cachedEffectiveOllamaModel = name
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Ollama model: {e}", exc_info=True)
+		return False
+
+
+def _getEffectiveOllamaModel():
+	"""Return the cached Ollama model ID; lazily resolved from disk on first call."""
+	global _cachedEffectiveOllamaModel
+	if _cachedEffectiveOllamaModel is _NOT_COMPUTED:
+		_cachedEffectiveOllamaModel = getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
+	return _cachedEffectiveOllamaModel
 
 
 def _getImagePromptStorePath():
@@ -2245,7 +2468,28 @@ def _buildInitialImageContents(pngBytes, prompt=None):
 	]
 
 
-def _callImageDescriptionApi(contents, timeout=30.0):
+def _callImageDescriptionApi(contents, timeout=None):
+	"""Dispatch a pre-built ``contents`` list to the active provider.
+
+	Returns (text, None) on success or (None, error_msg) on failure. The
+	provider is resolved at call time, so changing the setting mid-conversation
+	switches subsequent turns to the new backend. When ``timeout`` is None,
+	each backend uses its own appropriate default (30 s for Google, 60 s for
+	Ollama Cloud which typically needs more time).
+	"""
+	provider = _getEffectiveImageProvider()
+	if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+		return _callOllamaImageDescriptionApi(
+			contents,
+			timeout=timeout if timeout is not None else 60.0,
+		)
+	return _callGoogleImageDescriptionApi(
+		contents,
+		timeout=timeout if timeout is not None else 30.0,
+	)
+
+
+def _callGoogleImageDescriptionApi(contents, timeout=30.0):
 	"""Send a pre-built ``contents`` list to Google AI and return (text, error_msg).
 
 	Returns (text, None) on success or (None, error_msg) on failure.
@@ -2311,8 +2555,105 @@ def _callImageDescriptionApi(contents, timeout=30.0):
 	return None, _("圖片描述失敗")
 
 
-def _describeImageBytes(pngBytes, timeout=30.0):
-	"""Send PNG image bytes to Google AI and return (description, error_msg).
+def _geminiContentsToOllamaMessages(contents):
+	"""Convert the canonical Gemini-shaped contents into Ollama chat messages.
+
+	The dialog stores history as Gemini turns ({"role": "user"|"model",
+	"parts": [{"text": ...}, {"inline_data": {...}}]}). Ollama's /api/chat
+	expects {"role": "user"|"assistant", "content": str, "images": [b64]}.
+	"""
+	messages = []
+	for turn in contents or []:
+		role = turn.get("role") if isinstance(turn, dict) else None
+		ollamaRole = "assistant" if role == "model" else "user"
+		texts = []
+		images = []
+		for part in (turn.get("parts") or []) if isinstance(turn, dict) else []:
+			if not isinstance(part, dict):
+				continue
+			if "text" in part and part["text"]:
+				texts.append(part["text"])
+			elif "inline_data" in part:
+				inline = part.get("inline_data") or {}
+				data = inline.get("data")
+				if data:
+					images.append(data)
+		message = {"role": ollamaRole, "content": "\n".join(texts)}
+		if images:
+			message["images"] = images
+		messages.append(message)
+	return messages
+
+
+def _callOllamaImageDescriptionApi(contents, timeout=60.0):
+	"""Send the canonical contents to Ollama Cloud's /api/chat endpoint.
+
+	Returns (text, None) on success or (None, error_msg) on failure. Uses a
+	longer default timeout because cloud-hosted vision models can take noticeably
+	longer than Google's flash variants to produce a first response.
+	"""
+	try:
+		import json
+		import urllib.request
+		import urllib.error
+
+		apiKey = _getEffectiveOllamaApiKey()
+		if not apiKey:
+			log.warning("LINE: no Ollama Cloud API key available")
+			return None, _("未設定 API Key")
+		messages = _geminiContentsToOllamaMessages(contents)
+		body = {
+			"model": _getEffectiveOllamaModel(),
+			"messages": messages,
+			"stream": False,
+		}
+		req = urllib.request.Request(
+			_IMAGE_DESCRIPTION_OLLAMA_ENDPOINT,
+			data=json.dumps(body).encode("utf-8"),
+			headers={
+				"Content-Type": "application/json",
+				"Authorization": f"Bearer {apiKey}",
+				"Accept": "application/json",
+			},
+			method="POST",
+		)
+		try:
+			with urllib.request.urlopen(req, timeout=timeout) as resp:
+				raw = resp.read()
+		except urllib.error.HTTPError as e:
+			errBody = e.read().decode("utf-8", errors="replace")
+			log.warning(
+				f"LINE: Ollama image description HTTP {e.code} {e.reason}: {errBody[:500]}",
+			)
+			return None, _("圖片描述失敗 (HTTP {code})").format(code=e.code)
+		except Exception as e:
+			log.warning(f"LINE: Ollama image description network error: {e}", exc_info=True)
+			return None, _("圖片描述失敗 (網路錯誤)")
+		data = json.loads(raw.decode("utf-8", errors="replace"))
+	except Exception as e:
+		log.warning(
+			f"LINE: Ollama image description request failed: {e}",
+			exc_info=True,
+		)
+		return None, _("圖片描述失敗")
+
+	try:
+		message = data.get("message") if isinstance(data, dict) else None
+		if isinstance(message, dict):
+			text = message.get("content")
+			if text:
+				return text.strip(), None
+		log.info(f"LINE: Ollama image description returned no content: {data!r}")
+	except Exception as e:
+		log.warning(
+			f"LINE: Ollama image description response parse failed: {e}",
+			exc_info=True,
+		)
+	return None, _("圖片描述失敗 (無回應)")
+
+
+def _describeImageBytes(pngBytes, timeout=None):
+	"""Send PNG image bytes to the active image-description provider and return (description, error_msg).
 
 	Returns (text, None) on success or (None, error_msg) on failure.
 	"""
@@ -3941,8 +4282,7 @@ def _queryAndSpeakUIAFocus():
 			if isMessageItem:
 				if not _isElementVisibleInForegroundWindow(targetElement):
 					log.debug(
-						f"LINE UIA focus: skipping off-window message ListItem "
-						f"runtimeId={elementId}",
+						f"LINE UIA focus: skipping off-window message ListItem runtimeId={elementId}",
 					)
 					return
 				log.info(
@@ -4342,8 +4682,7 @@ def _copyAndReadMessage(targetElement):
 			targetRuntimeId,
 		):
 			log.info(
-				f"LINE: copy-read skipping probe over edit field "
-				f"at ({clickX}, {clickY}) [{posLabel}]",
+				f"LINE: copy-read skipping probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
 			)
 			core.callLater(50, lambda: _attemptCopyAtOffset(posIdx + 1))
 			return
@@ -5259,9 +5598,10 @@ class AppModule(appModuleHandler.AppModule):
 		self._lineVersion = _readLineVersion()
 		self._lineLanguage = _readLineLanguage()
 		self._qtAccessibleSet = _isQtAccessibleSet()
-		# Decrypt the image API key once at startup so PBKDF2 never runs
+		# Decrypt the image API keys once at startup so PBKDF2 never runs
 		# during an actual image-description request.
 		_initEffectiveImageApiKey()
+		_initEffectiveOllamaApiKey()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "
@@ -8739,8 +9079,7 @@ class AppModule(appModuleHandler.AppModule):
 				targetRuntimeId,
 			):
 				log.info(
-					f"LINE: skipping {actionName} probe over edit field "
-					f"at ({clickX}, {clickY}) [{posLabel}]",
+					f"LINE: skipping {actionName} probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
 				)
 				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
 				return
@@ -9314,7 +9653,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:NVDA+windows+i",
 		# Translators: Input help message for the image-description command.
-		description=_("Describe the current image message using Google AI"),
+		description=_("使用設定的 AI 服務描述目前的圖片訊息"),
 		category="LINE",
 	)
 	def script_describeImage(self, gesture):
@@ -10745,8 +11084,7 @@ class AppModule(appModuleHandler.AppModule):
 				targetRuntimeId,
 			):
 				log.info(
-					f"LINE: skipping context menu probe over edit field "
-					f"at ({clickX}, {clickY}) [{posLabel}]",
+					f"LINE: skipping context menu probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
 				)
 				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
 				return

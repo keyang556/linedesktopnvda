@@ -108,28 +108,40 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		self._qtCheck = sHelper.addItem(wx.CheckBox(self, label=qtLabel))
 		self._qtCheck.SetValue(_isQtAccessibleSet())
 
+		providerOptions = self._loadProviderOptions()
+		self._providerIds = tuple(opt[0] for opt in providerOptions)
+		providerLabels = [opt[1] for opt in providerOptions]
+		# Translators: Dropdown label for selecting the image-description backend provider.
+		providerLabel = _("圖片描述服務 (&D)")
+		self._providerChoice = sHelper.addLabeledControl(
+			providerLabel,
+			wx.Choice,
+			choices=providerLabels,
+		)
+		currentProvider = self._loadCurrentProvider()
+		try:
+			providerIndex = self._providerIds.index(currentProvider)
+		except ValueError:
+			providerIndex = 0
+		if self._providerIds:
+			self._providerChoice.SetSelection(providerIndex)
+
+		# Pending edits per-provider so switching the dropdown doesn't lose
+		# in-flight changes the user has made for the other backend.
+		self._pendingApiKey = {pid: self._loadStoredApiKey(pid) for pid in self._providerIds}
+		self._pendingModel = {pid: self._loadStoredModel(pid) for pid in self._providerIds}
+
 		# Translators: Text field label for the image-description API key
 		apiLabel = _("圖片描述 API Key，留空則使用預設金鑰 (&I)")
 		self._apiKeyText = sHelper.addLabeledControl(apiLabel, wx.TextCtrl)
-		self._apiKeyText.SetValue(self._loadCurrentApiKey())
 
-		self._modelChoices, defaultModel, currentModel = self._loadModelOptions()
 		# Translators: Dropdown label for selecting the image-description model
 		modelLabel = _("圖片描述模型 (&M)")
 		self._modelChoice = sHelper.addLabeledControl(
 			modelLabel,
 			wx.Choice,
-			choices=list(self._modelChoices),
+			choices=[],
 		)
-		try:
-			selectIndex = self._modelChoices.index(currentModel)
-		except ValueError:
-			try:
-				selectIndex = self._modelChoices.index(defaultModel)
-			except ValueError:
-				selectIndex = 0
-		if self._modelChoices:
-			self._modelChoice.SetSelection(selectIndex)
 
 		# Translators: Text field label for the image-description prompt
 		promptLabel = _("圖片描述提示詞，留空則使用預設 (&P)")
@@ -141,33 +153,150 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		)
 		self._promptText.SetValue(self._loadCurrentPrompt())
 
-	def _loadCurrentApiKey(self):
-		try:
-			from appModules.line import getUserImageApiKey
+		self._activeProviderId = self._currentSelectedProviderId() or _safeDefaultProvider()
+		self._refreshProviderUI(self._activeProviderId)
 
+		self._providerChoice.Bind(wx.EVT_CHOICE, self._onProviderChange)
+
+	def _currentSelectedProviderId(self):
+		"""Return the provider ID matching the dropdown selection, or None."""
+		idx = self._providerChoice.GetSelection() if hasattr(self, "_providerChoice") else wx.NOT_FOUND
+		if idx == wx.NOT_FOUND or not self._providerIds:
+			return None
+		if 0 <= idx < len(self._providerIds):
+			return self._providerIds[idx]
+		return None
+
+	def _onProviderChange(self, evt):
+		# Stash whatever the user has typed/selected for the previously active
+		# provider before we repaint the controls for the newly selected one.
+		previous = getattr(self, "_activeProviderId", None)
+		if previous and previous in self._pendingApiKey:
+			self._pendingApiKey[previous] = self._apiKeyText.GetValue().strip()
+		if previous and previous in self._pendingModel:
+			selectedModel = self._currentModelChoiceValue()
+			if selectedModel is not None:
+				self._pendingModel[previous] = selectedModel
+
+		newProvider = self._currentSelectedProviderId() or previous
+		self._activeProviderId = newProvider
+		self._refreshProviderUI(newProvider)
+
+	def _currentModelChoiceValue(self):
+		choices = getattr(self, "_modelChoices", ())
+		idx = self._modelChoice.GetSelection()
+		if idx == wx.NOT_FOUND or not choices:
+			return None
+		if 0 <= idx < len(choices):
+			return choices[idx]
+		return None
+
+	def _refreshProviderUI(self, provider):
+		"""Repopulate the API-key text field and the model dropdown for ``provider``."""
+		choices, defaultModel = self._modelOptionsFor(provider)
+		self._modelChoices = choices
+		self._modelChoice.Clear()
+		if choices:
+			self._modelChoice.AppendItems(list(choices))
+		desiredModel = self._pendingModel.get(provider) or defaultModel
+		try:
+			selectIndex = choices.index(desiredModel)
+		except ValueError:
+			try:
+				selectIndex = choices.index(defaultModel)
+			except ValueError:
+				selectIndex = 0
+		if choices:
+			self._modelChoice.SetSelection(selectIndex)
+
+		self._apiKeyText.ChangeValue(self._pendingApiKey.get(provider, ""))
+
+	def _loadProviderOptions(self):
+		"""Return [(provider_id, display_label), …] in the order shown to the user."""
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS,
+				_IMAGE_DESCRIPTION_PROVIDER_LABELS,
+			)
+
+			return [
+				(pid, _IMAGE_DESCRIPTION_PROVIDER_LABELS.get(pid, pid))
+				for pid in _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS
+			]
+		except Exception:
+			log.debug("LINE: cannot load provider options", exc_info=True)
+			return []
+
+	def _loadCurrentProvider(self):
+		try:
+			from appModules.line import getUserImageProvider
+
+			return getUserImageProvider() or _safeDefaultProvider()
+		except Exception:
+			log.debug("LINE: cannot load current image provider", exc_info=True)
+			return _safeDefaultProvider()
+
+	def _loadStoredApiKey(self, provider):
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				getUserImageApiKey,
+				getUserOllamaApiKey,
+			)
+
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+				return getUserOllamaApiKey() or ""
 			return getUserImageApiKey() or ""
 		except Exception:
-			log.debug("LINE: cannot load user API key for settings panel", exc_info=True)
+			log.debug(
+				f"LINE: cannot load API key for provider {provider!r}",
+				exc_info=True,
+			)
 			return ""
 
-	def _loadModelOptions(self):
-		"""Return (choices_tuple, default_model_id, currently_selected_model_id)."""
+	def _loadStoredModel(self, provider):
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				getUserImageModel,
+				getUserOllamaModel,
+			)
+
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+				return getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
+			return getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+		except Exception:
+			log.debug(
+				f"LINE: cannot load model for provider {provider!r}",
+				exc_info=True,
+			)
+			return ""
+
+	def _modelOptionsFor(self, provider):
+		"""Return (choices_tuple, default_model_id) for the given provider."""
 		try:
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
-				getUserImageModel,
+				_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 			)
 
-			current = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+				return (
+					_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				)
 			return (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
-				current,
 			)
 		except Exception:
 			log.debug("LINE: cannot load image model options", exc_info=True)
-			return ((), "", "")
+			return ((), "")
 
 	def _loadCurrentPrompt(self):
 		try:
@@ -195,21 +324,61 @@ class LineDesktopSettingsPanel(SettingsPanel):
 					self,
 				)
 
-		# Image description API key
-		try:
-			from appModules.line import getUserImageApiKey, setUserImageApiKey
+		# Capture pending edits for the currently visible provider before saving.
+		activeProvider = self._currentSelectedProviderId() or _safeDefaultProvider()
+		if activeProvider in self._pendingApiKey:
+			self._pendingApiKey[activeProvider] = self._apiKeyText.GetValue().strip()
+		if activeProvider in self._pendingModel:
+			selectedModel = self._currentModelChoiceValue()
+			if selectedModel is not None:
+				self._pendingModel[activeProvider] = selectedModel
 
-			newKey = self._apiKeyText.GetValue().strip()
-			currentKey = getUserImageApiKey() or ""
-			if newKey != currentKey:
-				if not setUserImageApiKey(newKey):
+		# Active provider selection
+		try:
+			from appModules.line import getUserImageProvider, setUserImageProvider
+
+			currentProvider = getUserImageProvider() or _safeDefaultProvider()
+			if activeProvider != currentProvider:
+				if not setUserImageProvider(activeProvider):
 					gui.messageBox(
-						# Translators: Error shown when saving the image API key fails
-						_("儲存圖片描述 API Key 失敗，請重試。"),
+						# Translators: Error shown when saving the provider fails
+						_("儲存圖片描述服務失敗，請重試。"),
 						_("LINE Desktop - 設定錯誤"),
 						wx.OK | wx.ICON_ERROR,
 						self,
 					)
+		except Exception:
+			log.warning(
+				"LINE: cannot load image provider helpers from settings panel",
+				exc_info=True,
+			)
+
+		# Image description API keys (one per provider)
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				getUserImageApiKey,
+				getUserOllamaApiKey,
+				setUserImageApiKey,
+				setUserOllamaApiKey,
+			)
+
+			for providerId, pendingKey in self._pendingApiKey.items():
+				if providerId == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+					currentKey = getUserOllamaApiKey() or ""
+					setter = setUserOllamaApiKey
+				else:
+					currentKey = getUserImageApiKey() or ""
+					setter = setUserImageApiKey
+				if pendingKey != currentKey:
+					if not setter(pendingKey):
+						gui.messageBox(
+							# Translators: Error shown when saving the image API key fails
+							_("儲存圖片描述 API Key 失敗，請重試。"),
+							_("LINE Desktop - 設定錯誤"),
+							wx.OK | wx.ICON_ERROR,
+							self,
+						)
 		except Exception:
 			log.warning(
 				"LINE: cannot load image API key helpers from settings panel",
@@ -223,20 +392,29 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				self,
 			)
 
-		# Image description model
+		# Image description models (one per provider)
 		try:
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				getUserImageModel,
+				getUserOllamaModel,
 				setUserImageModel,
+				setUserOllamaModel,
 			)
 
-			selectedIndex = self._modelChoice.GetSelection()
-			if selectedIndex != wx.NOT_FOUND and self._modelChoices:
-				newModel = self._modelChoices[selectedIndex]
-				currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
-				if newModel != currentModel:
-					if not setUserImageModel(newModel):
+			for providerId, pendingModel in self._pendingModel.items():
+				if not pendingModel:
+					continue
+				if providerId == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
+					currentModel = getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
+					setter = setUserOllamaModel
+				else:
+					currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
+					setter = setUserImageModel
+				if pendingModel != currentModel:
+					if not setter(pendingModel):
 						gui.messageBox(
 							# Translators: Error shown when saving the image model fails
 							_("儲存圖片描述模型失敗，請重試。"),
@@ -274,6 +452,16 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				"LINE: cannot load image prompt helpers from settings panel",
 				exc_info=True,
 			)
+
+
+def _safeDefaultProvider():
+	"""Return the default provider ID, falling back to a literal if line.py is unavailable."""
+	try:
+		from appModules.line import _IMAGE_DESCRIPTION_DEFAULT_PROVIDER
+
+		return _IMAGE_DESCRIPTION_DEFAULT_PROVIDER
+	except Exception:
+		return "google"
 
 
 class GlobalPlugin(globalPluginHandler.GlobalPlugin):
