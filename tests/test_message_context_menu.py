@@ -154,3 +154,30 @@ def test_build_menu_elements_keeps_image_attachment_actions_in_virtual_window():
 	assert [element["clickPoint"] for element in elements] == [
 		((left + right) // 2, (top + bottom) // 2) for left, top, right, bottom in row_rects
 	]
+
+
+def test_build_menu_elements_keeps_sticker_actions_in_virtual_window():
+	menu_labels = ["回覆", "刪除", "貼圖小舖"]
+	lines = [
+		{
+			"text": label,
+			"rect": (706, 449 + index * 40, 860, 469 + index * 40),
+		}
+		for index, label in enumerate(menu_labels)
+	]
+	row_rects = [(639, 439 + index * 40, 837, 479 + index * 40) for index in range(len(menu_labels))]
+
+	elements = message_context_menu._buildMenuElements(
+		lines,
+		(624, 415, 852, 560),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == menu_labels
+	assert [element["clickPoint"] for element in elements] == [
+		((left + right) // 2, (top + bottom) // 2) for left, top, right, bottom in row_rects
+	]
+
+
+def test_match_menu_label_accepts_spaced_sticker_shop_ocr():
+	assert message_context_menu._matchMenuLabel("貼 圖 小 舖") == "貼圖小舖"

@@ -14,11 +14,13 @@ def _load_image_menu_helpers():
 		"_CJK_CHAR",
 		"_CJK_SPACE_RE",
 		"_IMAGE_ATTACHMENT_MENU_KEYWORDS",
+		"_STICKER_MESSAGE_MENU_KEYWORDS",
 	}
 	needed_functions = {
 		"_removeCJKSpaces",
 		"_extractDownloadDeadlineAnnouncement",
 		"_looksLikeImageAttachmentMenu",
+		"_looksLikeStickerMessageMenu",
 	}
 
 	for node in module.body:
@@ -134,6 +136,17 @@ def test_self_sent_message_menu_is_not_treated_as_image_attachment():
 def test_generic_save_as_menu_without_photo_actions_is_not_treated_as_image_attachment():
 	assert not helpers["_looksLikeImageAttachmentMenu"](
 		"回覆\n另存新檔\n傳送至 Keep 筆記\n儲存至記事本",
+	)
+
+
+def test_sticker_message_menu_is_detected_from_sticker_shop_action():
+	assert helpers["_looksLikeStickerMessageMenu"]("回覆\n刪除\n貼圖小舖")
+	assert helpers["_looksLikeStickerMessageMenu"]("回覆\n刪除\n貼 圖 小 舖")
+
+
+def test_non_sticker_menu_is_not_treated_as_sticker_message():
+	assert not helpers["_looksLikeStickerMessageMenu"](
+		"回覆\n分享\n刪除\n轉為文字\n掃描行動條碼\n另存新檔",
 	)
 
 
