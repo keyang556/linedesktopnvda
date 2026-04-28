@@ -472,6 +472,11 @@ _IMAGE_ATTACHMENT_MENU_KEYWORDS = (
 	"設為聊天室背景",
 )
 
+_STICKER_MESSAGE_MENU_KEYWORDS = (
+	"貼圖小舖",
+	"貼圖小鋪",
+)
+
 
 def _looksLikeImageAttachmentMenu(text):
 	"""Return True when menu text matches LINE image/photo attachment actions."""
@@ -483,6 +488,15 @@ def _looksLikeImageAttachmentMenu(text):
 		return False
 
 	return any(keyword in normalized for keyword in _IMAGE_ATTACHMENT_MENU_KEYWORDS)
+
+
+def _looksLikeStickerMessageMenu(text):
+	"""Return True when menu text matches LINE sticker-message actions."""
+	if not text:
+		return False
+
+	normalized = _removeCJKSpaces(str(text).strip()).replace(" ", "")
+	return any(keyword in normalized for keyword in _STICKER_MESSAGE_MENU_KEYWORDS)
 
 
 def _extractDownloadDeadlineAnnouncement(text):
@@ -5023,6 +5037,13 @@ def _copyAndReadMessage(targetElement):
 					if popupOcrLooksLikeMenu and popupOcrText and keyword in popupOcrText:
 						return True
 					return False
+
+				if _looksLikeStickerMessageMenu(menuTextBlob):
+					log.info("LINE: copy-read detected sticker message")
+					ui.message(_("貼圖，請按 NVDA+Windows+I 描述"))
+					_dismissMenu()
+					_restoreClipboard(origClip)
+					return
 
 				menuHasSaveAs = _menuHasText("另存新檔")
 				menuHasSave = _menuHasText("儲存")
