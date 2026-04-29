@@ -187,13 +187,16 @@ def test_message_probe_hit_test_preserves_existing_behavior_when_uia_hit_test_fa
 		},
 	)
 
-	assert ns["_messageProbePointHitsTargetElement"](
-		SimpleNamespace(clientObject=_Client()),
-		object(),
-		10,
-		20,
-		(1, 2, 3),
-	) is True
+	assert (
+		ns["_messageProbePointHitsTargetElement"](
+			SimpleNamespace(clientObject=_Client()),
+			object(),
+			10,
+			20,
+			(1, 2, 3),
+		)
+		is True
+	)
 
 
 def test_extract_matched_message_context_menu_labels_ignores_message_body_text():
@@ -1524,9 +1527,7 @@ def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
 		for node in ast.walk(keyboard_fallback)
 	), "keyboard failure should hand off to mouse probe fallback"
 	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_attemptAtOffset"
+		isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_attemptAtOffset"
 		for node in ast.walk(start_mouse_probes)
 	), "mouse probe fallback should use the multi-coordinate probe path"
 	assert any(
@@ -2021,9 +2022,7 @@ def test_copy_read_tries_keyboard_menu_before_mouse_probes():
 		for node in ast.walk(keyboard_fallback)
 	), "copy-read keyboard-first path should send the native applications key"
 	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_findCopyMenuItem"
+		isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_findCopyMenuItem"
 		for node in ast.walk(keyboard_fallback)
 	), "copy-read keyboard-first path should reuse copy menu detection"
 	assert any(
