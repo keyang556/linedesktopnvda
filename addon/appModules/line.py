@@ -3773,8 +3773,16 @@ def _storeChatNameFromText(text):
 		firstLine = re.sub(r"^[上下]午\s*\d+\s*[:：]\s*\d+\s*", "", firstLine)
 		firstLine = firstLine.strip()
 		if firstLine:
+			previousRoom = _currentChatRoomName
 			_currentChatRoomName = firstLine
 			log.info(f"LINE: stored chat room name: {_currentChatRoomName}")
+			if previousRoom != firstLine:
+				try:
+					from . import _chatCache
+
+					_chatCache.onChatRoomChanged(firstLine)
+				except Exception:
+					log.debug("LINE: chat cache room-change hook failed", exc_info=True)
 
 
 def _ocrAndStoreChatName(element):
@@ -5272,6 +5280,37 @@ def _copyAndReadMessage(targetElement):
 		speech.cancelSpeech()
 		ui.message(initialOcrText.strip())
 		return
+	# Background chat cache: if NVDA+Windows+U cached this room's text,
+	# look the focused bubble up by OCR snippet and read it directly,
+	# skipping the right-click copy-read flow entirely.
+	if initialOcrText:
+		try:
+			from . import _chatCache
+
+			cacheActive = _chatCache.isActive()
+			log.debug(
+				f"LINE: chat cache check: active={cacheActive}"
+				f" room={_chatCache.getChatRoomName()!r}"
+				f" entries={len(_chatCache._messages)}"
+				f" ocr={initialOcrText!r}",
+			)
+			if cacheActive:
+				cachedText, _cacheIdx = _chatCache.lookupMessage(initialOcrText)
+				if cachedText:
+					log.info(
+						f"LINE: copy-read served from chat cache: {cachedText!r}",
+					)
+					_restoreClipboard(origClip)
+					speech.cancelSpeech()
+					ui.message(cachedText)
+					return
+				else:
+					log.debug(
+						f"LINE: chat cache lookup returned no match for OCR"
+						f" {initialOcrText!r}",
+					)
+		except Exception:
+			log.debug("LINE: chat cache lookup failed", exc_info=True)
 	_tryKeyboardCopyFallback()
 
 
@@ -8391,6 +8430,7 @@ class AppModule(appModuleHandler.AppModule):
 				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 				return
 			self._messageReaderPending = True
+			self._messageReaderBackgroundCache = False
 			core.callLater(500, self._activateMoreOptionsMenu)
 			# Poll until virtual window is ready, then auto-click 儲存聊天
 			core.callLater(1500, self._messageReaderAutoClickSaveChat)
@@ -8398,6 +8438,32 @@ class AppModule(appModuleHandler.AppModule):
 			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
 			self._messageReaderPending = False
 			ui.message(_("訊息閱讀器功能錯誤"))
+
+	def script_cacheChatToBackground(self, gesture):
+		"""Save chat to a temp file and cache it for background message lookup.
+
+		Behaves like the message reader save flow, but skips the reader dialog
+		so focus stays in the chat room. Subsequent message-list navigation
+		looks up the focused bubble in the cached text via OCR matching
+		instead of running the copy-read flow.
+		"""
+		if getattr(self, "_messageReaderPending", False):
+			ui.message(_("訊息閱讀器正在執行中，請稍候"))
+			return
+		ui.message(_("正在儲存聊天到背景…"))
+		try:
+			if not self._clickMoreOptionsButton():
+				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
+				return
+			self._messageReaderPending = True
+			self._messageReaderBackgroundCache = True
+			core.callLater(500, self._activateMoreOptionsMenu)
+			core.callLater(1500, self._messageReaderAutoClickSaveChat)
+		except Exception as e:
+			log.warning(f"LINE cacheChatToBackground error: {e}", exc_info=True)
+			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
+			ui.message(_("背景快取功能錯誤"))
 
 	def _messageReaderAutoClickSaveChat(self, retriesLeft=15):
 		"""Poll the ChatMoreOptions virtual window until 儲存聊天 is found, then click it."""
@@ -8461,8 +8527,14 @@ class AppModule(appModuleHandler.AppModule):
 				ui.message(_("未偵測到儲存對話框"))
 			return
 
-		# Build temp file path (use system temp dir to avoid locking the addon folder)
-		savePath = os.path.join(tempfile.gettempdir(), "lineDesktop_chat_export.txt")
+		# Build temp file path (use system temp dir to avoid locking the addon folder).
+		# Use a separate file when caching to background so an open reader window
+		# (cleanupPath bound) does not race with the cache file.
+		if getattr(self, "_messageReaderBackgroundCache", False):
+			fileName = "lineDesktop_chat_cache.txt"
+		else:
+			fileName = "lineDesktop_chat_export.txt"
+		savePath = os.path.join(tempfile.gettempdir(), fileName)
 		self._messageReaderSavePath = savePath
 
 		# Pre-delete existing file to suppress the overwrite confirmation dialog
@@ -8630,30 +8702,57 @@ class AppModule(appModuleHandler.AppModule):
 		core.callLater(300, self._messageReaderOpenFile)
 
 	def _messageReaderOpenFile(self):
-		"""Read the saved chat file and open the message reader dialog."""
+		"""Read the saved chat file, then either open the reader or cache silently."""
 		savePath = getattr(self, "_messageReaderSavePath", None)
+		backgroundCache = getattr(self, "_messageReaderBackgroundCache", False)
 		if not savePath or not os.path.isfile(savePath):
 			ui.message(_("找不到儲存的聊天紀錄檔案"))
 			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
 			return
 
 		try:
 			from ._chatParser import parseChatFile
-			from ._messageReader import openMessageReader
 
 			messages = parseChatFile(savePath)
 			if not messages:
 				ui.message(_("聊天紀錄中沒有訊息"))
 				self._messageReaderPending = False
+				self._messageReaderBackgroundCache = False
+				try:
+					if backgroundCache and os.path.isfile(savePath):
+						os.remove(savePath)
+				except Exception:
+					pass
 				return
 
-			log.info(f"LINE: message reader parsed {len(messages)} messages from {savePath}")
-			openMessageReader(messages, cleanupPath=savePath)
+			if backgroundCache:
+				from . import _chatCache
+
+				_chatCache.setCache(messages, savePath, _currentChatRoomName)
+				log.info(
+					f"LINE: cached {len(messages)} messages from {savePath}"
+					f" for room {_currentChatRoomName!r}",
+				)
+				ui.message(
+					_("聊天已快取到背景，瀏覽訊息時將直接讀取（離開聊天室後清除）"),
+				)
+			else:
+				from ._messageReader import openMessageReader
+
+				log.info(
+					f"LINE: message reader parsed {len(messages)} messages from {savePath}",
+				)
+				openMessageReader(messages, cleanupPath=savePath)
 			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
 		except Exception as e:
 			log.warning(f"LINE: message reader parse error: {e}", exc_info=True)
-			ui.message(_("訊息閱讀器開啟錯誤"))
+			ui.message(
+				_("背景快取開啟錯誤") if backgroundCache else _("訊息閱讀器開啟錯誤"),
+			)
 			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
 
 	def script_openFileDialog(self, gesture):
 		"""Pass Ctrl+O to LINE, suppress addon while file dialog is open."""
@@ -8758,6 +8857,12 @@ class AppModule(appModuleHandler.AppModule):
 		_currentChatRoomName = None
 		_chatListMode = False
 		_chatListSearchField = None
+		try:
+			from . import _chatCache
+
+			_chatCache.clearCache()
+		except Exception:
+			log.debug("LINE: chat cache clear-on-tab-switch failed", exc_info=True)
 		gesture.send()
 		# Extract the number key from the gesture identifier
 		# gesture.mainKeyName gives us the key name like "1", "2", "3"
