@@ -8477,6 +8477,7 @@ class AppModule(appModuleHandler.AppModule):
 				core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
 			else:
 				self._messageReaderPending = False
+				self._messageReaderBackgroundCache = False
 				ui.message(_("找不到儲存聊天選項"))
 			return
 
@@ -8491,6 +8492,7 @@ class AppModule(appModuleHandler.AppModule):
 			core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
 		else:
 			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
 			ui.message(_("找不到儲存聊天選項"))
 
 	def _messageReaderHandleSaveDialog(self, retriesLeft=10):
@@ -8523,6 +8525,7 @@ class AppModule(appModuleHandler.AppModule):
 				core.callLater(300, lambda: self._messageReaderHandleSaveDialog(retriesLeft - 1))
 			else:
 				self._messageReaderPending = False
+				self._messageReaderBackgroundCache = False
 				ui.message(_("未偵測到儲存對話框"))
 			return
 
