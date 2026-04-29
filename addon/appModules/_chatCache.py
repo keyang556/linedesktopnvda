@@ -103,6 +103,10 @@ def isActive():
 	return bool(_messages)
 
 
+def getMessageCount():
+	return len(_messages)
+
+
 def getChatRoomName():
 	return _chatRoomName
 
@@ -256,7 +260,7 @@ def lookupMessage(ocrText):
 	  - Time match (including AM/PM conversion)  +50
 	  - Name match                               +10
 	  - Same date group as cursor                +20
-	  - Chat-order proximity to cursor           −0.5 per position
+	  - Chat-order proximity to cursor           −0.05 per position
 
 	Date separators act as definitive anchors: matching one sets the cursor
 	precisely, giving a strong date-group bias to the next lookups.
@@ -334,7 +338,7 @@ def lookupMessage(ocrText):
 		if cursorDateGroup >= 0 and _messageDateGroups[i] == cursorDateGroup:
 			score += 20
 		# Chat-order proximity to last confirmed position.
-		score -= abs(i - cursor) * 0.5
+		score -= abs(i - cursor) * 0.05
 
 		if score > bestScore:
 			bestScore = score

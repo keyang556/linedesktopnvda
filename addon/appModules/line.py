@@ -5291,7 +5291,7 @@ def _copyAndReadMessage(targetElement):
 			log.debug(
 				f"LINE: chat cache check: active={cacheActive}"
 				f" room={_chatCache.getChatRoomName()!r}"
-				f" entries={len(_chatCache._messages)}"
+				f" entries={_chatCache.getMessageCount()}"
 				f" ocr={initialOcrText!r}",
 			)
 			if cacheActive:
