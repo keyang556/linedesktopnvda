@@ -1116,6 +1116,25 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("訊息閱讀器功能錯誤: {error}").format(error=e))
 
 	@script(
+		# Translators: Description of a script to cache chat text in the background
+		description=_("LINE: 將聊天快取到背景供訊息列表直接讀取"),
+		gesture="kb:NVDA+windows+u",
+		category="LINE Desktop",
+	)
+	def script_cacheChatToBackground(self, gesture):
+		import ui
+
+		lineApp = _getLineAppModule()
+		if not lineApp:
+			ui.message(_("LINE 未執行"))
+			return
+		try:
+			lineApp.script_cacheChatToBackground(gesture)
+		except Exception as e:
+			log.warning(f"LINE cacheChatToBackground error: {e}", exc_info=True)
+			ui.message(_("背景快取功能錯誤: {error}").format(error=e))
+
+	@script(
 		# Translators: Description of a script to click the more options button
 		description=_("LINE: 點擊更多選項按鈕"),
 		gesture="kb:NVDA+windows+o",

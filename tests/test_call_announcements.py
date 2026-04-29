@@ -69,11 +69,14 @@ def test_call_duration_handles_ocr_punctuation_variants():
 
 
 def test_call_duration_ignores_log_ocr_noise():
-	assert helpers["_extractCallDuration"](
-		"- conng.conngManager._loaaconTlg 1 : zy : 45\n"
-		"Loading config: C:\\lJsers\\chang\\AppData\\Roaming\\\n"
-		"INFO - config.ConfigManager._loadConfig ( 1 1 : 29 : 45",
-	) is None
+	assert (
+		helpers["_extractCallDuration"](
+			"- conng.conngManager._loaaconTlg 1 : zy : 45\n"
+			"Loading config: C:\\lJsers\\chang\\AppData\\Roaming\\\n"
+			"INFO - config.ConfigManager._loadConfig ( 1 1 : 29 : 45",
+		)
+		is None
+	)
 
 
 def test_call_duration_ignores_message_body_with_ocr_clock_suffix():
