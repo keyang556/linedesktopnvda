@@ -2701,6 +2701,37 @@ def _getDpiScale(hwnd=None):
 	return scale
 
 
+# Physical-pixel cap for the right edge of LINE's left sidebar (icons column +
+# chat list panel). Empirically, LINE renders the sidebar at a fixed physical
+# pixel width regardless of DPI scaling (a Qt quirk on Windows): observed at
+# both 96 DPI and 144 DPI maximized the sidebar still ends near X=547. We cap
+# conservatively at 540 (observed edge ≈ 547, 7 px safety margin) so we do NOT
+# multiply by DPI scale — that double-counts and lets the cap drift back into
+# the message area when the window is maximized at high DPI.
+_LINE_SIDEBAR_RIGHT_BASE = 540
+
+
+def _getSidebarRightBoundary(wndRect, _hwnd=None, percentage=0.45):
+	"""Return the screen-space X separating LINE's sidebar from the message area.
+
+	LINE keeps the sidebar at a fixed physical-pixel width regardless of window
+	size or DPI, so a pure ``wndWidth * percentage`` threshold lands deep in the
+	message area when the window is maximized. We cap the percentage at the
+	empirical sidebar edge so the same code path works for standard windows,
+	maximized windows, and high-DPI configurations.
+
+	``_hwnd`` is reserved for future per-monitor DPI queries and is not used yet.
+	"""
+	try:
+		wndLeft = int(wndRect.left)
+		wndWidth = int(wndRect.right - wndRect.left)
+	except Exception:
+		return None
+	if wndWidth <= 0:
+		return None
+	return wndLeft + min(int(wndWidth * percentage), _LINE_SIDEBAR_RIGHT_BASE)
+
+
 def _scheduleQueryAndSpeakUIAFocus(delay=100):
 	"""Schedule a focus query, dropping stale callbacks when navigation repeats quickly."""
 	global _focusQueryRequestId
@@ -3939,9 +3970,8 @@ def _isInChatListContext(handler):
 					if hwnd:
 						wndRect = ctypes.wintypes.RECT()
 						ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-						wndWidth = wndRect.right - wndRect.left
-						if wndWidth > 0:
-							sidebarRight = wndRect.left + int(wndWidth * 0.45)
+						sidebarRight = _getSidebarRightBoundary(wndRect, hwnd)
+						if sidebarRight is not None:
 							listRect = listEl.CurrentBoundingRectangle
 							if listRect.left >= sidebarRight:
 								# List is on the right side — message list, not chat list
@@ -4021,12 +4051,9 @@ def _findChatListFromWindow(handler):
 		# Get window rect to identify sidebar area
 		wndRect = ctypes.wintypes.RECT()
 		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-		wndWidth = wndRect.right - wndRect.left
-		if wndWidth <= 0:
+		sidebarRight = _getSidebarRightBoundary(wndRect, hwnd)
+		if sidebarRight is None:
 			return None, None
-
-		# The sidebar is roughly the left 35% of the window
-		sidebarRight = wndRect.left + int(wndWidth * 0.45)
 
 		# Get root UIA element for the window
 		rootEl = handler.clientObject.ElementFromHandle(hwnd)
@@ -4291,11 +4318,13 @@ def _queryAndSpeakUIAFocus():
 						lineHwnd,
 						ctypes.byref(wr),
 					)
-					winWidth = int(wr.right - wr.left)
-					winLeft = int(wr.left)
-					# Message list items are in the right portion
-					# (element left edge > 35% of window width from left)
-					if winWidth > 0 and (elLeft - winLeft) > winWidth * 0.35:
+					# Message list items sit to the right of LINE's sidebar
+					# (icons + chat list). The boundary uses a fixed pixel cap
+					# so the test still works when the window is maximized.
+					# >= is intentional: an element whose left edge lands exactly
+					# on the boundary belongs to the message area, not the sidebar.
+					boundary = _getSidebarRightBoundary(wr, lineHwnd, percentage=0.35)
+					if boundary is not None and elLeft >= boundary:
 						isMessageItem = True
 				except Exception:
 					pass
