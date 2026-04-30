@@ -2704,13 +2704,14 @@ def _getDpiScale(hwnd=None):
 # Physical-pixel cap for the right edge of LINE's left sidebar (icons column +
 # chat list panel). Empirically, LINE renders the sidebar at a fixed physical
 # pixel width regardless of DPI scaling (a Qt quirk on Windows): observed at
-# both 96 DPI and 144 DPI maximized the sidebar still ends near X=547. So we
-# do NOT multiply by DPI scale — that double-counts and lets the cap drift
-# back into the message area when the window is maximized at high DPI.
+# both 96 DPI and 144 DPI maximized the sidebar still ends near X=547. We cap
+# conservatively at 540 (observed edge ≈ 547, 7 px safety margin) so we do NOT
+# multiply by DPI scale — that double-counts and lets the cap drift back into
+# the message area when the window is maximized at high DPI.
 _LINE_SIDEBAR_RIGHT_BASE = 540
 
 
-def _getSidebarRightBoundary(wndRect, hwnd=None, percentage=0.45):
+def _getSidebarRightBoundary(wndRect, _hwnd=None, percentage=0.45):
 	"""Return the screen-space X separating LINE's sidebar from the message area.
 
 	LINE keeps the sidebar at a fixed physical-pixel width regardless of window
@@ -2718,6 +2719,8 @@ def _getSidebarRightBoundary(wndRect, hwnd=None, percentage=0.45):
 	message area when the window is maximized. We cap the percentage at the
 	empirical sidebar edge so the same code path works for standard windows,
 	maximized windows, and high-DPI configurations.
+
+	``_hwnd`` is reserved for future per-monitor DPI queries and is not used yet.
 	"""
 	try:
 		wndLeft = int(wndRect.left)
@@ -4318,6 +4321,8 @@ def _queryAndSpeakUIAFocus():
 					# Message list items sit to the right of LINE's sidebar
 					# (icons + chat list). The boundary uses a fixed pixel cap
 					# so the test still works when the window is maximized.
+					# >= is intentional: an element whose left edge lands exactly
+					# on the boundary belongs to the message area, not the sidebar.
 					boundary = _getSidebarRightBoundary(wr, lineHwnd, percentage=0.35)
 					if boundary is not None and elLeft >= boundary:
 						isMessageItem = True
