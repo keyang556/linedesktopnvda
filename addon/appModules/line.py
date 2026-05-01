@@ -3506,6 +3506,8 @@ def _ocrReadElementText(rawElement, appModuleRef=None, preferCallAnnouncement=Fa
 						if preferCallAnnouncement:
 							announcement = _getCallAnnouncementFromOcr(ocrText)
 						log.info(f"LINE OCR nav result: {ocrText!r}")
+						if not preferCallAnnouncement:
+							_storeChatNameFromText(ocrText)
 						speech.cancelSpeech()
 						ui.message(announcement or ocrText)
 					else:
@@ -8214,21 +8216,35 @@ class AppModule(appModuleHandler.AppModule):
 	# ── Read chat room name ────────────────────────────────────────────
 
 	def _readChatRoomName(self):
-		"""OCR the chat header area to read the current chat room name.
+		"""Read the current chat room name.
 
-		LINE's Qt6 renders the chat room name (contact or group name)
-		in the header bar, but does not expose it via UIA.
-		We calculate the header title region from window geometry and
-		use Windows OCR to extract the text.
-
-		The header layout (left to right):
-		  - Back arrow / avatar (left side)
-		  - Chat room name (center area)
-		  - Toolbar icons on the right (search, phone, notes, menu)
+		Priority order:
+		  1. Cache file name [LINE]姓名.txt (after NVDA+Windows+U) — extract the
+		     name segment between the [LINE] prefix and the .txt suffix.
+		  2. Header-area OCR — fallback when no cache exists.
 		"""
 		import ctypes
 		import ctypes.wintypes
 
+		# 1. Background cache file name (NVDA+Windows+U was used for this room)
+		try:
+			from . import _chatCache
+
+			if _chatCache.isActive():
+				tempPath = _chatCache.getTempPath()
+				if tempPath:
+					base = os.path.basename(tempPath)
+					stem, ext = os.path.splitext(base)
+					if ext.lower() == ".txt" and stem.startswith("[LINE]"):
+						nameFromFile = stem[len("[LINE]") :].strip()
+						if nameFromFile:
+							log.info(f"LINE: using chat name from cache file {nameFromFile!r}")
+							ui.message(nameFromFile)
+							return
+		except Exception:
+			log.debug("LINE: chat cache file-name lookup failed", exc_info=True)
+
+		# 2. Header-area OCR (fallback)
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
 			ui.message(_("找不到 LINE 視窗"))
@@ -8285,7 +8301,6 @@ class AppModule(appModuleHandler.AppModule):
 			f"LINE: OCR chat room name area: ({nameLeft},{nameTop}) {nameW}x{nameH}, scale={scale:.2f}",
 		)
 
-		# Use _ocrWindowArea with the calculated region
 		try:
 			ocrText = self._ocrWindowArea(
 				hwnd,
@@ -8556,11 +8571,60 @@ class AppModule(appModuleHandler.AppModule):
 				ui.message(_("未偵測到儲存對話框"))
 			return
 
+		# Find the filename edit control in the Save dialog
+		# The file dialog has a ComboBoxEx32 > ComboBox > Edit hierarchy
+		editHwnd = self._findSaveDialogEdit(dialogHwnd)
+		if not editHwnd:
+			self._messageReaderPending = False
+			self._messageReaderBackgroundCache = False
+			ui.message(_("無法操作儲存對話框"))
+			return
+
+		# Read LINE's pre-filled filename — it's [LINE]{chatRoomName}.txt and
+		# carries the authoritative room name straight from LINE (much cleaner
+		# than OCR-derived names that include unread badges like "( ) 9").
+		WM_GETTEXT = 0x000D
+		WM_GETTEXTLENGTH = 0x000E
+		dialogStem = ""
+		try:
+			textLen = ctypes.windll.user32.SendMessageW(editHwnd, WM_GETTEXTLENGTH, 0, 0)
+			if textLen > 0:
+				readBuf = ctypes.create_unicode_buffer(textLen + 1)
+				ctypes.windll.user32.SendMessageW(editHwnd, WM_GETTEXT, textLen + 1, readBuf)
+				suggested = readBuf.value or ""
+				stem, ext = os.path.splitext(os.path.basename(suggested))
+				if ext.lower() == ".txt" and stem.startswith("[LINE]"):
+					dialogStem = stem[len("[LINE]") :].strip()
+				log.info(
+					f"LINE: save dialog suggested filename {suggested!r}, extracted stem {dialogStem!r}",
+				)
+		except Exception as e:
+			log.debug(f"LINE: could not read save dialog edit text: {e}", exc_info=True)
+
+		# Adopt the dialog's chat name so the cache and any later NVDA+Windows+T
+		# read use the LINE-authoritative name, not a stale list-nav OCR value.
+		if dialogStem:
+			global _currentChatRoomName
+			if _currentChatRoomName != dialogStem:
+				log.info(
+					f"LINE: updating chat room name from save dialog: {_currentChatRoomName!r} -> {dialogStem!r}",
+				)
+				_currentChatRoomName = dialogStem
+
 		# Build temp file path (use system temp dir to avoid locking the addon folder).
 		# Use a separate file when caching to background so an open reader window
 		# (cleanupPath bound) does not race with the cache file.
 		if getattr(self, "_messageReaderBackgroundCache", False):
-			fileName = "lineDesktop_chat_cache.txt"
+			# Name cache files [LINE]姓名.txt so users can identify which room
+			# each cache belongs to. Prefer the dialog stem (LINE's own name)
+			# over _currentChatRoomName which may be empty or list-nav noise.
+			candidate = dialogStem or (_currentChatRoomName or "").strip()
+			safeName = re.sub(r'[\\/:*?"<>|]', "_", candidate) if candidate else ""
+			safeName = safeName.rstrip(" .")
+			if safeName:
+				fileName = f"[LINE]{safeName}.txt"
+			else:
+				fileName = "lineDesktop_chat_cache.txt"
 		else:
 			fileName = "lineDesktop_chat_export.txt"
 		savePath = os.path.join(tempfile.gettempdir(), fileName)
@@ -8572,15 +8636,6 @@ class AppModule(appModuleHandler.AppModule):
 				os.remove(savePath)
 		except Exception as e:
 			log.warning(f"LINE: could not pre-delete chat export: {e}")
-
-		# Find the filename edit control in the Save dialog
-		# The file dialog has a ComboBoxEx32 > ComboBox > Edit hierarchy
-		editHwnd = self._findSaveDialogEdit(dialogHwnd)
-		if not editHwnd:
-			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
-			ui.message(_("無法操作儲存對話框"))
-			return
 
 		# Set the filename
 		WM_SETTEXT = 0x000C
