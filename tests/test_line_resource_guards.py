@@ -49,6 +49,114 @@ class _Log:
 		pass
 
 
+def test_window_client_screen_rect_converts_client_area_to_screen_coordinates():
+	class _Rect:
+		left = 0
+		top = 0
+		right = 1280
+		bottom = 720
+
+	class _Point:
+		def __init__(self):
+			self.x = 0
+			self.y = 0
+
+	def _get_client_rect(_hwnd, rect):
+		rect.left = 0
+		rect.top = 0
+		rect.right = 1280
+		rect.bottom = 720
+		return 1
+
+	def _client_to_screen(_hwnd, point):
+		point.x += 320
+		point.y += 180
+		return 1
+
+	user32 = SimpleNamespace(
+		GetClientRect=_get_client_rect,
+		ClientToScreen=_client_to_screen,
+	)
+	ctypes_module = SimpleNamespace(
+		windll=SimpleNamespace(user32=user32),
+		wintypes=SimpleNamespace(RECT=_Rect, POINT=_Point),
+		byref=lambda value: value,
+	)
+	ns = _load_line_symbols(function_names={"_getWindowClientScreenRect"})
+
+	assert ns["_getWindowClientScreenRect"](101, ctypesModule=ctypes_module) == (320, 180, 1600, 900)
+
+
+def test_window_screen_rect_prefers_dwm_extended_frame_bounds():
+	class _Rect:
+		def __init__(self):
+			self.left = 0
+			self.top = 0
+			self.right = 0
+			self.bottom = 0
+
+	def _get_window_rect(_hwnd, rect):
+		rect.left = 10
+		rect.top = 20
+		rect.right = 1300
+		rect.bottom = 760
+		return 1
+
+	def _dwm_get_window_attribute(_hwnd, _attr, rect, _size):
+		rect.left = 18
+		rect.top = 28
+		rect.right = 1292
+		rect.bottom = 752
+		return 0
+
+	ctypes_module = SimpleNamespace(
+		windll=SimpleNamespace(
+			user32=SimpleNamespace(GetWindowRect=_get_window_rect),
+			dwmapi=SimpleNamespace(DwmGetWindowAttribute=_dwm_get_window_attribute),
+		),
+		wintypes=SimpleNamespace(RECT=_Rect),
+		byref=lambda value: value,
+		sizeof=lambda _value: 16,
+	)
+	ns = _load_line_symbols(function_names={"_rectTupleFromWinRect", "_getWindowScreenRect"})
+
+	assert ns["_getWindowScreenRect"](101, ctypesModule=ctypes_module) == (18, 28, 1292, 752)
+
+
+def test_chat_header_icon_point_scales_from_client_rect_for_common_dpi_values():
+	ns = _load_line_symbols(
+		assignment_names={
+			"_CHAT_HEADER_ICON_Y_BASE",
+			"_CHAT_HEADER_ICON_SPACING_BASE",
+			"_CHAT_HEADER_FIRST_ICON_OFFSET_BASE",
+		},
+		function_names={"_scaleLineUiPixels", "_getChatHeaderIconPointFromRect"},
+	)
+	rect = (100, 50, 2020, 1130)
+
+	assert ns["_getChatHeaderIconPointFromRect"](rect, 1.0, iconIndex=0) == (2005, 105)
+	assert ns["_getChatHeaderIconPointFromRect"](rect, 1.5, iconIndex=0) == (1998, 132)
+	assert ns["_getChatHeaderIconPointFromRect"](rect, 2.0, iconIndex=0) == (1990, 160)
+	assert ns["_getChatHeaderIconPointFromRect"](rect, 1.5, iconIndex=2) == (1918, 132)
+
+
+def test_chat_header_icon_point_prefers_client_rect_over_outer_frame():
+	ns = _load_line_symbols(
+		assignment_names={
+			"_CHAT_HEADER_ICON_Y_BASE",
+			"_CHAT_HEADER_ICON_SPACING_BASE",
+			"_CHAT_HEADER_FIRST_ICON_OFFSET_BASE",
+		},
+		function_names={"_scaleLineUiPixels", "_getChatHeaderIconPointFromRect", "_getChatHeaderIconPoint"},
+		namespace={"log": _Log()},
+	)
+	ns["_getDpiScale"] = lambda _hwnd: 1.5
+	ns["_getWindowClientScreenRect"] = lambda _hwnd: (12, 34, 1912, 1074)
+	ns["_getWindowScreenRect"] = lambda _hwnd: (0, 0, 1920, 1080)
+
+	assert ns["_getChatHeaderIconPoint"](101, iconIndex=0) == (1890, 116)
+
+
 def test_notes_window_context_uses_only_fresh_cache():
 	ns = _load_line_symbols(
 		assignment_names={

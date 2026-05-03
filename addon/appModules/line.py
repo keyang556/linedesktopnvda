@@ -2701,6 +2701,161 @@ def _getDpiScale(hwnd=None):
 	return scale
 
 
+_CHAT_HEADER_ICON_Y_BASE = 55
+_CHAT_HEADER_ICON_SPACING_BASE = 27
+_CHAT_HEADER_FIRST_ICON_OFFSET_BASE = 15
+
+
+def _scaleLineUiPixels(value, scale):
+	try:
+		scale = float(scale)
+	except Exception:
+		scale = 1.0
+	if scale <= 0:
+		scale = 1.0
+	return int(value * scale)
+
+
+def _rectTupleFromWinRect(rect):
+	try:
+		left = int(rect.left)
+		top = int(rect.top)
+		right = int(rect.right)
+		bottom = int(rect.bottom)
+	except Exception:
+		return None
+	if right <= left or bottom <= top:
+		return None
+	return (left, top, right, bottom)
+
+
+def _getWindowScreenRect(hwnd, ctypesModule=None):
+	"""Return a top-level window rectangle in screen coordinates.
+
+	Prefer DWM extended frame bounds when available because they are not affected
+	by the invisible resize border around Qt windows.
+	"""
+	if not hwnd:
+		return None
+	if ctypesModule is None:
+		ctypesModule = ctypes
+
+	try:
+		rect = ctypesModule.wintypes.RECT()
+		result = ctypesModule.windll.user32.GetWindowRect(hwnd, ctypesModule.byref(rect))
+		if result == 0:
+			return None
+		windowRect = _rectTupleFromWinRect(rect)
+	except Exception:
+		windowRect = None
+
+	try:
+		dwmapi = getattr(ctypesModule.windll, "dwmapi", None)
+		if dwmapi:
+			DWMWA_EXTENDED_FRAME_BOUNDS = 9
+			dwmRect = ctypesModule.wintypes.RECT()
+			hr = dwmapi.DwmGetWindowAttribute(
+				hwnd,
+				DWMWA_EXTENDED_FRAME_BOUNDS,
+				ctypesModule.byref(dwmRect),
+				ctypesModule.sizeof(dwmRect),
+			)
+			extendedRect = _rectTupleFromWinRect(dwmRect)
+			if hr == 0 and extendedRect:
+				return extendedRect
+	except Exception:
+		pass
+
+	return windowRect
+
+
+def _getWindowClientScreenRect(hwnd, ctypesModule=None):
+	"""Return a window client rectangle converted to screen coordinates."""
+	if not hwnd:
+		return None
+	if ctypesModule is None:
+		ctypesModule = ctypes
+
+	try:
+		clientRect = ctypesModule.wintypes.RECT()
+		result = ctypesModule.windll.user32.GetClientRect(hwnd, ctypesModule.byref(clientRect))
+		if result == 0:
+			return None
+		width = int(clientRect.right - clientRect.left)
+		height = int(clientRect.bottom - clientRect.top)
+		if width <= 0 or height <= 0:
+			return None
+
+		topLeft = ctypesModule.wintypes.POINT()
+		topLeft.x = 0
+		topLeft.y = 0
+		bottomRight = ctypesModule.wintypes.POINT()
+		bottomRight.x = width
+		bottomRight.y = height
+		if ctypesModule.windll.user32.ClientToScreen(hwnd, ctypesModule.byref(topLeft)) == 0:
+			return None
+		if ctypesModule.windll.user32.ClientToScreen(hwnd, ctypesModule.byref(bottomRight)) == 0:
+			return None
+		left = int(topLeft.x)
+		top = int(topLeft.y)
+		right = int(bottomRight.x)
+		bottom = int(bottomRight.y)
+		if right <= left or bottom <= top:
+			return None
+		return (left, top, right, bottom)
+	except Exception:
+		return None
+
+
+def _getChatHeaderIconPointFromRect(screenRect, scale, iconIndex=0):
+	try:
+		left, top, right, bottom = [int(value) for value in screenRect]
+		iconIndex = max(0, int(iconIndex))
+	except Exception:
+		return None
+	if right <= left or bottom <= top:
+		return None
+
+	iconY = top + _scaleLineUiPixels(_CHAT_HEADER_ICON_Y_BASE, scale)
+	iconSpacing = _scaleLineUiPixels(_CHAT_HEADER_ICON_SPACING_BASE, scale)
+	firstIconOffset = _scaleLineUiPixels(_CHAT_HEADER_FIRST_ICON_OFFSET_BASE, scale)
+	iconX = right - firstIconOffset - (iconIndex * iconSpacing)
+
+	if iconX < left or iconX > right or iconY < top or iconY > bottom:
+		return None
+	return (iconX, iconY)
+
+
+def _getChatHeaderIconPoint(hwnd, iconIndex=0):
+	"""Return a LINE chat header icon point in screen coordinates.
+
+	Use the client area before the outer window frame so hidden resize borders
+	and DWM frame differences do not shift header clicks across DPI settings.
+	"""
+	scale = _getDpiScale(hwnd)
+	contentRect = _getWindowClientScreenRect(hwnd)
+	rectSource = "client"
+	if not contentRect:
+		contentRect = _getWindowScreenRect(hwnd)
+		rectSource = "window"
+	if not contentRect:
+		log.debug("LINE: no window rectangle for chat header icon")
+		return None
+
+	point = _getChatHeaderIconPointFromRect(contentRect, scale, iconIndex=iconIndex)
+	if point:
+		log.info(
+			f"LINE: chat header icon index={iconIndex} at {point}, "
+			f"rect={contentRect}, source={rectSource}, dpiScale={scale:.2f}",
+		)
+	else:
+		log.warning(
+			f"LINE: chat header icon index={iconIndex} outside rect={contentRect}, "
+			f"source={rectSource}, dpiScale={scale:.2f}",
+		)
+	return point
+
+
 # Physical-pixel cap for the right edge of LINE's left sidebar (icons column +
 # chat list panel). Empirically, LINE renders the sidebar at a fixed physical
 # pixel width regardless of DPI scaling (a Qt quirk on Windows): observed at
@@ -6482,9 +6637,9 @@ class AppModule(appModuleHandler.AppModule):
 		"""Get the screen position of the phone icon in the LINE chat header.
 
 		LINE's Qt6 UI does not expose header toolbar buttons via UIA.
-		We use the window geometry to calculate where the icons are.
-		All pixel offsets are scaled by system DPI so positions adapt to
-		different display scaling settings (100%–300%).
+		We use the window client geometry to calculate where the icons are.
+		All pixel offsets are scaled by window DPI so positions adapt to
+		different display scaling settings.
 
 		The chat header has icons from right to left:
 		  Index 0: More options (⋮ three dots menu)
@@ -6496,71 +6651,18 @@ class AppModule(appModuleHandler.AppModule):
 			(phoneX, phoneY, winRight) tuple, or None if window not found.
 		"""
 		import ctypes
-		import ctypes.wintypes
 
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
 			log.debug("LINE: no foreground window for header click")
 			return None
 
-		scale = _getDpiScale(hwnd)
-
-		# Get window rect — try DwmGetWindowAttribute first for
-		# accurate extended frame bounds (avoids DPI virtualization).
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		winLeft = rect.left
-		winTop = rect.top
-		winRight = rect.right
-		winWidth = winRight - winLeft
-
-		# Also try DWM extended frame bounds
-		dwmRect = ctypes.wintypes.RECT()
-		try:
-			DWMWA_EXTENDED_FRAME_BOUNDS = 9
-			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
-				hwnd,
-				DWMWA_EXTENDED_FRAME_BOUNDS,
-				ctypes.byref(dwmRect),
-				ctypes.sizeof(dwmRect),
-			)
-			if hr == 0:
-				log.info(
-					f"LINE: DWM frame bounds=({dwmRect.left},{dwmRect.top},{dwmRect.right},{dwmRect.bottom})",
-				)
-				# Use DWM bounds if different (more accurate)
-				if dwmRect.right != rect.right or dwmRect.top != rect.top:
-					log.info("LINE: using DWM bounds instead of GetWindowRect")
-					winLeft = dwmRect.left
-					winTop = dwmRect.top
-					winRight = dwmRect.right
-					winWidth = winRight - winLeft
-		except Exception:
-			pass
-
-		log.info(
-			f"LINE: window rect=({winLeft},{winTop},{winRight},{rect.bottom}), "
-			f"width={winWidth}, dpiScale={scale:.2f}",
-		)
-
-		# Reference values at 96 DPI (100% scaling), scaled by DPI factor.
-		# Icon spacing ~27px at 96 DPI, first icon offset ~15px from right edge.
-		iconY = winTop + int(55 * scale)
-		iconSpacing = int(27 * scale)
-		firstIconOffset = int(15 * scale)
-		iconX = winRight - firstIconOffset - (2 * iconSpacing)
-
-		log.info(
-			f"LINE: header icon pos: iconX={iconX}, iconY={iconY}, "
-			f"spacing={iconSpacing}, offset={firstIconOffset}",
-		)
-
-		# Verify position is within window bounds
-		if iconX < winLeft or iconX > winRight:
-			log.warning(f"LINE: icon position {iconX} outside window bounds")
+		iconPoint = _getChatHeaderIconPoint(hwnd, iconIndex=2)
+		contentRect = _getWindowClientScreenRect(hwnd) or _getWindowScreenRect(hwnd)
+		if not iconPoint or not contentRect:
 			return None
 
-		return (iconX, iconY, winRight)
+		return (iconPoint[0], iconPoint[1], contentRect[2])
 
 	def _clickMoreOptionsButton(self):
 		"""Click the more options (⋮) button in the chat header.
@@ -6569,55 +6671,18 @@ class AppModule(appModuleHandler.AppModule):
 		Returns True if successful, False if window not found.
 		"""
 		import ctypes
-		import ctypes.wintypes
 
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
 			log.debug("LINE: no foreground window for more options click")
 			return False
 
-		scale = _getDpiScale(hwnd)
-
-		# Get window rect
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		winLeft = rect.left
-		winTop = rect.top
-		winRight = rect.right
-
-		# Try DWM extended frame bounds for accuracy
-		dwmRect = ctypes.wintypes.RECT()
-		try:
-			DWMWA_EXTENDED_FRAME_BOUNDS = 9
-			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
-				hwnd,
-				DWMWA_EXTENDED_FRAME_BOUNDS,
-				ctypes.byref(dwmRect),
-				ctypes.sizeof(dwmRect),
-			)
-			if hr == 0 and (dwmRect.right != rect.right or dwmRect.top != rect.top):
-				winLeft = dwmRect.left
-				winTop = dwmRect.top
-				winRight = dwmRect.right
-		except Exception:
-			pass
-
-		# Calculate more options button position (rightmost icon, index 0)
-		iconY = winTop + int(55 * scale)
-		firstIconOffset = int(15 * scale)
-		moreOptionsX = winRight - firstIconOffset
-
-		log.info(
-			f"LINE: clicking more options button at ({moreOptionsX}, {iconY}), dpiScale={scale:.2f}",
-		)
-
-		# Verify position is within window bounds
-		if moreOptionsX < winLeft or moreOptionsX > winRight:
-			log.warning(f"LINE: more options position {moreOptionsX} outside window bounds")
+		clickPoint = _getChatHeaderIconPoint(hwnd, iconIndex=0)
+		if not clickPoint:
 			return False
 
 		# Click the button
-		self._clickAtPosition(moreOptionsX, iconY, hwnd)
+		self._clickAtPosition(clickPoint[0], clickPoint[1], hwnd)
 
 		return True
 
@@ -7941,10 +8006,12 @@ class AppModule(appModuleHandler.AppModule):
 			):
 				return
 
-			wRect = wintypes.RECT()
-			ctypes.windll.user32.GetWindowRect(targetHwnd, ctypes.byref(wRect))
-			width = wRect.right - wRect.left
-			height = wRect.bottom - wRect.top
+			windowRect = _getWindowScreenRect(targetHwnd)
+			if not windowRect:
+				return
+			left, top, right, bottom = windowRect
+			width = right - left
+			height = bottom - top
 			if width < 50 or height < 100:
 				return
 
@@ -7954,10 +8021,10 @@ class AppModule(appModuleHandler.AppModule):
 			threadWindows.append(
 				{
 					"hwnd": targetHwnd,
-					"left": wRect.left,
-					"top": wRect.top,
-					"right": wRect.right,
-					"bottom": wRect.bottom,
+					"left": left,
+					"top": top,
+					"right": right,
+					"bottom": bottom,
 					"width": width,
 					"height": height,
 					"area": width * height,
@@ -7981,8 +8048,12 @@ class AppModule(appModuleHandler.AppModule):
 
 		mainWindow = max(threadWindows, key=lambda item: item["area"])
 		scale = _getDpiScale(mainWindow["hwnd"])
-		anchorX = mainWindow["right"] - int(15 * scale)
-		anchorY = mainWindow["top"] + int(55 * scale)
+		anchorPoint = _getChatHeaderIconPoint(mainWindow["hwnd"], iconIndex=0)
+		if anchorPoint:
+			anchorX, anchorY = anchorPoint
+		else:
+			anchorX = mainWindow["right"] - _scaleLineUiPixels(_CHAT_HEADER_FIRST_ICON_OFFSET_BASE, scale)
+			anchorY = mainWindow["top"] + _scaleLineUiPixels(_CHAT_HEADER_ICON_Y_BASE, scale)
 		mainArea = max(mainWindow["area"], 1)
 
 		def _distanceToRect(pointX, pointY, rectInfo):

@@ -77,6 +77,30 @@ def test_match_menu_label_handles_known_ocr_variants():
 	assert chat_more_options._matchMenuLabel("llnedes") is None
 
 
+def test_extract_ocr_lines_uses_word_rects_when_line_rect_is_missing():
+	class _Word:
+		def __init__(self, left, top, width, height):
+			self.left = left
+			self.top = top
+			self.width = width
+			self.height = height
+
+	class _Line:
+		text = "儲存聊天"
+
+		def __init__(self):
+			self.words = [
+				_Word(760, 288, 42, 27),
+				_Word(805, 290, 38, 25),
+			]
+
+	result = types.SimpleNamespace(lines=[_Line()])
+
+	assert chat_more_options._extractOcrLines(result) == [
+		{"text": "儲存聊天", "rect": (760, 288, 843, 315)},
+	]
+
+
 def test_build_menu_elements_keeps_only_actionable_items_and_uses_line_rects():
 	lines = [
 		{"text": "5", "rect": (1070, 95, 1090, 118)},
@@ -164,6 +188,158 @@ def test_build_menu_elements_aligns_to_popup_row_rects_for_lower_items():
 		(1203, 523),
 		(1203, 572),
 	]
+
+
+def test_build_menu_elements_aligns_sparse_100_percent_ocr_to_known_row_layout():
+	lines = [
+		{"text": "關閉提醒", "rect": None},
+		{"text": "投票", "rect": None},
+		{"text": "儲存聊天", "rect": None},
+		{"text": "背景設定", "rect": None},
+	]
+	row_rects = [
+		(713, 77, 893, 104),
+		(713, 104, 893, 131),
+		(713, 142, 893, 169),
+		(713, 169, 893, 196),
+		(713, 196, 893, 223),
+		(713, 223, 893, 250),
+		(713, 250, 893, 277),
+		(713, 288, 893, 315),
+		(713, 326, 893, 353),
+		(713, 353, 893, 380),
+		(713, 380, 893, 407),
+		(713, 418, 893, 464),
+	]
+
+	elements = chat_more_options._buildMenuElements(
+		lines,
+		(703, 61, 903, 480),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == [
+		"關閉提醒",
+		"邀請",
+		"相簿",
+		"照片・影片",
+		"檔案",
+		"連結",
+		"投票",
+		"儲存聊天",
+		"背景設定",
+		"檢舉",
+		"封鎖",
+	]
+	assert [element["clickPoint"] for element in elements] == [
+		(803, 90),
+		(803, 117),
+		(803, 155),
+		(803, 182),
+		(803, 209),
+		(803, 236),
+		(803, 263),
+		(803, 301),
+		(803, 339),
+		(803, 366),
+		(803, 393),
+	]
+
+
+def test_build_menu_elements_keeps_mute_toggle_in_sparse_scaled_known_layout():
+	lines = [
+		{"text": "關閉提醒", "rect": None},
+		{"text": "照片・影片", "rect": None},
+		{"text": "連結", "rect": None},
+		{"text": "儲存聊天", "rect": None},
+		{"text": "背景設定", "rect": None},
+		{"text": "檢舉", "rect": None},
+		{"text": "封鎖", "rect": None},
+	]
+	row_rects = [
+		(891, 95, 1116, 128),
+		(891, 128, 1116, 161),
+		(891, 176, 1116, 209),
+		(891, 210, 1116, 243),
+		(891, 243, 1116, 276),
+		(891, 277, 1116, 310),
+		(891, 311, 1116, 344),
+		(891, 358, 1116, 391),
+		(891, 406, 1116, 439),
+		(891, 440, 1116, 473),
+		(891, 473, 1116, 506),
+		(891, 521, 1116, 578),
+	]
+
+	elements = chat_more_options._buildMenuElements(
+		lines,
+		(879, 75, 1129, 599),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == [
+		"關閉提醒",
+		"邀請",
+		"相簿",
+		"照片・影片",
+		"檔案",
+		"連結",
+		"投票",
+		"儲存聊天",
+		"背景設定",
+		"檢舉",
+		"封鎖",
+	]
+	assert elements[0]["clickPoint"] == (1003, 111)
+	assert elements[-1]["clickPoint"] == (1003, 489)
+
+
+def test_build_menu_elements_keeps_unmute_toggle_in_sparse_scaled_known_layout():
+	lines = [
+		{"text": "開啟提醒", "rect": None},
+		{"text": "照片・影片", "rect": None},
+		{"text": "連結", "rect": None},
+		{"text": "儲存聊天", "rect": None},
+		{"text": "背景設定", "rect": None},
+		{"text": "檢舉", "rect": None},
+		{"text": "封鎖", "rect": None},
+	]
+	row_rects = [
+		(891, 95, 1116, 128),
+		(891, 128, 1116, 161),
+		(891, 176, 1116, 209),
+		(891, 210, 1116, 243),
+		(891, 243, 1116, 276),
+		(891, 277, 1116, 310),
+		(891, 311, 1116, 344),
+		(891, 358, 1116, 391),
+		(891, 406, 1116, 439),
+		(891, 440, 1116, 473),
+		(891, 473, 1116, 506),
+		(891, 521, 1116, 578),
+	]
+
+	elements = chat_more_options._buildMenuElements(
+		lines,
+		(879, 75, 1129, 599),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == [
+		"開啟提醒",
+		"邀請",
+		"相簿",
+		"照片・影片",
+		"檔案",
+		"連結",
+		"投票",
+		"儲存聊天",
+		"背景設定",
+		"檢舉",
+		"封鎖",
+	]
+	assert elements[0]["clickPoint"] == (1003, 111)
+	assert elements[-1]["clickPoint"] == (1003, 489)
 
 
 def test_chat_more_options_click_invokes_action_callback_and_closes_window():

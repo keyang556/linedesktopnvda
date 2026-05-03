@@ -91,37 +91,122 @@ def _matchMenuLabel(text: str) -> str | None:
 	return None
 
 
-def _extractRectLike(obj: Any) -> tuple[int, int, int, int] | None:
-	for attr in ("boundingRect", "boundingRectangle", "rect", "location", "bounds"):
-		rect = getattr(obj, attr, None)
-		if not rect:
-			continue
-		left = getattr(rect, "left", getattr(rect, "x", None))
-		top = getattr(rect, "top", getattr(rect, "y", None))
-		right = getattr(rect, "right", None)
-		bottom = getattr(rect, "bottom", None)
-		if right is None and left is not None:
-			width = getattr(rect, "width", None)
-			if width is not None:
-				right = left + width
-		if bottom is None and top is not None:
-			height = getattr(rect, "height", None)
-			if height is not None:
-				bottom = top + height
-		if None not in (left, top, right, bottom):
-			return (int(left), int(top), int(right), int(bottom))
+def _getObjectValue(obj: Any, *names: str) -> Any:
+	if obj is None:
+		return None
+	if isinstance(obj, dict):
+		for name in names:
+			value = obj.get(name)
+			if value is not None:
+				return value
+	for name in names:
+		value = getattr(obj, name, None)
+		if value is not None:
+			return value
+	return None
 
-	for attrs in (
-		("left", "top", "right", "bottom"),
-		("x", "y", "width", "height"),
+
+def _coerceRectNumber(value: Any) -> float | None:
+	if value is None:
+		return None
+	for attr in ("value", "Value"):
+		nested = getattr(value, attr, None)
+		if nested is not None and nested is not value:
+			value = nested
+			break
+	try:
+		return float(value)
+	except Exception:
+		return None
+
+
+def _coerceRectTuple(*values: Any) -> tuple[int, ...] | None:
+	coerced = []
+	for value in values:
+		number = _coerceRectNumber(value)
+		if number is None:
+			return None
+		coerced.append(int(round(number)))
+	return tuple(coerced)
+
+
+def _rectFromSequence(source: Any, preferXYWH: bool = False) -> tuple[int, int, int, int] | None:
+	if not isinstance(source, (list, tuple)) or len(source) < 4:
+		return None
+	flat = _coerceRectTuple(*source[:4])
+	if not flat:
+		return None
+	left, top, third, fourth = flat
+	edgeRect = (left, top, third, fourth) if third > left and fourth > top else None
+	sizeRect = (left, top, left + third, top + fourth) if third > 0 and fourth > 0 else None
+	for rect in (sizeRect, edgeRect) if preferXYWH else (edgeRect, sizeRect):
+		if rect and rect[2] > rect[0] and rect[3] > rect[1]:
+			return rect
+	return None
+
+
+def _rectFromObject(source: Any, preferXYWH: bool = False) -> tuple[int, int, int, int] | None:
+	if source is None:
+		return None
+	rect = _coerceRectTuple(
+		_getObjectValue(source, "left", "Left", "minX", "MinX", "x1", "X1"),
+		_getObjectValue(source, "top", "Top", "minY", "MinY", "y1", "Y1"),
+		_getObjectValue(source, "right", "Right", "maxX", "MaxX", "x2", "X2"),
+		_getObjectValue(source, "bottom", "Bottom", "maxY", "MaxY", "y2", "Y2"),
+	)
+	if rect and rect[2] > rect[0] and rect[3] > rect[1]:
+		return rect
+
+	for leftName, topName in (("x", "y"), ("X", "Y"), ("left", "top"), ("Left", "Top")):
+		rect = _coerceRectTuple(
+			_getObjectValue(source, leftName),
+			_getObjectValue(source, topName),
+			_getObjectValue(source, "width", "Width", "w", "W"),
+			_getObjectValue(source, "height", "Height", "h", "H"),
+		)
+		if rect and rect[2] > 0 and rect[3] > 0:
+			left, top, width, height = rect
+			return (left, top, left + width, top + height)
+
+	return _rectFromSequence(source, preferXYWH=preferXYWH)
+
+
+def _extractRectLike(obj: Any) -> tuple[int, int, int, int] | None:
+	for attr in (
+		"boundingRect",
+		"boundingRectangle",
+		"bounding_rect",
+		"bounding_rectangle",
+		"rect",
+		"location",
+		"bounds",
+		"box",
 	):
-		values = [getattr(obj, attr, None) for attr in attrs]
-		if any(value is None for value in values):
-			continue
-		left, top, third, fourth = values
-		if attrs[2] == "right":
-			return (int(left), int(top), int(third), int(fourth))
-		return (int(left), int(top), int(left + third), int(top + fourth))
+		rect = _rectFromObject(_getObjectValue(obj, attr), preferXYWH=True)
+		if rect:
+			return rect
+
+	rect = _rectFromObject(obj)
+	if rect:
+		return rect
+
+	words = _getObjectValue(obj, "words", "Words")
+	try:
+		wordIterator = iter(words or ())
+	except Exception:
+		wordIterator = ()
+	wordRects = []
+	for word in wordIterator:
+		rect = _extractRectLike(word)
+		if rect:
+			wordRects.append(rect)
+	if wordRects:
+		return (
+			min(rect[0] for rect in wordRects),
+			min(rect[1] for rect in wordRects),
+			max(rect[2] for rect in wordRects),
+			max(rect[3] for rect in wordRects),
+		)
 
 	return None
 
@@ -173,6 +258,87 @@ def _normalizeMenuRowRects(
 	return normalized
 
 
+_KNOWN_100_PERCENT_ROW_LAYOUT = (
+	("關閉提醒", 0),
+	("邀請", 1),
+	("相簿", 2),
+	("照片・影片", 3),
+	("檔案", 4),
+	("連結", 5),
+	("投票", 6),
+	("儲存聊天", 7),
+	("背景設定", 8),
+	("檢舉", 9),
+	("封鎖", 10),
+)
+_KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL = dict(_KNOWN_100_PERCENT_ROW_LAYOUT)
+_REMINDER_TOGGLE_LABELS = {"開啟提醒", "關閉提醒"}
+for _label in _REMINDER_TOGGLE_LABELS:
+	_KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL[_label] = 0
+_KNOWN_100_PERCENT_ANCHOR_LABELS = {
+	"投票",
+	"儲存聊天",
+	"背景設定",
+	"檢舉",
+	"封鎖",
+}
+
+
+def _inferKnownMenuRowIndex(
+	label: str | None,
+	rowRects: list[tuple[int, int, int, int]],
+) -> int | None:
+	# At 100% LINE exposes an extra row-like separator between 投票 and 儲存聊天.
+	if len(rowRects) != 12:
+		return None
+	return _KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL.get(label or "")
+
+
+def _buildKnown100PercentLayoutElements(
+	rowRects: list[tuple[int, int, int, int]],
+	detectedElements: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+	if len(rowRects) != 12:
+		return []
+
+	detectedReminderLabel = next(
+		(
+			element.get("name")
+			for element in detectedElements or []
+			if element.get("name") in _REMINDER_TOGGLE_LABELS
+		),
+		None,
+	)
+	elements: list[dict[str, Any]] = []
+	for label, rowIndex in _KNOWN_100_PERCENT_ROW_LAYOUT:
+		if rowIndex >= len(rowRects):
+			continue
+		if rowIndex == 0 and detectedReminderLabel:
+			label = detectedReminderLabel
+		rowLeft, rowTop, rowRight, rowBottom = rowRects[rowIndex]
+		elements.append(
+			{
+				"name": label,
+				"role": None,
+				"clickPoint": (
+					int((rowLeft + rowRight) / 2),
+					int((rowTop + rowBottom) / 2),
+				),
+			},
+		)
+	return elements
+
+
+def _shouldUseKnown100PercentLayout(
+	elements: list[dict[str, Any]],
+	rowRects: list[tuple[int, int, int, int]],
+) -> bool:
+	if len(rowRects) != 12 or len(elements) >= 8:
+		return False
+	labels = {element.get("name") for element in elements}
+	return len(labels & _KNOWN_100_PERCENT_ANCHOR_LABELS) >= 2
+
+
 def _assignRowRectsToElements(
 	elements: list[dict[str, Any]],
 	rowRects: list[tuple[int, int, int, int]],
@@ -199,6 +365,10 @@ def _assignRowRectsToElements(
 				if bestDistance is None or distance < bestDistance:
 					bestDistance = distance
 					chosenRowIndex = rowIndex
+		else:
+			knownRowIndex = _inferKnownMenuRowIndex(element.get("name"), rowRects)
+			if knownRowIndex is not None and currentRow <= knownRowIndex <= maxRowIndex:
+				chosenRowIndex = knownRowIndex
 
 		rowLeft, rowTop, rowRight, rowBottom = rowRects[chosenRowIndex]
 		element["clickPoint"] = (
@@ -253,6 +423,13 @@ def _buildMenuElements(
 		)
 
 	if elements:
+		knownLayoutElements = []
+		if _shouldUseKnown100PercentLayout(elements, rowRects):
+			knownLayoutElements = _buildKnown100PercentLayoutElements(rowRects, elements)
+		if knownLayoutElements:
+			log.debug("LINE: ChatMoreOptions using known 100% popup row layout")
+			return knownLayoutElements
+
 		_assignRowRectsToElements(elements, rowRects)
 		itemHeight = (bottom - top) / len(elements)
 		for index, element in enumerate(elements):
