@@ -68,6 +68,7 @@ def _compile_po_to_mo(po_path, mo_path):
 	with open(mo_path, "wb") as f:
 		f.write(output)
 
+
 locale_dir = os.path.join("addon", "locale")
 
 for lang in os.listdir(locale_dir):
