@@ -2850,7 +2850,8 @@ def _geminiContentsToNvidiaMessages(contents):
 						},
 					)
 		if not parts:
-			parts = [{"type": "text", "text": ""}]
+			log.debug(f"LINE: skipping empty NVIDIA turn with role {nvRole!r}")
+			continue
 		messages.append({"role": nvRole, "content": parts})
 	return messages
 
@@ -2873,6 +2874,7 @@ def _callNvidiaImageDescriptionApi(contents, timeout=60.0):
 		body = {
 			"model": _getEffectiveNvidiaModel(),
 			"messages": messages,
+			"max_tokens": 512,
 			"stream": False,
 		}
 		req = urllib.request.Request(
