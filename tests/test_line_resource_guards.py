@@ -49,6 +49,99 @@ class _Log:
 		pass
 
 
+def _load_voice_call_confirmation_symbols():
+	return _load_line_symbols(
+		assignment_names={
+			"_CJK_CHAR",
+			"_CJK_SPACE_RE",
+			"_VOICE_CALL_CONFIRMATION_START_LABELS",
+			"_VOICE_CALL_CONFIRMATION_JOIN_LABELS",
+			"_GROUP_VOICE_CALL_CONFIRMATION_HINTS",
+		},
+		function_names={
+			"_removeCJKSpaces",
+			"_normalizeVoiceCallConfirmationLine",
+			"_matchVoiceCallConfirmationActionLabel",
+			"_extractVoiceCallConfirmationActionLabels",
+			"_isGroupVoiceCallConfirmationText",
+			"_getVoiceCallConfirmationState",
+			"_rectsIntersect",
+			"_extractVoiceCallConfirmationActionClickPoints",
+			"_selectVoiceCallConfirmationActionTarget",
+		},
+		namespace={"re": re},
+	)
+
+
+def test_voice_call_confirmation_state_keeps_personal_start_layout():
+	ns = _load_voice_call_confirmation_symbols()
+
+	assert ns["_getVoiceCallConfirmationState"](
+		"確定要與小明進行語音通話？\n開始\n取消",
+	) == {
+		"action": "start",
+		"isGroup": False,
+	}
+
+
+def test_voice_call_confirmation_state_detects_group_start_layout():
+	ns = _load_voice_call_confirmation_symbols()
+
+	assert ns["_getVoiceCallConfirmationState"](
+		"確定要開始群組語音通話？\n開始\n取消",
+	) == {
+		"action": "start",
+		"isGroup": True,
+	}
+
+
+def test_voice_call_confirmation_state_detects_group_join_layout():
+	ns = _load_voice_call_confirmation_symbols()
+
+	assert ns["_getVoiceCallConfirmationState"](
+		"群 組 語 音 通 話\n2 人 已 加 入\n加 入\n取消",
+	) == {
+		"action": "join",
+		"isGroup": True,
+	}
+
+
+def test_extract_voice_call_confirmation_action_click_points_uses_join_label_center():
+	ns = _load_voice_call_confirmation_symbols()
+
+	points = ns["_extractVoiceCallConfirmationActionClickPoints"](
+		[
+			{"text": "2 人已加入", "rect": (430, 340, 540, 370)},
+			{"text": "加入", "rect": (462, 442, 510, 472)},
+			{"text": "取消", "rect": (548, 442, 596, 472)},
+		],
+		(350, 250, 650, 520),
+	)
+
+	assert points == {
+		"join": {
+			"clickPoint": (486, 457),
+			"rect": (462, 442, 510, 472),
+		},
+	}
+
+
+def test_voice_call_confirmation_join_prompt_prefers_start_button_target_when_both_are_visible():
+	ns = _load_voice_call_confirmation_symbols()
+	targets = {
+		"start": {
+			"clickPoint": (470, 352),
+			"rect": (420, 330, 520, 374),
+		},
+		"join": {
+			"clickPoint": (758, 514),
+			"rect": (732, 500, 784, 528),
+		},
+	}
+
+	assert ns["_selectVoiceCallConfirmationActionTarget"](targets, "join") == targets["start"]
+
+
 def test_window_client_screen_rect_converts_client_area_to_screen_coordinates():
 	class _Rect:
 		left = 0

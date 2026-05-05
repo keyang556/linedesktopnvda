@@ -465,6 +465,176 @@ def _getCallAnnouncementFromOcr(text):
 	return None
 
 
+_VOICE_CALL_CONFIRMATION_START_LABELS = (
+	"開始",
+	"开始",
+	"開始通話",
+	"开始通话",
+	"開始語音通話",
+	"开始语音通话",
+	"start",
+	"startcall",
+	"startvoicecall",
+)
+_VOICE_CALL_CONFIRMATION_JOIN_LABELS = (
+	"加入",
+	"參加",
+	"参加",
+	"加入通話",
+	"加入通话",
+	"加入語音通話",
+	"加入语音通话",
+	"參加通話",
+	"参加通话",
+	"join",
+	"joincall",
+	"joinvoicecall",
+)
+_GROUP_VOICE_CALL_CONFIRMATION_HINTS = (
+	"群組",
+	"群组",
+	"群聊",
+	"多人",
+	"成員",
+	"成员",
+	"已加入",
+	"已參加",
+	"已参加",
+	"參加中",
+	"参加中",
+	"正在通話",
+	"通話中",
+	"group",
+)
+
+
+def _normalizeVoiceCallConfirmationLine(text):
+	"""Normalize call confirmation OCR/UIA text for action matching."""
+	normalized = _removeCJKSpaces(str(text or "").strip())
+	normalized = re.sub(r"\s+", "", normalized)
+	return normalized.strip(".,:;!?|/\\()[]{}<>。！？、．：；「」『』（）")
+
+
+def _matchVoiceCallConfirmationActionLabel(text):
+	"""Return the primary voice-call confirmation action represented by text."""
+	normalized = _normalizeVoiceCallConfirmationLine(text)
+	if not normalized:
+		return None
+
+	lower = normalized.lower()
+	if normalized in _VOICE_CALL_CONFIRMATION_JOIN_LABELS or lower in _VOICE_CALL_CONFIRMATION_JOIN_LABELS:
+		return "join"
+	if normalized in _VOICE_CALL_CONFIRMATION_START_LABELS or lower in _VOICE_CALL_CONFIRMATION_START_LABELS:
+		return "start"
+	return None
+
+
+def _extractVoiceCallConfirmationActionLabels(text):
+	"""Extract start/join action labels from voice-call confirmation OCR text."""
+	labels = []
+	for rawLine in str(text or "").splitlines():
+		label = _matchVoiceCallConfirmationActionLabel(rawLine)
+		if label and (not labels or labels[-1] != label):
+			labels.append(label)
+	return labels
+
+
+def _isGroupVoiceCallConfirmationText(text, actionLabels=()):
+	"""Return True when OCR text describes a group-call confirmation or join prompt."""
+	compact = _normalizeVoiceCallConfirmationLine(text)
+	if not compact:
+		return False
+
+	lower = compact.lower()
+	if any(keyword in compact or keyword in lower for keyword in _GROUP_VOICE_CALL_CONFIRMATION_HINTS):
+		return True
+	if re.search(r"\d+(?:人|位|名).{0,8}(?:加入|參加|参加|通話中|正在通話)", compact):
+		return True
+	if "join" in set(actionLabels or ()) and ("通話" in compact or "call" in lower):
+		return True
+	return False
+
+
+def _getVoiceCallConfirmationState(text):
+	"""Return the action/layout state for a LINE voice-call confirmation prompt."""
+	actionLabels = _extractVoiceCallConfirmationActionLabels(text)
+	isGroup = _isGroupVoiceCallConfirmationText(text, actionLabels)
+	action = "join" if "join" in actionLabels else "start"
+
+	if action != "join":
+		compact = _normalizeVoiceCallConfirmationLine(text)
+		lower = compact.lower()
+		hasJoinHint = any(
+			keyword in compact
+			for keyword in ("加入", "參加", "参加", "已加入", "已參加", "已参加")
+		) or "join" in lower
+		if hasJoinHint and isGroup:
+			action = "join"
+
+	return {
+		"action": action,
+		"isGroup": bool(isGroup),
+	}
+
+
+def _extractVoiceCallConfirmationActionClickPoints(ocrLines, dialogRect):
+	"""Map voice-call confirmation action labels to OCR-derived click points."""
+	if not ocrLines or not dialogRect:
+		return {}
+
+	dialogLeft, _dialogTop, dialogRight, _dialogBottom = dialogRect
+	dialogCenterX = (dialogLeft + dialogRight) / 2.0
+	matched = {}
+
+	for index, line in enumerate(ocrLines):
+		label = _matchVoiceCallConfirmationActionLabel(line.get("text", ""))
+		rect = line.get("rect")
+		if not label or not rect or not _rectsIntersect(rect, dialogRect):
+			continue
+
+		rectLeft, rectTop, rectRight, rectBottom = rect
+		if rectRight <= rectLeft or rectBottom <= rectTop:
+			continue
+
+		centerX = (rectLeft + rectRight) / 2.0
+		centerY = (rectTop + rectBottom) / 2.0
+		score = (
+			centerY,
+			(rectRight - rectLeft) * (rectBottom - rectTop),
+			-abs(centerX - dialogCenterX),
+			-index,
+		)
+		current = matched.get(label)
+		if current is None or score > current["score"]:
+			matched[label] = {
+				"clickPoint": (int(centerX), int(centerY)),
+				"rect": rect,
+				"score": score,
+			}
+
+	return {
+		label: {
+			"clickPoint": data["clickPoint"],
+			"rect": data["rect"],
+		}
+		for label, data in matched.items()
+	}
+
+
+def _selectVoiceCallConfirmationActionTarget(ocrActionTargets, action):
+	"""Return the safest OCR target for the primary voice-call dialog action."""
+	if not ocrActionTargets:
+		return {}
+
+	normalizedAction = "join" if action == "join" else "start"
+	preferredLabels = ("start", "join") if normalizedAction == "join" else ("start",)
+	for label in preferredLabels:
+		target = ocrActionTargets.get(label)
+		if target:
+			return target
+	return {}
+
+
 _IMAGE_ATTACHMENT_MENU_KEYWORDS = (
 	"轉為文字",
 	"掃描行動條碼",
@@ -7197,6 +7367,7 @@ class AppModule(appModuleHandler.AppModule):
 					def _handleOnMain():
 						try:
 							ocrText = ""
+							ocrActionTargets = {}
 							if not isinstance(result, Exception):
 								ocrText = (
 									getattr(
@@ -7209,12 +7380,30 @@ class AppModule(appModuleHandler.AppModule):
 								ocrText = _removeCJKSpaces(
 									ocrText.strip(),
 								)
+								ocrActionTargets = _extractVoiceCallConfirmationActionClickPoints(
+									_extractOcrLines(result),
+									(
+										dialogLeft,
+										dialogTop,
+										dialogLeft + dialogW,
+										dialogTop + dialogH,
+									),
+								)
 
 							log.info(
 								f"LINE: confirmation dialog OCR: {ocrText!r}",
 							)
 
-							isGroup = "群組" in ocrText
+							callState = _getVoiceCallConfirmationState(ocrText)
+							if "join" in ocrActionTargets:
+								callState["action"] = "join"
+								callState["isGroup"] = True
+							elif "start" in ocrActionTargets and callState["action"] != "join":
+								callState["action"] = "start"
+							actionTarget = _selectVoiceCallConfirmationActionTarget(
+								ocrActionTargets,
+								callState["action"],
+							)
 							if ocrText:
 								ui.message(ocrText)
 							else:
@@ -7223,7 +7412,9 @@ class AppModule(appModuleHandler.AppModule):
 							core.callLater(
 								300,
 								_clickStart,
-								isGroup,
+								callState["isGroup"],
+								callState["action"],
+								actionTarget.get("clickPoint"),
 							)
 						except Exception as e:
 							log.warning(
@@ -7247,8 +7438,8 @@ class AppModule(appModuleHandler.AppModule):
 				)
 				_clickStart()
 
-		def _clickStart(isGroup=False):
-			"""Click the 開始 (Start) button on the voice call confirmation dialog.
+		def _clickStart(isGroup=False, action="start", clickPoint=None):
+			"""Click the primary action on the voice call confirmation dialog.
 
 			Group call dialogs are taller (member avatars), so the button
 			is further below the window centre than for personal calls.
@@ -7257,24 +7448,34 @@ class AppModule(appModuleHandler.AppModule):
 				sScale = _getDpiScale()
 				winCenterX = winLeft + winW // 2
 				winCenterY = winTop + winH // 2
-				startBtnX = winCenterX - int(43 * sScale)
-				if isGroup:
-					startBtnY = winCenterY + int(50 * sScale)
+				action = "join" if action == "join" else "start"
+				isGroupLayout = bool(isGroup or action == "join")
+				if clickPoint and len(clickPoint) >= 2:
+					startBtnX = int(clickPoint[0])
+					startBtnY = int(clickPoint[1])
 				else:
-					startBtnY = winCenterY + int(17 * sScale)
+					startBtnX = winCenterX - int(43 * sScale)
+					if isGroupLayout:
+						startBtnY = winCenterY + int(50 * sScale)
+					else:
+						startBtnY = winCenterY + int(17 * sScale)
 
 				log.info(
-					f"LINE: clicking 開始 at ({startBtnX}, {startBtnY}) group={isGroup}",
+					f"LINE: clicking voice call {action} at "
+					f"({startBtnX}, {startBtnY}) group={isGroupLayout} "
+					f"ocrPoint={bool(clickPoint)}",
 				)
 				appModRef._clickAtPosition(startBtnX, startBtnY, hwnd)
 
-				if isGroup:
+				if action == "join":
+					ui.message(_("已加入群組語音通話"))
+				elif isGroupLayout:
 					ui.message(_("已開始群組語音通話"))
 				else:
 					ui.message(_("已開始語音通話"))
 			except Exception as e:
 				log.warning(
-					f"LINE: click 開始 failed: {e}",
+					f"LINE: click voice call primary action failed: {e}",
 					exc_info=True,
 				)
 				ui.message(_("無法點擊開始按鈕"))
