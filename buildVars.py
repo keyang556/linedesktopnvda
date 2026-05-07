@@ -25,7 +25,7 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."""),
 	# version
-	addon_version="1.2.5-beta2",
+	addon_version="1.2.5-beta3",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""Added an AI image description dialog with a read-only transcript and follow-up questions.
