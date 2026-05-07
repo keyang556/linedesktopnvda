@@ -564,10 +564,10 @@ def _getVoiceCallConfirmationState(text):
 	if action != "join":
 		compact = _normalizeVoiceCallConfirmationLine(text)
 		lower = compact.lower()
-		hasJoinHint = any(
-			keyword in compact
-			for keyword in ("加入", "參加", "参加", "已加入", "已參加", "已参加")
-		) or "join" in lower
+		hasJoinHint = (
+			any(keyword in compact for keyword in ("加入", "參加", "参加", "已加入", "已參加", "已参加"))
+			or "join" in lower
+		)
 		if hasJoinHint and isGroup:
 			action = "join"
 
@@ -5930,12 +5930,30 @@ def _copyAndReadMessage(targetElement):
 			if cacheActive:
 				cachedText, _cacheIdx = _chatCache.lookupMessage(initialOcrText)
 				if cachedText:
+					replyInfo = _chatCache.getLastReplyInfo()
+					if replyInfo:
+						# Announce as "Sender 回覆 OriginalSender Content Time"
+						# in one utterance so the reply context and the time
+						# can't be split across two announcements (the
+						# follow-up timestamp element would otherwise repeat
+						# the message with the time on its own).
+						parts = [
+							replyInfo["replySender"],
+							"回覆",
+							replyInfo["originalName"],
+							replyInfo["replyContent"],
+						]
+						if replyInfo.get("replyTime"):
+							parts.append(replyInfo["replyTime"])
+						announceText = " ".join(parts)
+					else:
+						announceText = cachedText
 					log.info(
-						f"LINE: copy-read served from chat cache: {cachedText!r}",
+						f"LINE: copy-read served from chat cache: {announceText!r}",
 					)
 					_restoreClipboard(origClip)
 					speech.cancelSpeech()
-					ui.message(cachedText)
+					ui.message(announceText)
 					return
 				else:
 					log.debug(
@@ -9403,10 +9421,36 @@ class AppModule(appModuleHandler.AppModule):
 		navigating with Tab/arrows. This script sends the key through,
 		waits briefly for LINE to process it, then queries the UIA
 		focused element directly and announces it.
+
+		Special case: if the most recently announced cached message was
+		a reply, pressing left arrow speaks the original (quoted)
+		message instead of navigating, so users can hear what the reply
+		is replying to.
 		"""
 		if _suppressAddon:
 			gesture.send()
 			return
+		try:
+			keyName = gesture.mainKeyName
+		except Exception:
+			keyName = None
+		if keyName == "leftArrow":
+			try:
+				from . import _chatCache
+
+				replyInfo = _chatCache.getLastReplyInfo()
+			except Exception:
+				log.debug(
+					"LINE: chat cache reply lookup failed",
+					exc_info=True,
+				)
+				replyInfo = None
+			if replyInfo and replyInfo.get("originalContent"):
+				ui.message(
+					f"{replyInfo['originalName']} {replyInfo['originalContent']}",
+				)
+				_chatCache.clearLastReplyInfo()
+				return
 		global _lastOCRElement, _chatListMode
 		# Exiting chat list mode on Tab/Shift+Tab navigation
 		_chatListMode = False

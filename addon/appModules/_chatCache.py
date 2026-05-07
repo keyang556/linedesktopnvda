@@ -26,6 +26,10 @@ _messages = []
 _tempPath = None
 _chatRoomName = None
 _lastMatchedIdx = None
+# Reply context for the most recent successful lookup, or None when the
+# matched bubble was not a reply. Populated by lookupMessage(); consumed
+# by the left-arrow handler so users can hear the quoted original.
+_lastReplyInfo = None
 
 # _messageIndexMap[i] = 1-based message number for position i (0 for date rows)
 _messageIndexMap = []
@@ -53,13 +57,14 @@ def setCache(messages, tempPath, chatRoomName):
 	cache always reflects a single chat room.  Builds _messageIndexMap and
 	_messageDateGroups using the same counting rules as MessageReaderDialog.
 	"""
-	global _messages, _tempPath, _chatRoomName, _lastMatchedIdx
+	global _messages, _tempPath, _chatRoomName, _lastMatchedIdx, _lastReplyInfo
 	global _messageIndexMap, _messageDateGroups
 	clearCache()
 	_messages = list(messages or [])
 	_tempPath = tempPath
 	_chatRoomName = chatRoomName
 	_lastMatchedIdx = None
+	_lastReplyInfo = None
 
 	msgIdx = 0
 	lastDateIdx = -1
@@ -81,13 +86,14 @@ def setCache(messages, tempPath, chatRoomName):
 
 def clearCache():
 	"""Reset cache state and remove the temp export file if present."""
-	global _messages, _tempPath, _chatRoomName, _lastMatchedIdx
+	global _messages, _tempPath, _chatRoomName, _lastMatchedIdx, _lastReplyInfo
 	global _messageIndexMap, _messageDateGroups
 	path = _tempPath
 	_messages = []
 	_tempPath = None
 	_chatRoomName = None
 	_lastMatchedIdx = None
+	_lastReplyInfo = None
 	_messageIndexMap = []
 	_messageDateGroups = []
 	if path:
@@ -252,6 +258,115 @@ def _formatMessage(msg):
 	return f"{name} {content} {timeStr}".strip()
 
 
+def _detectReplyNames(ocrText):
+	"""Identify both names when the OCR shows a reply preview.
+
+	Reply bubbles show the actual sender's name first (above the bubble),
+	then a quote block containing the quoted user's name and message
+	preview, then the actual reply content. OCR captures both names, and
+	the longer quoted preview otherwise wins on content overlap alone.
+
+	Returns (replySender, quotedSender) when 2+ distinct cached sender
+	names appear in the OCR text (reply pattern). Names are ordered by
+	their position in the OCR text — the earliest is the actual sender,
+	the next is the quoted user being replied to. Returns (None, None)
+	when the OCR doesn't look like a reply.
+	"""
+	if not ocrText:
+		return None, None
+	occurrences = []
+	seen = set()
+	for msg in _messages:
+		if msg.get("type") != "message":
+			continue
+		name = msg.get("name", "")
+		if not name or name in seen:
+			continue
+		# Require the name at the start of a line, optionally preceded by
+		# non-letter glyphs (e.g. the "0 " quote-indicator icon LINE
+		# renders before quoted-user names in reply bubbles), and not
+		# immediately followed by another CJK/Latin letter.  This:
+		#   - lets quoted names like "0 王昱涵" still match (real LINE OCR);
+		#   - blocks names mentioned mid-sentence (e.g. "感謝Bob你的幫助"
+		#     — 感謝 is CJK so the non-letter prefix can't consume it);
+		#   - blocks short names matching inside longer names (e.g.
+		#     "王昱" must not match a line "王昱涵" — the lookahead fails
+		#     because 涵 is a CJK letter).
+		m = re.search(
+			r"(?m)^[^一-鿿぀-ヿa-zA-Z]*" + re.escape(name) + r"(?![一-鿿぀-ヿa-zA-Z])",
+			ocrText,
+		)
+		if m:
+			occurrences.append((m.start(), name))
+			seen.add(name)
+	if len(occurrences) < 2:
+		return None, None
+	occurrences.sort(key=lambda t: t[0])
+	return occurrences[0][1], occurrences[1][1]
+
+
+def _findQuotedOriginal(replyIdx, quotedSender, ocrText):
+	"""Locate the original message a reply is quoting.
+
+	Replies always come AFTER the original in chat order, so we scan
+	upward from ``replyIdx`` for messages by ``quotedSender`` and pick
+	the one whose content has the largest overlap with the OCR text
+	(which contains a fragment of the quoted preview). The OCR preview
+	is shorter than the full message — substring containment in either
+	direction or longest-common-substring (≥ ``_MIN_FUZZY_OVERLAP``)
+	count as a match.
+
+	Returns ``(msg, idx)`` on success, ``(None, None)`` otherwise.
+	"""
+	if not quotedSender or replyIdx <= 0:
+		return None, None
+	ocrNorm = _normalize(ocrText)
+	if not ocrNorm:
+		return None, None
+	bestOverlap = 0
+	bestIdx = -1
+	for i in range(replyIdx - 1, -1, -1):
+		msg = _messages[i]
+		if msg.get("type") != "message":
+			continue
+		if msg.get("name") != quotedSender:
+			continue
+		contentNorm = _normalize(msg.get("content", ""))
+		if not contentNorm:
+			continue
+		if contentNorm in ocrNorm:
+			overlap = len(contentNorm)
+		elif ocrNorm in contentNorm:
+			overlap = len(ocrNorm)
+		else:
+			overlap = _longestCommonSubstring(contentNorm, ocrNorm)
+		if overlap >= _MIN_FUZZY_OVERLAP and overlap > bestOverlap:
+			bestOverlap = overlap
+			bestIdx = i
+	if bestIdx < 0:
+		return None, None
+	return _messages[bestIdx], bestIdx
+
+
+def getLastReplyInfo():
+	"""Return reply context for the most recent successful lookup.
+
+	Returns a dict with ``replySender``, ``replyContent``, ``replyTime``,
+	``originalName``, ``originalContent``, ``originalTime`` and
+	``originalIdx`` when the matched bubble was a reply, otherwise
+	``None``. ``originalContent``/``originalTime``/``originalIdx`` may
+	be ``None`` when the original message couldn't be located in the
+	cache (e.g. it was outside the exported window).
+	"""
+	return _lastReplyInfo
+
+
+def clearLastReplyInfo():
+	"""Clear cached reply context so the left-arrow handler fires only once."""
+	global _lastReplyInfo
+	_lastReplyInfo = None
+
+
 def lookupMessage(ocrText):
 	"""Return the cached message that best matches the OCR snippet.
 
@@ -268,7 +383,10 @@ def lookupMessage(ocrText):
 	Returns:
 		(formattedText, index) on match, otherwise (None, None).
 	"""
-	global _lastMatchedIdx
+	global _lastMatchedIdx, _lastReplyInfo
+	# Default to no reply context; populated below when the matched bubble
+	# turns out to be a reply.
+	_lastReplyInfo = None
 	if not isActive() or not ocrText:
 		return None, None
 
@@ -296,6 +414,13 @@ def lookupMessage(ocrText):
 	# Date group of the cursor position (−1 if no date seen yet)
 	cursorDateGroup = _messageDateGroups[cursor] if cursor < len(_messageDateGroups) else -1
 
+	# Reply pattern: when the bubble shows a quote preview, OCR contains both
+	# the actual sender's name and the quoted user's name. The quoted preview
+	# usually has a longer content overlap than the actual reply, so without
+	# this restriction the cache would return the quoted message instead of
+	# the reply that the user just navigated to.
+	replySender, quotedSender = _detectReplyNames(ocrText)
+
 	bestScore = 0.0
 	bestIdx = -1
 
@@ -306,6 +431,8 @@ def lookupMessage(ocrText):
 		msgName = msg.get("name", "")
 		msgTime = msg.get("time", "")
 		if not msgContentNorm:
+			continue
+		if replySender and msgName != replySender:
 			continue
 
 		# Try exact substring containment first — that's the strongest signal.
@@ -353,4 +480,21 @@ def lookupMessage(ocrText):
 		f" msgIdx={_messageIndexMap[bestIdx]}"
 		f" dateGroup=[{_messageDateGroups[bestIdx]}]: {_formatMessage(_messages[bestIdx])!r}",
 	)
+
+	# Reply context: when the OCR pattern indicated a reply, locate the
+	# original (quoted) message upward in the cache so the left-arrow
+	# handler can read it on demand.
+	if replySender and quotedSender:
+		matched = _messages[bestIdx]
+		originalMsg, originalIdx = _findQuotedOriginal(bestIdx, quotedSender, ocrText)
+		_lastReplyInfo = {
+			"replySender": replySender,
+			"replyContent": matched.get("content", ""),
+			"replyTime": matched.get("time", ""),
+			"originalName": quotedSender,
+			"originalContent": originalMsg.get("content", "") if originalMsg else None,
+			"originalTime": originalMsg.get("time", "") if originalMsg else None,
+			"originalIdx": originalIdx if originalMsg else None,
+		}
+
 	return _formatMessage(_messages[bestIdx]), bestIdx

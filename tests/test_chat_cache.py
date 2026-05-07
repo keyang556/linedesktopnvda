@@ -248,6 +248,238 @@ def test_short_content_requires_time_match_to_avoid_false_positives():
 	assert "有" in formatted2
 
 
+def test_reply_bubble_matches_actual_reply_not_quoted_preview():
+	"""When a bubble shows a reply preview (sender + quoted message),
+	OCR captures both names plus the quoted text. The lookup must match
+	the actual reply content, not the longer quoted preview."""
+	_reset_cache(
+		[
+			{
+				"type": "message",
+				"name": "王昱涵",
+				"content": "然後認領想要的工作(可揚你可以休息\n1. 科系有兩個表格爆掉了要改一下\n2. 格子要合併儲存格",
+				"time": "22:20",
+			},
+			{"type": "message", "name": "陳禹安", "content": "那我用標題", "time": "10:26"},
+			{"type": "message", "name": "莊忠諺", "content": "我修結論", "time": "10:27"},
+		],
+	)
+
+	# 莊忠諺 replies to 王昱涵's earlier message. OCR captures both names
+	# plus a chunk of the quoted preview, then the actual reply "我修結論".
+	# Without the reply-sender filter, the long quoted overlap would win.
+	formatted, idx = chat_cache.lookupMessage(
+		"莊忠諺\n0 王昱涵\n然後認領想要的工作\n( 可揚你可以休息 \n我修結論",
+	)
+	assert idx == 2
+	assert "我修結論" in formatted
+
+	# Same shape for the 陳禹安 reply.
+	formatted2, idx2 = chat_cache.lookupMessage(
+		"陳禹安\n0 王昱涵\n然後認領想要的工作\n( 可揚你可以休息 \n那我用標題\n上午 10:26",
+	)
+	assert idx2 == 1
+	assert "那我用標題" in formatted2
+
+
+def test_reply_lookup_exposes_original_message_for_left_arrow():
+	"""After matching a reply, getLastReplyInfo() returns the quoted
+	original located upward in the cache, including its content for
+	the left-arrow read-aloud handler."""
+	_reset_cache(
+		[
+			{
+				"type": "message",
+				"name": "王昱涵",
+				"content": "然後認領想要的工作(可揚你可以休息\n1. 科系有兩個表格爆掉了",
+				"time": "22:20",
+			},
+			{"type": "message", "name": "陳禹安", "content": "那我用標題", "time": "10:26"},
+			{"type": "message", "name": "莊忠諺", "content": "我修結論", "time": "10:27"},
+		],
+	)
+
+	formatted, idx = chat_cache.lookupMessage(
+		"莊忠諺\n0 王昱涵\n然後認領想要的工作\n( 可揚你可以休息 \n我修結論",
+	)
+	assert idx == 2
+	assert "我修結論" in formatted
+
+	info = chat_cache.getLastReplyInfo()
+	assert info is not None
+	assert info["replySender"] == "莊忠諺"
+	assert info["replyContent"] == "我修結論"
+	assert info["originalName"] == "王昱涵"
+	assert info["originalIdx"] == 0
+	assert "然後認領想要的工作" in info["originalContent"]
+
+
+def test_reply_lookup_clears_reply_info_for_non_reply_message():
+	"""Non-reply OCR (single name) must clear stale reply info so the
+	left-arrow handler doesn't read an old original."""
+	_reset_cache(
+		[
+			{"type": "message", "name": "Alice", "content": "舊訊息", "time": "09:00"},
+			{"type": "message", "name": "Bob", "content": "回覆內容", "time": "09:05"},
+			{"type": "message", "name": "Bob", "content": "後續訊息", "time": "09:10"},
+		],
+	)
+
+	# First lookup: a reply (2 names) — populates reply info.
+	chat_cache.lookupMessage("Bob\n0 Alice\n舊訊息\n回覆內容\n上午 9 : 05")
+	assert chat_cache.getLastReplyInfo() is not None
+
+	# Next lookup: regular non-reply message — reply info must clear.
+	chat_cache.lookupMessage("Bob 後續訊息 上午 9 : 10")
+	assert chat_cache.getLastReplyInfo() is None
+
+
+def test_reply_lookup_clears_reply_info_when_no_match():
+	"""When the cache can't match anything, stale reply info must clear."""
+	_reset_cache(
+		[
+			{"type": "message", "name": "Alice", "content": "舊訊息", "time": "09:00"},
+			{"type": "message", "name": "Bob", "content": "回覆", "time": "09:05"},
+		],
+	)
+
+	chat_cache.lookupMessage("Bob\n0 Alice\n舊訊息\n回覆\n上午 9 : 05")
+	assert chat_cache.getLastReplyInfo() is not None
+
+	# Unrelated OCR — no match, reply info must clear.
+	formatted, idx = chat_cache.lookupMessage("完全不同的內容沒有時間")
+	assert formatted is None
+	assert chat_cache.getLastReplyInfo() is None
+
+
+def test_find_quoted_original_only_searches_upward():
+	"""The original message is always BEFORE the reply in chat order;
+	never match a later message even if it has the same content."""
+	_reset_cache(
+		[
+			{"type": "message", "name": "Alice", "content": "說了某句話", "time": "09:00"},
+			{"type": "message", "name": "Bob", "content": "回應", "time": "09:05"},
+			{"type": "message", "name": "Alice", "content": "說了某句話", "time": "10:00"},
+		],
+	)
+
+	# Bob (idx=1) replies to Alice's earlier message (idx=0). Even though
+	# the later Alice message (idx=2) has identical content, the search
+	# upward must pick idx=0.
+	chat_cache.lookupMessage("Bob\n0 Alice\n說了某句話\n回應\n上午 9 : 05")
+	info = chat_cache.getLastReplyInfo()
+	assert info is not None
+	assert info["originalIdx"] == 0
+
+
+def test_reply_filter_does_not_engage_when_only_one_name_in_ocr():
+	"""Single-name OCR is not a reply preview — the filter must not engage,
+	otherwise messages from anyone else become unmatchable."""
+	_reset_cache(
+		[
+			{"type": "message", "name": "Alice", "content": "早安", "time": "09:00"},
+			{"type": "message", "name": "Bob", "content": "回覆內容", "time": "09:05"},
+		],
+	)
+
+	# Only Bob appears in OCR; reply filter must not exclude Bob's own
+	# message. (If it did engage incorrectly using "Alice", Bob's message
+	# would be filtered out and we'd return None.)
+	formatted, idx = chat_cache.lookupMessage("Bob\n回覆內容\n上午 9 : 05")
+	assert idx == 1
+	assert "回覆內容" in formatted
+
+
+def test_reply_filter_not_triggered_by_name_in_message_body():
+	"""A name mentioned inside message text must not trigger reply detection.
+
+	If Alice sends '感謝Bob你的幫助' and both Alice and Bob are in the cache,
+	the old find() approach would detect two names and wrongly enter reply
+	mode.  The line-anchored regex must not match 'Bob' mid-sentence.
+	"""
+	_reset_cache(
+		[
+			{"type": "message", "name": "Bob", "content": "沒問題", "time": "09:00"},
+			{
+				"type": "message",
+				"name": "Alice",
+				"content": "感謝Bob你的幫助",
+				"time": "09:05",
+			},
+		],
+	)
+
+	# OCR for Alice's message — 'Bob' is inside the content line, not a
+	# standalone line.  lookupMessage must match Alice's message normally
+	# (idx=1) without entering reply mode.
+	formatted, idx = chat_cache.lookupMessage("Alice\n感謝Bob你的幫助\n上午 9 : 05")
+	assert idx == 1
+	assert chat_cache.getLastReplyInfo() is None
+
+
+def test_reply_detection_handles_quote_indicator_prefix():
+	"""Real LINE OCR renders a quote-indicator glyph (often "0 ") before
+	the quoted user name in reply bubbles, so the quoted name does NOT
+	occupy a standalone line.  The regex must still detect it.
+
+	Regression for an over-strict ``^name$`` regex that broke the
+	original reply-bubble fix on actual LINE OCR.
+	"""
+	_reset_cache(
+		[
+			{
+				"type": "message",
+				"name": "王昱涵",
+				"content": "然後認領想要的工作(可揚你可以休息",
+				"time": "22:20",
+			},
+			{"type": "message", "name": "莊忠諺", "content": "我修結論", "time": "10:23"},
+		],
+	)
+
+	# Exact OCR shape from the LINE log: actual sender on its own line,
+	# quoted user preceded by the "0 " quote-indicator glyph.
+	formatted, idx = chat_cache.lookupMessage(
+		"莊忠諺\n0 王昱涵\n然後認領想要的工作\n( 可揚你可以休息 \n我修結論",
+	)
+	assert idx == 1
+	assert "我修結論" in formatted
+	info = chat_cache.getLastReplyInfo()
+	assert info is not None
+	assert info["replySender"] == "莊忠諺"
+	assert info["originalName"] == "王昱涵"
+
+
+def test_reply_filter_not_triggered_by_substring_name():
+	"""A short name that is a substring of a longer name must not match.
+
+	If '王昱' and '王昱涵' are both in the cache and the OCR line is
+	'王昱涵', the regex must not match '王昱' against that line.
+	"""
+	_reset_cache(
+		[
+			{
+				"type": "message",
+				"name": "王昱",
+				"content": "你好",
+				"time": "09:00",
+			},
+			{
+				"type": "message",
+				"name": "王昱涵",
+				"content": "收到",
+				"time": "09:05",
+			},
+		],
+	)
+
+	# OCR for 王昱涵's message — only '王昱涵' occupies a standalone line.
+	# '王昱' must NOT match, so only one name is found → no reply filter.
+	formatted, idx = chat_cache.lookupMessage("王昱涵\n收到\n上午 9 : 05")
+	assert idx == 1
+	assert chat_cache.getLastReplyInfo() is None
+
+
 def test_lookup_returns_none_when_ocr_text_unrelated():
 	_reset_cache(
 		[
