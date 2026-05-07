@@ -282,11 +282,20 @@ def _detectReplyNames(ocrText):
 		name = msg.get("name", "")
 		if not name or name in seen:
 			continue
-		# Require the name to occupy an entire line so that (a) names
-		# mentioned in message bodies don't trigger the reply filter, and
-		# (b) short names that are substrings of longer names don't match
-		# a line belonging to the longer name.
-		m = re.search(r"(?m)^" + re.escape(name) + r"\s*$", ocrText)
+		# Require the name at the start of a line, optionally preceded by
+		# non-letter glyphs (e.g. the "0 " quote-indicator icon LINE
+		# renders before quoted-user names in reply bubbles), and not
+		# immediately followed by another CJK/Latin letter.  This:
+		#   - lets quoted names like "0 王昱涵" still match (real LINE OCR);
+		#   - blocks names mentioned mid-sentence (e.g. "感謝Bob你的幫助"
+		#     — 感謝 is CJK so the non-letter prefix can't consume it);
+		#   - blocks short names matching inside longer names (e.g.
+		#     "王昱" must not match a line "王昱涵" — the lookahead fails
+		#     because 涵 is a CJK letter).
+		m = re.search(
+			r"(?m)^[^一-鿿぀-ヿa-zA-Z]*" + re.escape(name) + r"(?![一-鿿぀-ヿa-zA-Z])",
+			ocrText,
+		)
 		if m:
 			occurrences.append((m.start(), name))
 			seen.add(name)
