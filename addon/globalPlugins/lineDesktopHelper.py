@@ -153,6 +153,17 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		)
 		self._promptText.SetValue(self._loadCurrentPrompt())
 
+		# Translators: Spin control label for the maximum output tokens used by the image-description AI.
+		maxTokensLabel = _("圖片描述最大 Token (&K)")
+		maxTokensRange = self._maxTokensRange()
+		self._maxTokensSpin = sHelper.addLabeledControl(
+			maxTokensLabel,
+			wx.SpinCtrl,
+			min=maxTokensRange[0],
+			max=maxTokensRange[1],
+			initial=self._loadCurrentMaxTokens(),
+		)
+
 		self._activeProviderId = self._currentSelectedProviderId() or _safeDefaultProvider()
 		self._refreshProviderUI(self._activeProviderId)
 
@@ -193,11 +204,11 @@ class LineDesktopSettingsPanel(SettingsPanel):
 
 	def _refreshProviderUI(self, provider):
 		"""Repopulate the API-key text field and the model dropdown for ``provider``."""
-		choices, defaultModel = self._modelOptionsFor(provider)
+		choices, labels, defaultModel = self._modelOptionsFor(provider)
 		self._modelChoices = choices
 		self._modelChoice.Clear()
 		if choices:
-			self._modelChoice.AppendItems(list(choices))
+			self._modelChoice.AppendItems(list(labels))
 		desiredModel = self._pendingModel.get(provider) or defaultModel
 		try:
 			selectIndex = choices.index(desiredModel)
@@ -241,15 +252,19 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
+				getUserPollinationsApiKey,
 			)
 
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
 				return getUserOllamaApiKey() or ""
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return getUserNvidiaApiKey() or ""
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+				return getUserPollinationsApiKey() or ""
 			return getUserImageApiKey() or ""
 		except Exception:
 			log.debug(
@@ -264,17 +279,22 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
+				getUserPollinationsModel,
 			)
 
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
 				return getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+				return getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
 			return getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 		except Exception:
 			log.debug(
@@ -284,7 +304,15 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			return ""
 
 	def _modelOptionsFor(self, provider):
-		"""Return (choices_tuple, default_model_id) for the given provider."""
+		"""Return (choices_tuple, labels_tuple, default_model_id) for the given provider.
+
+		``choices_tuple`` are model IDs that go to the API; ``labels_tuple`` are
+		the user-facing display strings shown in the dropdown. They run in
+		parallel and have the same length. Most providers use the model ID as
+		its own label; Pollinations.AI is the exception because Pollinations
+		exposes generic IDs (``openai``, ``claude-fast`` …) that aren't useful
+		without translation.
+		"""
 		try:
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
@@ -293,27 +321,64 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 			)
 
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
 				return (
+					_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
 					_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
 					_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				)
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return (
 					_IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS,
 					_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				)
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+				ids = _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS
+				labels = tuple(
+					_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.get(mid, mid) for mid in ids
+				)
+				return (ids, labels, _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL)
 			return (
+				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 			)
 		except Exception:
 			log.debug("LINE: cannot load image model options", exc_info=True)
-			return ((), "")
+			return ((), (), "")
+
+	def _maxTokensRange(self):
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_MAX_MAX_TOKENS,
+				_IMAGE_DESCRIPTION_MIN_MAX_TOKENS,
+			)
+
+			return (_IMAGE_DESCRIPTION_MIN_MAX_TOKENS, _IMAGE_DESCRIPTION_MAX_MAX_TOKENS)
+		except Exception:
+			log.debug("LINE: cannot load max-tokens bounds", exc_info=True)
+			return (50, 4000)
+
+	def _loadCurrentMaxTokens(self):
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS,
+				getUserImageMaxTokens,
+			)
+
+			return getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+		except Exception:
+			log.debug("LINE: cannot load image max tokens", exc_info=True)
+			return 700
 
 	def _loadCurrentPrompt(self):
 		try:
@@ -375,12 +440,15 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
+				getUserPollinationsApiKey,
 				setUserImageApiKey,
 				setUserNvidiaApiKey,
 				setUserOllamaApiKey,
+				setUserPollinationsApiKey,
 			)
 
 			for providerId, pendingKey in self._pendingApiKey.items():
@@ -390,6 +458,9 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 					currentKey = getUserNvidiaApiKey() or ""
 					setter = setUserNvidiaApiKey
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+					currentKey = getUserPollinationsApiKey() or ""
+					setter = setUserPollinationsApiKey
 				else:
 					currentKey = getUserImageApiKey() or ""
 					setter = setUserImageApiKey
@@ -421,14 +492,18 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
+				getUserPollinationsModel,
 				setUserImageModel,
 				setUserNvidiaModel,
 				setUserOllamaModel,
+				setUserPollinationsModel,
 			)
 
 			for providerId, pendingModel in self._pendingModel.items():
@@ -440,6 +515,11 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 					currentModel = getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
 					setter = setUserNvidiaModel
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+					currentModel = (
+						getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
+					)
+					setter = setUserPollinationsModel
 				else:
 					currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 					setter = setUserImageModel
@@ -480,6 +560,31 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		except Exception:
 			log.warning(
 				"LINE: cannot load image prompt helpers from settings panel",
+				exc_info=True,
+			)
+
+		# Image description max output tokens
+		try:
+			from appModules.line import (
+				_IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS,
+				getUserImageMaxTokens,
+				setUserImageMaxTokens,
+			)
+
+			newMaxTokens = int(self._maxTokensSpin.GetValue())
+			currentMaxTokens = getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+			if newMaxTokens != currentMaxTokens:
+				if not setUserImageMaxTokens(newMaxTokens):
+					gui.messageBox(
+						# Translators: Error shown when saving the image max-tokens setting fails
+						_("儲存圖片描述最大 Token 失敗，請重試。"),
+						_("LINE Desktop - 設定錯誤"),
+						wx.OK | wx.ICON_ERROR,
+						self,
+					)
+		except Exception:
+			log.warning(
+				"LINE: cannot load image max-tokens helpers from settings panel",
 				exc_info=True,
 			)
 
