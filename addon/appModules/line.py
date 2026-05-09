@@ -1988,16 +1988,19 @@ _suppressAddon = False
 _IMAGE_DESCRIPTION_PROVIDER_GOOGLE = "google"
 _IMAGE_DESCRIPTION_PROVIDER_OLLAMA = "ollama"
 _IMAGE_DESCRIPTION_PROVIDER_NVIDIA = "nvidia"
+_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS = "pollinations"
 _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE,
 	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
+	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 )
 _IMAGE_DESCRIPTION_DEFAULT_PROVIDER = _IMAGE_DESCRIPTION_PROVIDER_GOOGLE
 _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE: "Google AI",
 	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA: "Ollama Cloud",
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA: "NVIDIA NIM",
+	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS: "Pollinations.AI",
 }
 _IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME = "line_desktop_image_provider.txt"
 
@@ -2016,13 +2019,19 @@ _IMAGE_DESCRIPTION_DEFAULT_KEY_BLOB = (
 )
 _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB = "oLtfHW4hFhTMLQ0mKKcEqd70nU8Z9EsEjjSKfueLCUCnJD9oee2CTd3GtTi0LyS6ZJMuee/jIxFiXDH9kzdyFOMVRfIjMRxJzqZxnccS+p5B1gjbWxYyMLY="
 _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_KEY_BLOB = "z4L9t8i44kXzffkss7ukUYezYDRvTRxxgKURaLeyOl2Ea8kLN4dNweWybeuf4F8SD6I8ArEWqbvry5BB2o4MxerrJgd0OZD8pQNm9Nw6P7RE2mDI1xktlM4bj6XpwU9G/0wFnMMn"
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB = (
+	"9djyxTd4B3//wSRROFV/x5bpuusesK71/tOYdrtn4jf6YeRcniZVExF4//O0M+0G61hO0fkmB99ToQl9b3awbnwgPw=="
+)
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_NVIDIA_KEY_FILENAME = "line_desktop_nvidia_api_key.dat"
+_IMAGE_DESCRIPTION_USER_POLLINATIONS_KEY_FILENAME = "line_desktop_pollinations_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
 _IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME = "line_desktop_ollama_model.txt"
 _IMAGE_DESCRIPTION_USER_NVIDIA_MODEL_FILENAME = "line_desktop_nvidia_model.txt"
+_IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME = "line_desktop_pollinations_model.txt"
 _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
+_IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt"
 # Default Google model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 # Default Ollama Cloud model used when the user has not picked one in the settings panel.
@@ -2066,15 +2075,41 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"qwen/qwen3.5-122b-a10b",
 	"qwen/qwen3.5-397b-a17b",
 )
+# Default Pollinations.AI model used when the user has not picked one.
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "openai"
+# Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
+# to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
+_IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
+	"claude-fast",
+	"openai",
+	"openai-fast",
+	"openai-large",
+)
+# Display labels for Pollinations.AI models, surfaced in the settings dropdown.
+_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
+	"claude-fast": "Claude Haiku 4.5",
+	"openai": "GPT-5.4 Nano",
+	"openai-fast": "GPT-5 Nano",
+	"openai-large": "GPT-5.4",
+}
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 )
 _IMAGE_DESCRIPTION_OLLAMA_ENDPOINT = "https://ollama.com/api/chat"
 _IMAGE_DESCRIPTION_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
-_IMAGE_DESCRIPTION_DEFAULT_PROMPT = "請用繁體中文簡要描述這張圖片的內容。"
+_IMAGE_DESCRIPTION_POLLINATIONS_ENDPOINT = "https://gen.pollinations.ai/v1/chat/completions"
+_IMAGE_DESCRIPTION_DEFAULT_PROMPT = (
+	"Describe this image succinctly, but in as much detail as possible. "
+	"If there is text, ensure it is included in your response exactly as shown."
+)
 # Maximum length accepted from user-supplied prompts, to avoid pathological
 # payloads being sent to the API.
 _IMAGE_DESCRIPTION_PROMPT_MAX_LEN = 2000
+# User-configurable max output tokens used by every backend that accepts the
+# parameter. Bounded so the user cannot accidentally send pathological values.
+_IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS = 700
+_IMAGE_DESCRIPTION_MIN_MAX_TOKENS = 50
+_IMAGE_DESCRIPTION_MAX_MAX_TOKENS = 4000
 
 _IMAGE_API_KEY_SALT_LEN = 16
 _IMAGE_API_KEY_MAC_LEN = 16
@@ -2087,9 +2122,12 @@ _NOT_COMPUTED = object()
 _cachedEffectiveImageApiKey = _NOT_COMPUTED
 _cachedEffectiveOllamaApiKey = _NOT_COMPUTED
 _cachedEffectiveNvidiaApiKey = _NOT_COMPUTED
+_cachedEffectivePollinationsApiKey = _NOT_COMPUTED
 _cachedEffectiveImageProvider = _NOT_COMPUTED
 _cachedEffectiveOllamaModel = _NOT_COMPUTED
 _cachedEffectiveNvidiaModel = _NOT_COMPUTED
+_cachedEffectivePollinationsModel = _NOT_COMPUTED
+_cachedEffectiveImageMaxTokens = _NOT_COMPUTED
 
 
 def _deriveImageApiKeyMaterial(salt, length):
@@ -2347,6 +2385,73 @@ def _getEffectiveNvidiaApiKey():
 	if _cachedEffectiveNvidiaApiKey is _NOT_COMPUTED:
 		_initEffectiveNvidiaApiKey()
 	return _cachedEffectiveNvidiaApiKey
+
+
+def _getPollinationsApiKeyStorePath():
+	"""Return the filesystem path for the user-supplied Pollinations.AI API key file."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_POLLINATIONS_KEY_FILENAME)
+
+
+def getUserPollinationsApiKey():
+	"""Return the plain Pollinations.AI API key previously set by the user, or None."""
+	path = _getPollinationsApiKeyStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			blob = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Pollinations API key: {e}", exc_info=True)
+		return None
+	return _deobfuscateImageApiKey(blob)
+
+
+def setUserPollinationsApiKey(plain):
+	"""Persist a user-supplied Pollinations.AI API key (obfuscated). Empty/None clears it."""
+	global _cachedEffectivePollinationsApiKey
+	path = _getPollinationsApiKeyStorePath()
+	if not path:
+		return False
+	try:
+		if not plain:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectivePollinationsApiKey = _deobfuscateImageApiKey(
+				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB,
+			)
+		else:
+			blob = _obfuscateImageApiKey(plain)
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(blob)
+			_cachedEffectivePollinationsApiKey = plain
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Pollinations API key: {e}", exc_info=True)
+		return False
+
+
+def _initEffectivePollinationsApiKey():
+	"""Decrypt and cache the effective Pollinations.AI API key."""
+	global _cachedEffectivePollinationsApiKey
+	userKey = getUserPollinationsApiKey()
+	_cachedEffectivePollinationsApiKey = userKey or _deobfuscateImageApiKey(
+		_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB,
+	)
+
+
+def _getEffectivePollinationsApiKey():
+	"""Return the cached Pollinations.AI API key; falls back to lazy init if not yet computed."""
+	if _cachedEffectivePollinationsApiKey is _NOT_COMPUTED:
+		_initEffectivePollinationsApiKey()
+	return _cachedEffectivePollinationsApiKey
 
 
 def _getImageProviderStorePath():
@@ -2608,6 +2713,72 @@ def _getEffectiveNvidiaModel():
 	return _cachedEffectiveNvidiaModel
 
 
+def _getPollinationsModelStorePath():
+	"""Return the filesystem path for the user-selected Pollinations.AI model preference."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME)
+
+
+def getUserPollinationsModel():
+	"""Return the Pollinations.AI model ID previously chosen by the user, or None."""
+	path = _getPollinationsModelStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Pollinations model: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	if value not in _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS:
+		log.debug(f"LINE: stored Pollinations model {value!r} is not in the allowed list")
+		return None
+	return value
+
+
+def setUserPollinationsModel(name):
+	"""Persist a user-selected Pollinations.AI model. Empty/None or default clears the file."""
+	global _cachedEffectivePollinationsModel
+	path = _getPollinationsModelStorePath()
+	if not path:
+		return False
+	try:
+		if not name or name == _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectivePollinationsModel = _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
+			return True
+		if name not in _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS:
+			log.warning(f"LINE: refusing to save unknown Pollinations model {name!r}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(name)
+		_cachedEffectivePollinationsModel = name
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Pollinations model: {e}", exc_info=True)
+		return False
+
+
+def _getEffectivePollinationsModel():
+	"""Return the cached Pollinations.AI model ID; lazily resolved from disk on first call."""
+	global _cachedEffectivePollinationsModel
+	if _cachedEffectivePollinationsModel is _NOT_COMPUTED:
+		_cachedEffectivePollinationsModel = (
+			getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
+		)
+	return _cachedEffectivePollinationsModel
+
+
 def _getImagePromptStorePath():
 	"""Return the filesystem path for the user-supplied description prompt."""
 	try:
@@ -2671,6 +2842,157 @@ def _getEffectiveImagePrompt():
 	if _cachedEffectiveImagePrompt is _NOT_COMPUTED:
 		_cachedEffectiveImagePrompt = getUserImagePrompt() or _IMAGE_DESCRIPTION_DEFAULT_PROMPT
 	return _cachedEffectiveImagePrompt
+
+
+def _nvdaLanguageHint():
+	"""Map NVDA's UI language to an English language name for the AI prompt.
+
+	NVDA's languageHandler returns codes like ``zh_TW`` or ``ja``; we translate
+	those into a phrase the AI service can recognise and use to choose its
+	output language. Returns None when the language is English or unknown so
+	the caller can skip appending a hint.
+	"""
+	try:
+		import languageHandler
+
+		lang = (languageHandler.getLanguage() or "").strip()
+	except Exception:
+		return None
+	if not lang:
+		return None
+	normalised = lang.replace("-", "_").split(".", 1)[0].lower()
+	# Exact match takes precedence so traditional/simplified Chinese variants
+	# do not collapse onto a single label.
+	exactMap = {
+		"zh_tw": "Chinese Traditional",
+		"zh_hk": "Chinese Traditional",
+		"zh_mo": "Chinese Traditional",
+		"zh_cn": "Chinese Simplified",
+		"zh_sg": "Chinese Simplified",
+		"zh_hans": "Chinese Simplified",
+		"zh_hant": "Chinese Traditional",
+		"pt_br": "Brazilian Portuguese",
+	}
+	if normalised in exactMap:
+		return exactMap[normalised]
+	base = normalised.split("_", 1)[0]
+	baseMap = {
+		"en": None,
+		"zh": "Chinese Simplified",
+		"ja": "Japanese",
+		"ko": "Korean",
+		"th": "Thai",
+		"vi": "Vietnamese",
+		"id": "Indonesian",
+		"ms": "Malay",
+		"es": "Spanish",
+		"fr": "French",
+		"de": "German",
+		"it": "Italian",
+		"pt": "Portuguese",
+		"ru": "Russian",
+		"ar": "Arabic",
+		"tr": "Turkish",
+		"nl": "Dutch",
+		"pl": "Polish",
+		"sv": "Swedish",
+		"fi": "Finnish",
+		"da": "Danish",
+		"no": "Norwegian",
+		"cs": "Czech",
+		"hu": "Hungarian",
+		"el": "Greek",
+		"he": "Hebrew",
+		"hi": "Hindi",
+	}
+	return baseMap.get(base)
+
+
+def _getRuntimeImagePrompt():
+	"""Return the prompt actually sent to the API, with a language hint when applicable."""
+	base = _getEffectiveImagePrompt()
+	# Language hint is appended only for the default prompt; custom prompts are
+	# left untouched so the user can pick their own output language.
+	if base != _IMAGE_DESCRIPTION_DEFAULT_PROMPT:
+		return base
+	hint = _nvdaLanguageHint()
+	if not hint:
+		return base
+	return f"{base} Respond in {hint}."
+
+
+def _getImageMaxTokensStorePath():
+	"""Return the filesystem path for the user-configured max-tokens value."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME)
+
+
+def getUserImageMaxTokens():
+	"""Return the user-configured max output tokens, or None when unset."""
+	path = _getImageMaxTokensStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user image max tokens: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	try:
+		n = int(value)
+	except ValueError:
+		log.debug(f"LINE: stored image max tokens {value!r} is not an integer")
+		return None
+	if n < _IMAGE_DESCRIPTION_MIN_MAX_TOKENS or n > _IMAGE_DESCRIPTION_MAX_MAX_TOKENS:
+		log.debug(f"LINE: stored image max tokens {n} is out of range")
+		return None
+	return n
+
+
+def setUserImageMaxTokens(value):
+	"""Persist a user-configured max-tokens value. None or default clears the file."""
+	global _cachedEffectiveImageMaxTokens
+	path = _getImageMaxTokensStorePath()
+	if not path:
+		return False
+	try:
+		if value is None or value == _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveImageMaxTokens = _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+			return True
+		try:
+			n = int(value)
+		except (TypeError, ValueError):
+			log.warning(f"LINE: refusing to save non-integer max tokens {value!r}")
+			return False
+		if n < _IMAGE_DESCRIPTION_MIN_MAX_TOKENS or n > _IMAGE_DESCRIPTION_MAX_MAX_TOKENS:
+			log.warning(f"LINE: refusing to save out-of-range max tokens {n}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(str(n))
+		_cachedEffectiveImageMaxTokens = n
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user image max tokens: {e}", exc_info=True)
+		return False
+
+
+def _getEffectiveImageMaxTokens():
+	"""Return the cached max-tokens value; lazily resolved from disk on first call."""
+	global _cachedEffectiveImageMaxTokens
+	if _cachedEffectiveImageMaxTokens is _NOT_COMPUTED:
+		_cachedEffectiveImageMaxTokens = getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+	return _cachedEffectiveImageMaxTokens
 
 
 _NOTES_WINDOW_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
@@ -2789,7 +3111,7 @@ def _buildInitialImageContents(pngBytes, prompt=None):
 		{
 			"role": "user",
 			"parts": [
-				{"text": prompt if prompt is not None else _getEffectiveImagePrompt()},
+				{"text": prompt if prompt is not None else _getRuntimeImagePrompt()},
 				{
 					"inline_data": {
 						"mime_type": "image/png",
@@ -2821,6 +3143,11 @@ def _callImageDescriptionApi(contents, timeout=None):
 			contents,
 			timeout=timeout if timeout is not None else 60.0,
 		)
+	if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
+		return _callPollinationsImageDescriptionApi(
+			contents,
+			timeout=timeout if timeout is not None else 60.0,
+		)
 	return _callGoogleImageDescriptionApi(
 		contents,
 		timeout=timeout if timeout is not None else 30.0,
@@ -2846,6 +3173,9 @@ def _callGoogleImageDescriptionApi(contents, timeout=30.0):
 			key=apiKey,
 		)
 		body = {"contents": contents}
+		_userMaxTokens = getUserImageMaxTokens()
+		if _userMaxTokens is not None:
+			body["generationConfig"] = {"maxOutputTokens": _userMaxTokens}
 		req = urllib.request.Request(
 			url,
 			data=json.dumps(body).encode("utf-8"),
@@ -3044,7 +3374,7 @@ def _callNvidiaImageDescriptionApi(contents, timeout=60.0):
 		body = {
 			"model": _getEffectiveNvidiaModel(),
 			"messages": messages,
-			"max_tokens": 512,
+			"max_tokens": _getEffectiveImageMaxTokens(),
 			"stream": False,
 		}
 		req = urllib.request.Request(
@@ -3098,6 +3428,126 @@ def _callNvidiaImageDescriptionApi(contents, timeout=60.0):
 	except Exception as e:
 		log.warning(
 			f"LINE: NVIDIA image description response parse failed: {e}",
+			exc_info=True,
+		)
+	return None, _("圖片描述失敗 (無回應)")
+
+
+def _geminiContentsToPollinationsMessages(contents):
+	"""Convert canonical Gemini-shaped contents into OpenAI-compatible chat messages.
+
+	Pollinations.AI's text endpoint mirrors OpenAI's /chat/completions schema, so
+	the conversion is identical to the NVIDIA NIM helper above. Kept as a
+	separate function to leave the existing NVIDIA helper untouched and to make
+	provider-specific tweaks (e.g. content/parts shape) easy in the future.
+	"""
+	messages = []
+	for turn in contents or []:
+		role = turn.get("role") if isinstance(turn, dict) else None
+		oaiRole = "assistant" if role == "model" else "user"
+		parts = []
+		for part in (turn.get("parts") or []) if isinstance(turn, dict) else []:
+			if not isinstance(part, dict):
+				continue
+			if "text" in part and part["text"]:
+				parts.append({"type": "text", "text": part["text"]})
+			elif "inline_data" in part:
+				inline = part.get("inline_data") or {}
+				data = inline.get("data")
+				mime = inline.get("mime_type") or "image/png"
+				if data:
+					parts.append(
+						{
+							"type": "image_url",
+							"image_url": {"url": f"data:{mime};base64,{data}"},
+						},
+					)
+		if not parts:
+			log.debug(f"LINE: skipping empty Pollinations turn with role {oaiRole!r}")
+			continue
+		messages.append({"role": oaiRole, "content": parts})
+	return messages
+
+
+def _callPollinationsImageDescriptionApi(contents, timeout=60.0):
+	"""Send the canonical contents to Pollinations.AI's OpenAI-compatible chat endpoint.
+
+	Returns (text, None) on success or (None, error_msg) on failure.
+	"""
+	try:
+		import json
+		import urllib.request
+		import urllib.error
+
+		apiKey = _getEffectivePollinationsApiKey()
+		messages = _geminiContentsToPollinationsMessages(contents)
+		body = {
+			"model": _getEffectivePollinationsModel(),
+			"messages": messages,
+			"max_tokens": _getEffectiveImageMaxTokens(),
+			"stream": False,
+		}
+		headers = {
+			"Content-Type": "application/json",
+			"Accept": "application/json",
+			# Pollinations.AI's edge layer rejects requests carrying urllib's
+			# default ``Python-urllib/x.y`` User-Agent with HTTP 403; matching
+			# the AI Content Describer add-on's workaround clears the block.
+			"User-Agent": "curl/8.4.0",
+		}
+		# Pollinations.AI accepts unauthenticated traffic with rate limits, but
+		# supplying the bundled token unlocks the higher tier.
+		if apiKey:
+			headers["Authorization"] = f"Bearer {apiKey}"
+		req = urllib.request.Request(
+			_IMAGE_DESCRIPTION_POLLINATIONS_ENDPOINT,
+			data=json.dumps(body).encode("utf-8"),
+			headers=headers,
+			method="POST",
+		)
+		try:
+			with urllib.request.urlopen(req, timeout=timeout) as resp:
+				raw = resp.read()
+		except urllib.error.HTTPError as e:
+			errBody = e.read().decode("utf-8", errors="replace")
+			log.warning(
+				f"LINE: Pollinations image description HTTP {e.code} {e.reason}: {errBody[:500]}",
+			)
+			return None, _("圖片描述失敗 (HTTP {code})").format(code=e.code)
+		except Exception as e:
+			log.warning(
+				f"LINE: Pollinations image description network error: {e}",
+				exc_info=True,
+			)
+			return None, _("圖片描述失敗 (網路錯誤)")
+		data = json.loads(raw.decode("utf-8", errors="replace"))
+	except Exception as e:
+		log.warning(
+			f"LINE: Pollinations image description request failed: {e}",
+			exc_info=True,
+		)
+		return None, _("圖片描述失敗")
+
+	try:
+		choices = data.get("choices") if isinstance(data, dict) else None
+		if isinstance(choices, list) and choices:
+			message = choices[0].get("message") if isinstance(choices[0], dict) else None
+			if isinstance(message, dict):
+				text = message.get("content")
+				if isinstance(text, list):
+					collected = []
+					for part in text:
+						if isinstance(part, dict):
+							inner = part.get("text")
+							if inner:
+								collected.append(inner)
+					text = "".join(collected)
+				if text:
+					return text.strip(), None
+		log.info(f"LINE: Pollinations image description returned no content: {data!r}")
+	except Exception as e:
+		log.warning(
+			f"LINE: Pollinations image description response parse failed: {e}",
 			exc_info=True,
 		)
 	return None, _("圖片描述失敗 (無回應)")
@@ -6313,6 +6763,7 @@ class AppModule(appModuleHandler.AppModule):
 		_initEffectiveImageApiKey()
 		_initEffectiveOllamaApiKey()
 		_initEffectiveNvidiaApiKey()
+		_initEffectivePollinationsApiKey()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "
@@ -10510,7 +10961,7 @@ class AppModule(appModuleHandler.AppModule):
 		def _worker():
 			import wx
 
-			prompt = _getEffectiveImagePrompt()
+			prompt = _getRuntimeImagePrompt()
 			initialContents = _buildInitialImageContents(pngBytes, prompt)
 			description, errMsg = _callImageDescriptionApi(initialContents)
 			if description:
