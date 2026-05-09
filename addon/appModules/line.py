@@ -3172,10 +3172,10 @@ def _callGoogleImageDescriptionApi(contents, timeout=30.0):
 			model=_getEffectiveImageModel(),
 			key=apiKey,
 		)
-		body = {
-			"contents": contents,
-			"generationConfig": {"maxOutputTokens": _getEffectiveImageMaxTokens()},
-		}
+		body = {"contents": contents}
+		_userMaxTokens = getUserImageMaxTokens()
+		if _userMaxTokens is not None:
+			body["generationConfig"] = {"maxOutputTokens": _userMaxTokens}
 		req = urllib.request.Request(
 			url,
 			data=json.dumps(body).encode("utf-8"),
