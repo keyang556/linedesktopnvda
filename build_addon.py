@@ -10,7 +10,7 @@ import subprocess
 import markdown
 
 ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addon")
-OUTPUT_NAME = "lineDesktop-1.2.5-beta3.nvda-addon"
+OUTPUT_NAME = "lineDesktop-1.2.5-beta4.nvda-addon"
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_NAME)
 
 # Manifest content matching the format of working NVDA add-ons
@@ -22,7 +22,7 @@ Provides improved navigation for chat lists, messages, contacts, and message inp
 Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions.\"\"\"
 author = "張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭<tommytsaitou>"
 url = https://keyang556.github.io/linedesktopnvda/
-version = 1.2.5-beta3
+version = 1.2.5-beta4
 changelog = \"\"\"Added an AI image description dialog with a read-only transcript and follow-up questions.
 Added settings for the image description service, API key, model, and prompt.
 Completed translations and documentation for all supported languages.\"\"\"
