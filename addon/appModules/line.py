@@ -2019,7 +2019,9 @@ _IMAGE_DESCRIPTION_DEFAULT_KEY_BLOB = (
 )
 _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB = "oLtfHW4hFhTMLQ0mKKcEqd70nU8Z9EsEjjSKfueLCUCnJD9oee2CTd3GtTi0LyS6ZJMuee/jIxFiXDH9kzdyFOMVRfIjMRxJzqZxnccS+p5B1gjbWxYyMLY="
 _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_KEY_BLOB = "z4L9t8i44kXzffkss7ukUYezYDRvTRxxgKURaLeyOl2Ea8kLN4dNweWybeuf4F8SD6I8ArEWqbvry5BB2o4MxerrJgd0OZD8pQNm9Nw6P7RE2mDI1xktlM4bj6XpwU9G/0wFnMMn"
-_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB = "9djyxTd4B3//wSRROFV/x5bpuusesK71/tOYdrtn4jf6YeRcniZVExF4//O0M+0G61hO0fkmB99ToQl9b3awbnwgPw=="
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB = (
+	"9djyxTd4B3//wSRROFV/x5bpuusesK71/tOYdrtn4jf6YeRcniZVExF4//O0M+0G61hO0fkmB99ToQl9b3awbnwgPw=="
+)
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_NVIDIA_KEY_FILENAME = "line_desktop_nvidia_api_key.dat"
@@ -2989,9 +2991,7 @@ def _getEffectiveImageMaxTokens():
 	"""Return the cached max-tokens value; lazily resolved from disk on first call."""
 	global _cachedEffectiveImageMaxTokens
 	if _cachedEffectiveImageMaxTokens is _NOT_COMPUTED:
-		_cachedEffectiveImageMaxTokens = (
-			getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
-		)
+		_cachedEffectiveImageMaxTokens = getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
 	return _cachedEffectiveImageMaxTokens
 
 

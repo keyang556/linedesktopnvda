@@ -343,9 +343,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				)
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 				ids = _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS
-				labels = tuple(
-					_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.get(mid, mid) for mid in ids
-				)
+				labels = tuple(_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.get(mid, mid) for mid in ids)
 				return (ids, labels, _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL)
 			return (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
@@ -516,9 +514,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 					currentModel = getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
 					setter = setUserNvidiaModel
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
-					currentModel = (
-						getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
-					)
+					currentModel = getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
 					setter = setUserPollinationsModel
 				else:
 					currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
