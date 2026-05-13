@@ -2035,7 +2035,7 @@ _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt
 # Default Google model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-flash-lite-latest"
 # Default Ollama Cloud model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemini-3-flash-preview:cloud"
+_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemma4:31b-cloud"
 # Default NVIDIA NIM model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "mistralai/mistral-medium-3.5-128b"
 # Models exposed in the settings panel dropdown. The order here is the order
@@ -2060,8 +2060,6 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 # Vision-capable models commonly available on Ollama Cloud. Users can pick
 # whichever they have access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
-	"gemini-3-flash-preview:cloud",
-	"qwen3.5:397b-cloud",
 	"gemma4:31b-cloud",
 )
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
