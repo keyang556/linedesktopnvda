@@ -2033,7 +2033,7 @@ _IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME = "line_desktop_pollinations
 _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
 _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt"
 # Default Google model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+_IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-flash-lite-latest"
 # Default Ollama Cloud model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemini-3-flash-preview:cloud"
 # Default NVIDIA NIM model used when the user has not picked one in the settings panel.
@@ -2048,7 +2048,7 @@ _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "mistralai/mistral-medium-3.5-128b"
 # "gemma-3-27b-it" (Gemma 3 27B — confirm exact API model ID).
 _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-3-flash-preview",
-	"gemini-3.1-flash-lite-preview",
+	"gemini-3.1-flash-lite",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
 	"gemini-2.5-flash",
