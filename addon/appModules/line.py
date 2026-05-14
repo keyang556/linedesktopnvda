@@ -2082,6 +2082,16 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"openai",
 	"openai-fast",
 	"openai-large",
+	"mistral",
+	"llama-scout",
+	"gemini-fast",
+	"qwen-vision",
+	"gemini-search",
+	"grok",
+	"kimi",
+	"mistral-large",
+	"qwen-large",
+	"kimi-k2.6",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
@@ -2089,6 +2099,16 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"openai": "GPT-5.4 Nano",
 	"openai-fast": "GPT-5 Nano",
 	"openai-large": "GPT-5.4",
+	"mistral": "Mistral Small 3.1",
+	"llama-scout": "Meta Llama 4 Scout 17B 16E Instruct",
+	"gemini-fast": "Gemini 2.5 Flash Lite",
+	"qwen-vision": "Qwen3 VL 30B A3B Thinking",
+	"gemini-search": "Google Gemini 2.5 Flash Lite Search",
+	"grok": "Grok 4.20 Non-Reasoning",
+	"kimi": "Moonshot Kimi K2.5",
+	"mistral-large": "Mistral Large 3",
+	"qwen-large": "Qwen3.6 Plus",
+	"kimi-k2.6": "Moonshot Kimi K2.6",
 }
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
@@ -2125,7 +2145,6 @@ _cachedEffectiveImageProvider = _NOT_COMPUTED
 _cachedEffectiveOllamaModel = _NOT_COMPUTED
 _cachedEffectiveNvidiaModel = _NOT_COMPUTED
 _cachedEffectivePollinationsModel = _NOT_COMPUTED
-_cachedEffectiveImageMaxTokens = _NOT_COMPUTED
 
 
 def _deriveImageApiKeyMaterial(salt, length):
@@ -2957,16 +2976,15 @@ def getUserImageMaxTokens():
 
 
 def setUserImageMaxTokens(value):
-	"""Persist a user-configured max-tokens value. None or default clears the file."""
-	global _cachedEffectiveImageMaxTokens
+	"""Persist a user-configured max-tokens value. ``None`` clears the file,
+	leaving the backend unconstrained (no ``max_tokens`` sent to the API)."""
 	path = _getImageMaxTokensStorePath()
 	if not path:
 		return False
 	try:
-		if value is None or value == _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS:
+		if value is None:
 			if os.path.isfile(path):
 				os.remove(path)
-			_cachedEffectiveImageMaxTokens = _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
 			return True
 		try:
 			n = int(value)
@@ -2978,19 +2996,10 @@ def setUserImageMaxTokens(value):
 			return False
 		with open(path, "w", encoding="utf-8") as f:
 			f.write(str(n))
-		_cachedEffectiveImageMaxTokens = n
 		return True
 	except Exception as e:
 		log.warning(f"LINE: failed to save user image max tokens: {e}", exc_info=True)
 		return False
-
-
-def _getEffectiveImageMaxTokens():
-	"""Return the cached max-tokens value; lazily resolved from disk on first call."""
-	global _cachedEffectiveImageMaxTokens
-	if _cachedEffectiveImageMaxTokens is _NOT_COMPUTED:
-		_cachedEffectiveImageMaxTokens = getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
-	return _cachedEffectiveImageMaxTokens
 
 
 _NOTES_WINDOW_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
@@ -3372,9 +3381,11 @@ def _callNvidiaImageDescriptionApi(contents, timeout=60.0):
 		body = {
 			"model": _getEffectiveNvidiaModel(),
 			"messages": messages,
-			"max_tokens": _getEffectiveImageMaxTokens(),
 			"stream": False,
 		}
+		_userMaxTokens = getUserImageMaxTokens()
+		if _userMaxTokens is not None:
+			body["max_tokens"] = _userMaxTokens
 		req = urllib.request.Request(
 			_IMAGE_DESCRIPTION_NVIDIA_ENDPOINT,
 			data=json.dumps(body).encode("utf-8"),
@@ -3482,9 +3493,11 @@ def _callPollinationsImageDescriptionApi(contents, timeout=60.0):
 		body = {
 			"model": _getEffectivePollinationsModel(),
 			"messages": messages,
-			"max_tokens": _getEffectiveImageMaxTokens(),
 			"stream": False,
 		}
+		_userMaxTokens = getUserImageMaxTokens()
+		if _userMaxTokens is not None:
+			body["max_tokens"] = _userMaxTokens
 		headers = {
 			"Content-Type": "application/json",
 			"Accept": "application/json",

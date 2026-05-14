@@ -133,7 +133,18 @@ class LineDesktopSettingsPanel(SettingsPanel):
 
 		# Translators: Text field label for the image-description API key
 		apiLabel = _("圖片描述 API Key，留空則使用預設金鑰 (&I)")
-		self._apiKeyText = sHelper.addLabeledControl(apiLabel, wx.TextCtrl)
+		# Stored under password mask by default to avoid shoulder-surfing; the
+		# "show" checkbox below recreates the control without the mask on demand.
+		self._apiKeyText = sHelper.addLabeledControl(
+			apiLabel,
+			wx.TextCtrl,
+			style=wx.TE_PASSWORD,
+		)
+		# Translators: Checkbox label for revealing the image-description API key.
+		showApiLabel = _("顯示 API 金鑰 (&S)")
+		self._showApiKeyCheck = sHelper.addItem(wx.CheckBox(self, label=showApiLabel))
+		self._showApiKeyCheck.SetValue(False)
+		self._showApiKeyCheck.Bind(wx.EVT_CHECKBOX, self._onShowApiKeyChange)
 
 		# Translators: Dropdown label for selecting the image-description model
 		modelLabel = _("圖片描述模型 (&M)")
@@ -153,6 +164,14 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		)
 		self._promptText.SetValue(self._loadCurrentPrompt())
 
+		userMaxTokens = self._loadUserMaxTokens()
+		# Translators: Checkbox label for enabling the maximum-output-tokens limit.
+		limitTokensLabel = _("限制圖片描述最大 Token (&L)")
+		self._limitTokensCheck = sHelper.addItem(
+			wx.CheckBox(self, label=limitTokensLabel),
+		)
+		self._limitTokensCheck.SetValue(userMaxTokens is not None)
+
 		# Translators: Spin control label for the maximum output tokens used by the image-description AI.
 		maxTokensLabel = _("圖片描述最大 Token (&K)")
 		maxTokensRange = self._maxTokensRange()
@@ -161,13 +180,48 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			wx.SpinCtrl,
 			min=maxTokensRange[0],
 			max=maxTokensRange[1],
-			initial=self._loadCurrentMaxTokens(),
+			initial=userMaxTokens if userMaxTokens is not None else self._defaultMaxTokens(),
 		)
+		self._maxTokensSpin.Enable(self._limitTokensCheck.GetValue())
+		self._limitTokensCheck.Bind(wx.EVT_CHECKBOX, self._onLimitTokensChange)
 
 		self._activeProviderId = self._currentSelectedProviderId() or _safeDefaultProvider()
 		self._refreshProviderUI(self._activeProviderId)
 
 		self._providerChoice.Bind(wx.EVT_CHOICE, self._onProviderChange)
+
+	def _onLimitTokensChange(self, evt):
+		self._maxTokensSpin.Enable(self._limitTokensCheck.GetValue())
+
+	def _onShowApiKeyChange(self, evt):
+		"""Recreate the API-key field so its TE_PASSWORD style can flip.
+
+		wxPython exposes no portable way to toggle ``wx.TE_PASSWORD`` on an
+		existing control, so we swap in a fresh ``wx.TextCtrl`` and let the
+		surrounding horizontal sizer re-adopt it with the same flags.
+		"""
+		if not getattr(self, "_apiKeyText", None):
+			return
+		sizer = self._apiKeyText.GetContainingSizer()
+		if sizer is None:
+			return
+		currentValue = self._apiKeyText.GetValue()
+		insertionPoint = self._apiKeyText.GetInsertionPoint()
+		hadFocus = self._apiKeyText.HasFocus()
+		showPlain = bool(self._showApiKeyCheck.GetValue())
+		style = 0 if showPlain else wx.TE_PASSWORD
+		newCtrl = wx.TextCtrl(self, style=style)
+		newCtrl.ChangeValue(currentValue)
+		try:
+			newCtrl.SetInsertionPoint(insertionPoint)
+		except Exception:
+			pass
+		sizer.Replace(self._apiKeyText, newCtrl)
+		self._apiKeyText.Destroy()
+		self._apiKeyText = newCtrl
+		self.Layout()
+		if hadFocus:
+			newCtrl.SetFocus()
 
 	def _currentSelectedProviderId(self):
 		"""Return the provider ID matching the dropdown selection, or None."""
@@ -366,16 +420,24 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			log.debug("LINE: cannot load max-tokens bounds", exc_info=True)
 			return (50, 4000)
 
-	def _loadCurrentMaxTokens(self):
+	def _loadUserMaxTokens(self):
+		"""Return the user-configured max tokens, or ``None`` when unset (= no limit)."""
 		try:
-			from appModules.line import (
-				_IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS,
-				getUserImageMaxTokens,
-			)
+			from appModules.line import getUserImageMaxTokens
 
-			return getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+			return getUserImageMaxTokens()
 		except Exception:
 			log.debug("LINE: cannot load image max tokens", exc_info=True)
+			return None
+
+	def _defaultMaxTokens(self):
+		"""Return the suggested spin-control initial value when the user enables the limit."""
+		try:
+			from appModules.line import _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+
+			return _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+		except Exception:
+			log.debug("LINE: cannot load default image max tokens", exc_info=True)
 			return 700
 
 	def _loadCurrentPrompt(self):
@@ -559,16 +621,18 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				exc_info=True,
 			)
 
-		# Image description max output tokens
+		# Image description max output tokens: ``None`` means no limit (file cleared).
 		try:
 			from appModules.line import (
-				_IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS,
 				getUserImageMaxTokens,
 				setUserImageMaxTokens,
 			)
 
-			newMaxTokens = int(self._maxTokensSpin.GetValue())
-			currentMaxTokens = getUserImageMaxTokens() or _IMAGE_DESCRIPTION_DEFAULT_MAX_TOKENS
+			if self._limitTokensCheck.GetValue():
+				newMaxTokens = int(self._maxTokensSpin.GetValue())
+			else:
+				newMaxTokens = None
+			currentMaxTokens = getUserImageMaxTokens()
 			if newMaxTokens != currentMaxTokens:
 				if not setUserImageMaxTokens(newMaxTokens):
 					gui.messageBox(
