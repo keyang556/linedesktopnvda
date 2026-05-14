@@ -3178,9 +3178,9 @@ def _callGoogleImageDescriptionApi(contents, timeout=30.0):
 			key=apiKey,
 		)
 		body = {"contents": contents}
-		_userMaxTokens = getUserImageMaxTokens()
-		if _userMaxTokens is not None:
-			body["generationConfig"] = {"maxOutputTokens": _userMaxTokens}
+		userMaxTokens = getUserImageMaxTokens()
+		if userMaxTokens is not None:
+			body["generationConfig"] = {"maxOutputTokens": userMaxTokens}
 		req = urllib.request.Request(
 			url,
 			data=json.dumps(body).encode("utf-8"),
@@ -3381,9 +3381,9 @@ def _callNvidiaImageDescriptionApi(contents, timeout=60.0):
 			"messages": messages,
 			"stream": False,
 		}
-		_userMaxTokens = getUserImageMaxTokens()
-		if _userMaxTokens is not None:
-			body["max_tokens"] = _userMaxTokens
+		userMaxTokens = getUserImageMaxTokens()
+		if userMaxTokens is not None:
+			body["max_tokens"] = userMaxTokens
 		req = urllib.request.Request(
 			_IMAGE_DESCRIPTION_NVIDIA_ENDPOINT,
 			data=json.dumps(body).encode("utf-8"),
@@ -3493,9 +3493,9 @@ def _callPollinationsImageDescriptionApi(contents, timeout=60.0):
 			"messages": messages,
 			"stream": False,
 		}
-		_userMaxTokens = getUserImageMaxTokens()
-		if _userMaxTokens is not None:
-			body["max_tokens"] = _userMaxTokens
+		userMaxTokens = getUserImageMaxTokens()
+		if userMaxTokens is not None:
+			body["max_tokens"] = userMaxTokens
 		headers = {
 			"Content-Type": "application/json",
 			"Accept": "application/json",

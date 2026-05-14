@@ -216,7 +216,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			newCtrl.SetInsertionPoint(insertionPoint)
 		except Exception:
 			pass
-		sizer.Replace(self._apiKeyText, newCtrl)
+		if not sizer.Replace(self._apiKeyText, newCtrl):
+			log.warning("LINE: sizer.Replace failed when toggling API-key visibility")
+			newCtrl.Destroy()
+			return
 		self._apiKeyText.Destroy()
 		self._apiKeyText = newCtrl
 		self.Layout()
