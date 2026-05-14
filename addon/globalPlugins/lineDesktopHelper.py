@@ -133,8 +133,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 
 		# Translators: Text field label for the image-description API key
 		apiLabel = _("圖片描述 API Key，留空則使用預設金鑰 (&I)")
-		# Stored under password mask by default to avoid shoulder-surfing; the
-		# "show" checkbox below recreates the control without the mask on demand.
+		# wx.TE_PASSWORD creates a Win32 Edit with ES_PASSWORD; the "show"
+		# checkbox below sends EM_SETPASSWORDCHAR to toggle masking in place.
 		self._apiKeyText = sHelper.addLabeledControl(
 			apiLabel,
 			wx.TextCtrl,
@@ -194,37 +194,19 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		self._maxTokensSpin.Enable(self._limitTokensCheck.GetValue())
 
 	def _onShowApiKeyChange(self, evt):
-		"""Recreate the API-key field so its TE_PASSWORD style can flip.
+		"""Toggle password masking on the API-key field in place.
 
-		wxPython exposes no portable way to toggle ``wx.TE_PASSWORD`` on an
-		existing control, so we swap in a fresh ``wx.TextCtrl`` and let the
-		surrounding horizontal sizer re-adopt it with the same flags.
+		Uses the Win32 ``EM_SETPASSWORDCHAR`` message so the TextCtrl never
+		moves or loses its label — no sizer manipulation required.
 		"""
 		if not getattr(self, "_apiKeyText", None):
 			return
-		sizer = self._apiKeyText.GetContainingSizer()
-		if sizer is None:
-			return
-		currentValue = self._apiKeyText.GetValue()
-		insertionPoint = self._apiKeyText.GetInsertionPoint()
-		hadFocus = self._apiKeyText.HasFocus()
 		showPlain = bool(self._showApiKeyCheck.GetValue())
-		style = 0 if showPlain else wx.TE_PASSWORD
-		newCtrl = wx.TextCtrl(self, style=style)
-		newCtrl.ChangeValue(currentValue)
-		try:
-			newCtrl.SetInsertionPoint(insertionPoint)
-		except Exception:
-			pass
-		if not sizer.Replace(self._apiKeyText, newCtrl):
-			log.warning("LINE: sizer.Replace failed when toggling API-key visibility")
-			newCtrl.Destroy()
-			return
-		self._apiKeyText.Destroy()
-		self._apiKeyText = newCtrl
-		self.Layout()
-		if hadFocus:
-			newCtrl.SetFocus()
+		_EM_SETPASSWORDCHAR = 0x00CC
+		hwnd = self._apiKeyText.GetHandle()
+		# wParam 0 = show plain text; ord('*') = mask with asterisks
+		ctypes.windll.user32.SendMessageW(hwnd, _EM_SETPASSWORDCHAR, 0 if showPlain else ord("*"), 0)
+		self._apiKeyText.Refresh()
 
 	def _currentSelectedProviderId(self):
 		"""Return the provider ID matching the dropdown selection, or None."""
