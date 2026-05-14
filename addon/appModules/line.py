@@ -2059,9 +2059,7 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 )
 # Vision-capable models commonly available on Ollama Cloud. Users can pick
 # whichever they have access to; unavailable IDs surface as an HTTP error.
-_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
-	"gemma4:31b-cloud",
-)
+_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = ("gemma4:31b-cloud",)
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
