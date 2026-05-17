@@ -2072,7 +2072,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"qwen/qwen3.5-397b-a17b",
 )
 # Default Pollinations.AI model used when the user has not picked one.
-_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "openai"
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "claude-fast"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
@@ -2083,6 +2083,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"openai-large",
 	"mistral",
 	"llama-scout",
+	"mistral-4",
 	"gemini-fast",
 	"qwen-vision",
 	"gemini-search",
@@ -2101,6 +2102,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"openai-large": "GPT-5.4",
 	"mistral": "Mistral Small 3.2",
 	"llama-scout": "Meta Llama 4 Scout 17B 16E Instruct",
+	"mistral-4": "Mistral Small 4",
 	"gemini-fast": "Gemini 2.5 Flash Lite",
 	"qwen-vision": "Qwen3 VL 30B A3B Thinking",
 	"gemini-search": "Google Gemini 2.5 Flash Lite Search",
