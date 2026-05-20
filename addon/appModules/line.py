@@ -2049,6 +2049,7 @@ _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "mistralai/mistral-medium-3.5-128b"
 _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-3-flash-preview",
 	"gemini-3.1-flash-lite",
+	"gemini-3.5-flash",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
 	"gemini-2.5-flash",
