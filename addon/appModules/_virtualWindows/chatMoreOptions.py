@@ -31,6 +31,7 @@ _KNOWN_MENU_LABELS = (
 	"儲存聊天",
 	"背景設定",
 	"檢舉",
+	"退出群組",
 	"封鎖",
 )
 
@@ -50,10 +51,11 @@ _MENU_LABEL_ALIASES = {
 	),
 	"檔案": ("檔案",),
 	"連結": ("連結",),
-	"投票": ("投票",),
+	"投票": ("投票", "訍疋"),
 	"儲存聊天": ("儲存聊天",),
 	"背景設定": ("背景設定", "冃景言殳定", "背景设定"),
 	"檢舉": ("檢舉",),
+	"退出群組": ("退出群組", "退出群组"),
 	"封鎖": ("封鎖",),
 }
 
@@ -271,14 +273,33 @@ _KNOWN_100_PERCENT_ROW_LAYOUT = (
 	("檢舉", 9),
 	("封鎖", 10),
 )
-_KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL = dict(_KNOWN_100_PERCENT_ROW_LAYOUT)
+_KNOWN_GROUP_ROW_LAYOUT = (
+	("關閉提醒", 0),
+	("邀請", 1),
+	("相簿", 2),
+	("照片・影片", 3),
+	("檔案", 4),
+	("連結", 5),
+	("投票", 6),
+	("儲存聊天", 7),
+	("檢舉", 8),
+	("退出群組", 9),
+)
 _REMINDER_TOGGLE_LABELS = {"開啟提醒", "關閉提醒"}
-_KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL.update((label, 0) for label in _REMINDER_TOGGLE_LABELS)
-_KNOWN_100_PERCENT_ANCHOR_LABELS = {
+_KNOWN_ROW_LAYOUTS = {
+	12: _KNOWN_100_PERCENT_ROW_LAYOUT,
+	11: _KNOWN_GROUP_ROW_LAYOUT,
+}
+_KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL = {
+	**dict(_KNOWN_100_PERCENT_ROW_LAYOUT),
+	**{label: 0 for label in _REMINDER_TOGGLE_LABELS},
+}
+_KNOWN_LAYOUT_ANCHOR_LABELS = {
 	"投票",
 	"儲存聊天",
 	"背景設定",
 	"檢舉",
+	"退出群組",
 	"封鎖",
 }
 
@@ -293,13 +314,32 @@ def _inferKnownMenuRowIndex(
 	return _KNOWN_100_PERCENT_ROW_INDEX_BY_LABEL.get(label or "")
 
 
-def _buildKnown100PercentLayoutElements(
+def _selectKnownRowLayout(
 	rowRects: list[tuple[int, int, int, int]],
 	detectedElements: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-	if len(rowRects) != 12:
-		return []
+) -> tuple[tuple[str, int], ...] | None:
+	layout = _KNOWN_ROW_LAYOUTS.get(len(rowRects))
+	if not layout:
+		return None
 
+	detectedCount = len(detectedElements or [])
+	labels = {element.get("name") for element in detectedElements or []}
+	if len(rowRects) == 12 and detectedCount >= 8:
+		return None
+	if len(rowRects) == 11 and "退出群組" not in labels:
+		return None
+	if len(labels & _KNOWN_LAYOUT_ANCHOR_LABELS) < 2:
+		return None
+	if len(labels) >= len(layout):
+		return None
+	return layout
+
+
+def _buildKnownLayoutElements(
+	rowRects: list[tuple[int, int, int, int]],
+	layout: tuple[tuple[str, int], ...],
+	detectedElements: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
 	detectedReminderLabel = next(
 		(
 			element.get("name")
@@ -309,7 +349,7 @@ def _buildKnown100PercentLayoutElements(
 		None,
 	)
 	elements: list[dict[str, Any]] = []
-	for label, rowIndex in _KNOWN_100_PERCENT_ROW_LAYOUT:
+	for label, rowIndex in layout:
 		if rowIndex >= len(rowRects):
 			continue
 		if rowIndex == 0 and detectedReminderLabel:
@@ -326,16 +366,6 @@ def _buildKnown100PercentLayoutElements(
 			},
 		)
 	return elements
-
-
-def _shouldUseKnown100PercentLayout(
-	elements: list[dict[str, Any]],
-	rowRects: list[tuple[int, int, int, int]],
-) -> bool:
-	if len(rowRects) != 12 or len(elements) >= 8:
-		return False
-	labels = {element.get("name") for element in elements}
-	return len(labels & _KNOWN_100_PERCENT_ANCHOR_LABELS) >= 2
 
 
 def _assignRowRectsToElements(
@@ -423,10 +453,11 @@ def _buildMenuElements(
 
 	if elements:
 		knownLayoutElements = []
-		if _shouldUseKnown100PercentLayout(elements, rowRects):
-			knownLayoutElements = _buildKnown100PercentLayoutElements(rowRects, elements)
+		knownLayout = _selectKnownRowLayout(rowRects, elements)
+		if knownLayout:
+			knownLayoutElements = _buildKnownLayoutElements(rowRects, knownLayout, elements)
 		if knownLayoutElements:
-			log.debug("LINE: ChatMoreOptions using known 100% popup row layout")
+			log.debug("LINE: ChatMoreOptions using known popup row layout")
 			return knownLayoutElements
 
 		_assignRowRectsToElements(elements, rowRects)

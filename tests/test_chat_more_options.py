@@ -73,6 +73,8 @@ chat_more_options = _load_chat_more_options_module()
 def test_match_menu_label_handles_known_ocr_variants():
 	assert chat_more_options._matchMenuLabel("眧片 • 影片") == "照片・影片"
 	assert chat_more_options._matchMenuLabel("冃景言殳定") == "背景設定"
+	assert chat_more_options._matchMenuLabel("訍疋") == "投票"
+	assert chat_more_options._matchMenuLabel("退出群組") == "退出群組"
 	assert chat_more_options._matchMenuLabel("5") is None
 	assert chat_more_options._matchMenuLabel("llnedes") is None
 
@@ -340,6 +342,64 @@ def test_build_menu_elements_keeps_unmute_toggle_in_sparse_scaled_known_layout()
 	]
 	assert elements[0]["clickPoint"] == (1003, 111)
 	assert elements[-1]["clickPoint"] == (1003, 489)
+
+
+def test_build_menu_elements_aligns_group_chat_layout_when_ocr_misses_invite():
+	lines = [
+		{"text": "關閉提醒", "rect": None},
+		{"text": "相簿", "rect": None},
+		{"text": "照片・影片", "rect": None},
+		{"text": "檔案", "rect": None},
+		{"text": "連結", "rect": None},
+		{"text": "訍疋", "rect": None},
+		{"text": "儲存聊天", "rect": None},
+		{"text": "檢舉", "rect": None},
+		{"text": "退出群組", "rect": None},
+	]
+	row_rects = [
+		(1072, 112, 1217, 152),
+		(1072, 153, 1217, 193),
+		(1072, 210, 1217, 250),
+		(1072, 250, 1217, 290),
+		(1072, 291, 1217, 331),
+		(1072, 331, 1217, 371),
+		(1072, 372, 1217, 412),
+		(1072, 429, 1217, 469),
+		(1072, 486, 1217, 526),
+		(1072, 526, 1217, 566),
+		(1072, 567, 1217, 607),
+	]
+
+	elements = chat_more_options._buildMenuElements(
+		lines,
+		(1058, 89, 1234, 632),
+		rowRects=row_rects,
+	)
+
+	assert [element["name"] for element in elements] == [
+		"關閉提醒",
+		"邀請",
+		"相簿",
+		"照片・影片",
+		"檔案",
+		"連結",
+		"投票",
+		"儲存聊天",
+		"檢舉",
+		"退出群組",
+	]
+	assert [element["clickPoint"] for element in elements] == [
+		(1144, 132),
+		(1144, 173),
+		(1144, 230),
+		(1144, 270),
+		(1144, 311),
+		(1144, 351),
+		(1144, 392),
+		(1144, 449),
+		(1144, 506),
+		(1144, 546),
+	]
 
 
 def test_chat_more_options_click_invokes_action_callback_and_closes_window():
