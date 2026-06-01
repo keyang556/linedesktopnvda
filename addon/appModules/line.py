@@ -2060,17 +2060,22 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 )
 # Vision-capable models commonly available on Ollama Cloud. Users can pick
 # whichever they have access to; unavailable IDs surface as an HTTP error.
-_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = ("gemma4:31b-cloud",)
+_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
+	"gemma4:31b-cloud",
+	"minimax-m3:cloud",
+)
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
-	"moonshotai/kimi-k2.6",
-	"mistralai/mistral-medium-3.5-128b",
-	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"google/gemma-4-31b-it",
+	"moonshotai/kimi-k2.6",
+	"mistralai/mistral-large-3-675b-instruct-2512",
+	"mistralai/mistral-medium-3.5-128b",
 	"mistralai/mistral-small-4-119b-2603",
+	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"qwen/qwen3.5-122b-a10b",
 	"qwen/qwen3.5-397b-a17b",
+	"stepfun-ai/step-3.7-flash",
 )
 # Default Pollinations.AI model used when the user has not picked one.
 _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "claude-fast"
