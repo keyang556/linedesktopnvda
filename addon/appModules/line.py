@@ -2078,11 +2078,10 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"stepfun-ai/step-3.7-flash",
 )
 # Default Pollinations.AI model used when the user has not picked one.
-_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "claude-fast"
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "openai"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
-	"claude-fast",
 	"gemma",
 	"openai-fast",
 	"openai-large",
@@ -2107,7 +2106,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
-	"claude-fast": "Claude Haiku 4.5",
 	"gemma": "Gemma 4 26B A4B",
 	"openai-fast": "GPT-5 Nano",
 	"openai-large": "GPT-5.4",
