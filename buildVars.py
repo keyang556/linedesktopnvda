@@ -25,14 +25,15 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."""),
 	# version
-	addon_version="1.2.5-beta6",
+	addon_version="1.2.5-beta7",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
-	addon_changelog=_("""Added an AI image description dialog with a read-only transcript and follow-up questions.
-Added settings for the image description service, API key, model, and prompt.
-Completed translations and documentation for all supported languages."""),
+	addon_changelog=_("""Stability fixes: keyboard shortcuts (y/n/p/a/d) are no longer left swallowed after a recall/consent prompt.
+Moved call handling, OCR reading and dialog detection off NVDA's main thread to stop freezes.
+Clipboard contents (including files and images) are preserved by the copy-to-read feature.
+Hardened focus handling and virtual windows against stale UI objects."""),
 	# Author(s)
-	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>",
+	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support
 	addon_url=None,
 	# URL for the add-on repository where the source code can be found
@@ -40,7 +41,9 @@ Completed translations and documentation for all supported languages."""),
 	# Documentation file name
 	addon_docFileName="readme.html",
 	# Minimum NVDA version supported (e.g. "2019.3.0", minor version is optional)
-	addon_minimumNVDAVersion="2019.3",
+	# 2022.1 is the practical floor: the add-on uses the controlTypes.Role /
+	# controlTypes.State enums (introduced in 2021.2) throughout.
+	addon_minimumNVDAVersion="2022.1",
 	# Last NVDA version supported/tested (e.g. "2024.4.0", ideally more recent than minimum version)
 	addon_lastTestedNVDAVersion="2026.1",
 	# Add-on update channel (default is None, denoting stable releases,

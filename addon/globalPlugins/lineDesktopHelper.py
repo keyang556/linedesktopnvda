@@ -686,7 +686,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			if LineDesktopSettingsPanel not in gui.NVDASettingsDialog.categoryClasses:
 				gui.NVDASettingsDialog.categoryClasses.append(LineDesktopSettingsPanel)
 		except Exception:
-			log.debugWarning(
+			# Surface this at error level: a failure here silently hides the
+			# entire LINE Desktop settings panel from the user.
+			log.error(
 				"Failed to register LINE Desktop settings panel",
 				exc_info=True,
 			)
@@ -1145,7 +1147,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			try:
 				appModuleHandler.unregisterExecutable(exe)
 			except Exception:
-				pass
+				log.debugWarning(f"Failed to unregister {exe} from LINE appModule", exc_info=True)
 
 	@script(
 		# Translators: Description of a debug script to report focused object info

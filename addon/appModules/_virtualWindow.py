@@ -5,6 +5,7 @@ from inputCore import decide_executeGesture, InputGesture
 import mouseHandler
 import winUser
 
+import ctypes
 import pkgutil
 from importlib import import_module
 
@@ -33,6 +34,10 @@ class VirtualWindow:
 
 	windowClasses = tuple()
 	currentWindow = None
+	_initialized = False
+	# Foreground window handle captured when the virtual window opened;
+	# used by isStillValid() to notice the popup closing behind our back.
+	_popupHwnd = None
 
 	@classmethod
 	def initialize(cls):
@@ -40,15 +45,29 @@ class VirtualWindow:
 		Initializes the VirtualWindow system by dynamically importing all virtual window classes and registering the gesture handler.
 		Should be called once during the initialization of the Line AppModule.
 		"""
+		if cls._initialized:
+			# AppModule.__init__ runs again every time LINE starts; the
+			# decide_executeGesture handler must only be registered once.
+			return
 		# Dynamically import all virtual window classes from the virtualWindows package.
 		assert __package__
 		pkg = import_module(__package__ + "._virtualWindows")
 		for importer, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
 			import_module(f"{__package__}._virtualWindows.{modname}")
 
-		cls.windowClasses = tuple(VirtualWindow.__subclasses__())
+		# Deduplicate by class name: after a plugin reload, classes from the
+		# previous import can linger in __subclasses__() until GC runs.
+		seen = set()
+		classes = []
+		for windowClass in VirtualWindow.__subclasses__():
+			if windowClass.__name__ in seen:
+				continue
+			seen.add(windowClass.__name__)
+			classes.append(windowClass)
+		cls.windowClasses = tuple(classes)
 
 		decide_executeGesture.register(cls.handleGesture)
+		cls._initialized = True
 
 	@classmethod
 	def handleGesture(cls, gesture: InputGesture):
@@ -66,6 +85,18 @@ class VirtualWindow:
 			if foreground.appModule.appName != "line":
 				return True
 		except Exception:
+			return True
+
+		window = cls.currentWindow
+		try:
+			stillValid = window.isStillValid()
+		except Exception:
+			stillValid = False
+		if not stillValid:
+			# The underlying LINE popup is gone (e.g. closed with the mouse);
+			# stop hijacking the navigation keys.
+			if cls.currentWindow is window:
+				cls.currentWindow = None
 			return True
 
 		ids = gesture.normalizedIdentifiers
@@ -115,7 +146,19 @@ class VirtualWindow:
 		if getattr(cls.currentWindow, "__class__", None) is window:
 			return
 
-		cls.currentWindow = window(obj) if window else None
+		if window is None:
+			cls.currentWindow = None
+			return
+		try:
+			cls.currentWindow = window(obj)
+		except Exception:
+			from logHandler import log
+
+			log.debugWarning(
+				f"VirtualWindow {window.__name__} failed to initialize",
+				exc_info=True,
+			)
+			cls.currentWindow = None
 
 	@classmethod
 	def getWindowClass(cls, obj):
@@ -132,8 +175,44 @@ class VirtualWindow:
 		self.obj = obj
 		self.elements = []
 		self.pos = -1
+		self.captureForegroundHwnd()
 		self.makeElements()
 		message(self.title) if self.title else None
+
+	def captureForegroundHwnd(self):
+		"""Record the current foreground window for later liveness checks."""
+		try:
+			self._popupHwnd = ctypes.windll.user32.GetForegroundWindow()
+		except Exception:
+			self._popupHwnd = None
+
+	def _isPopupForegroundAlive(self):
+		"""True while the window that was foreground at creation still is."""
+		hwnd = self._popupHwnd
+		if not hwnd:
+			return True
+		try:
+			user32 = ctypes.windll.user32
+			return bool(
+				user32.IsWindow(hwnd)
+				and user32.IsWindowVisible(hwnd)
+				and user32.GetForegroundWindow() == hwnd,
+			)
+		except Exception:
+			return True
+
+	def isStillValid(self):
+		"""Return False once the matched LINE screen/popup no longer exists.
+
+		handleGesture calls this before consuming navigation keys so a popup
+		closed behind our back (e.g. with the mouse) releases the keyboard.
+		"""
+		if not self._isPopupForegroundAlive():
+			return False
+		try:
+			return bool(type(self).isMatchLineScreen(self.obj))
+		except Exception:
+			return False
 
 	def makeElements(self):
 		"""

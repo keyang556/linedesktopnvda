@@ -9,28 +9,36 @@ import os
 import subprocess
 import markdown
 
+import buildVars
+
+_ADDON_INFO = buildVars.addon_info
+
 ADDON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addon")
-OUTPUT_NAME = "lineDesktop-1.2.5-beta6.nvda-addon"
+OUTPUT_NAME = f"{_ADDON_INFO['addon_name']}-{_ADDON_INFO['addon_version']}.nvda-addon"
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), OUTPUT_NAME)
 
-# Manifest content matching the format of working NVDA add-ons
-MANIFEST_CONTENT = """\
-name = lineDesktop
-summary = "LINE Desktop Accessibility"
-description = \"\"\"Enhances NVDA accessibility support for LINE Desktop on Windows.
-Provides improved navigation for chat lists, messages, contacts, and message input.
-Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions.\"\"\"
-author = "張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭<tommytsaitou>"
-url = https://keyang556.github.io/linedesktopnvda/
-version = 1.2.5-beta6
-changelog = \"\"\"Added an AI image description dialog with a read-only transcript and follow-up questions.
-Added settings for the image description service, API key, model, and prompt.
-Completed translations and documentation for all supported languages.\"\"\"
-docFileName = readme.html
-minimumNVDAVersion = 2019.3
-lastTestedNVDAVersion = 2026.1
-updateChannel = None
-"""
+
+def _build_manifest_content():
+	"""Build manifest.ini content from buildVars (single source of truth)."""
+	info = _ADDON_INFO
+	url = info.get("addon_url") or "https://keyang556.github.io/linedesktopnvda/"
+	return (
+		f"name = {info['addon_name']}\n"
+		f'summary = "{info["addon_summary"]}"\n'
+		f'description = """{info["addon_description"]}"""\n'
+		f'author = "{info["addon_author"]}"\n'
+		f"url = {url}\n"
+		f"version = {info['addon_version']}\n"
+		f'changelog = """{info["addon_changelog"]}"""\n'
+		f"docFileName = {info['addon_docFileName']}\n"
+		f"minimumNVDAVersion = {info['addon_minimumNVDAVersion']}\n"
+		f"lastTestedNVDAVersion = {info['addon_lastTestedNVDAVersion']}\n"
+		f"updateChannel = {info.get('addon_updateChannel') or 'None'}\n"
+	)
+
+
+# Manifest content derived from buildVars so version/author/URL never drift.
+MANIFEST_CONTENT = _build_manifest_content()
 
 
 def compile_po_files():

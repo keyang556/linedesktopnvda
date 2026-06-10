@@ -1,10 +1,77 @@
+import itertools
+
 from logHandler import log
+
+
+# Keeps recognizer/pixel buffers referenced until each async recognition
+# finishes; without this they can be garbage-collected mid-recognition and the
+# callback never fires (or crashes). Keyed by a monotonic token.
+_pendingOcr = {}
+_ocrTokenCounter = itertools.count()
+
+# Optional hint (LINE's UI language code, e.g. 'zh-TW', 'ja', 'th') so OCR can
+# prefer the language LINE is actually displaying. Set by the app module at
+# startup; None keeps the historical Traditional-Chinese-first default.
+_preferredOcrLanguage = None
+
+
+def setPreferredOcrLanguage(lang):
+	"""Record LINE's UI language so OCR can prefer it (see pickOcrLanguage)."""
+	global _preferredOcrLanguage
+	_preferredOcrLanguage = lang
+
+
+def pickOcrLanguage(langs, preferLang=None):
+	"""Choose the best available UWP OCR language tag.
+
+	``langs`` is the list of installed OCR language tags (e.g. 'zh-Hant-TW',
+	'ja', 'en-US'). ``preferLang`` is an optional hint from LINE's UI language
+	(e.g. 'zh-TW', 'ja', 'th'); when omitted the module-level hint is used.
+
+	Falls back to Traditional Chinese, then any Chinese, then the first
+	installed language — the add-on's historical default — so behaviour is
+	unchanged when no hint is given or LINE is Chinese.
+	"""
+	if not langs:
+		return None
+	hint = (preferLang if preferLang is not None else _preferredOcrLanguage) or ""
+	hint = hint.lower()
+	prefixes = []
+	if hint.startswith("ja"):
+		prefixes = ["ja"]
+	elif hint.startswith("ko"):
+		prefixes = ["ko"]
+	elif hint.startswith("th"):
+		prefixes = ["th"]
+	elif hint.startswith(("zh-cn", "zh-hans", "zh_cn")):
+		prefixes = ["zh-hans", "zh-cn", "zh"]
+	elif hint.startswith("en"):
+		prefixes = ["en"]
+
+	lowerLangs = [(lang, lang.lower()) for lang in langs]
+	for prefix in prefixes:
+		for orig, low in lowerLangs:
+			if low.startswith(prefix):
+				return orig
+	# Historical default: Traditional Chinese, then any Chinese.
+	for cand in ("zh-hant-tw", "zh-tw", "zh-hant"):
+		for orig, low in lowerLangs:
+			if low == cand:
+				return orig
+	for orig, low in lowerLangs:
+		if low.startswith("zh"):
+			return orig
+	return langs[0]
 
 
 def ocrGetText(left, top, width, height, onResult):
 	"""
 	Performs OCR on the specified screen region and calls the onResult callback with the OCR result.
 	onResult should be a function that takes a single argument, which will be the OCR result object.
+
+	Note: the underlying UWP OCR invokes ``onResult`` on a background thread.
+	Callers that touch NVDA speech/braille or UI must marshal back to the main
+	thread themselves (e.g. via ``core.callLater``).
 	"""
 	try:
 		import screenBitmap
@@ -14,19 +81,11 @@ def ocrGetText(left, top, width, height, onResult):
 		if not langs:
 			return
 
-		# Pick language: prefer Traditional Chinese
-		ocrLang = None
-		for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-			if candidate in langs:
-				ocrLang = candidate
-				break
+		# Pick language: follow LINE's UI language when known, else prefer
+		# Traditional Chinese (the historical default).
+		ocrLang = pickOcrLanguage(langs)
 		if not ocrLang:
-			for lang in langs:
-				if lang.startswith("zh"):
-					ocrLang = lang
-					break
-		if not ocrLang:
-			ocrLang = langs[0]
+			return
 
 		recognizer = uwpOcr.UwpOcr(language=ocrLang)
 		resizeFactor = recognizer.getResizeFactor(width, height)
@@ -69,7 +128,19 @@ def ocrGetText(left, top, width, height, onResult):
 			sb = screenBitmap.ScreenBitmap(width, height)
 			ocrPixels = sb.captureImage(left, top, width, height)
 
-		recognizer.recognize(ocrPixels, imgInfo, onResult)
+		# Keep the recognizer and pixel buffer alive until recognition
+		# completes, then release them in the wrapper.
+		token = next(_ocrTokenCounter)
+		_pendingOcr[token] = (recognizer, ocrPixels, imgInfo, sb)
+
+		def _wrappedOnResult(result):
+			_pendingOcr.pop(token, None)
+			try:
+				onResult(result)
+			except Exception:
+				log.debug("OCR onResult callback failed", exc_info=True)
+
+		recognizer.recognize(ocrPixels, imgInfo, _wrappedOnResult)
 	except Exception:
 		log.debug("OCR fallback failed", exc_info=True)
 
@@ -84,7 +155,10 @@ def message(text):
 	speech.speakMessage(text)
 
 	handler = braille.handler
-	assert handler
+	if handler is None:
+		# Braille may be uninitialized (secure screens, minimal setups);
+		# speech already happened, so just skip braille output.
+		return
 	try:
 		if handler.buffer is handler.messageBuffer:
 			handler.buffer.clear()
@@ -96,5 +170,5 @@ def message(text):
 		handler.buffer.regions.append(region)
 		handler.buffer.update()
 		handler.update()
-	except RuntimeError:
-		log.debug("Braille translation failed for text, skipping braille output", exc_info=True)
+	except Exception:
+		log.debug("Braille output failed for text, skipping braille output", exc_info=True)

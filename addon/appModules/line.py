@@ -20,10 +20,12 @@ import ctypes
 import ctypes.wintypes
 import comtypes
 import re
+import threading
 import time
 import configparser
 import winreg
 from ._virtualWindow import VirtualWindow
+from ._utils import pickOcrLanguage, setPreferredOcrLanguage
 import addonHandler
 
 addonHandler.initTranslation()
@@ -1946,6 +1948,113 @@ def _restoreFocusToElement(element, expectedRuntimeId=None):
 		log.debug("LINE: copy-read focus restore failed", exc_info=True)
 
 
+def _queueUiMessage(text):
+	"""Speak a message safely from any thread.
+
+	ui.message must not be called from worker threads; this queues it onto
+	NVDA's main event queue instead. Also safe to call from the main thread.
+	"""
+	try:
+		import queueHandler
+
+		queueHandler.queueFunction(queueHandler.eventQueue, ui.message, text)
+	except Exception:
+		try:
+			core.callLater(0, ui.message, text)
+		except Exception:
+			pass
+
+
+def _coInitializeWorker():
+	"""Best-effort COM init for worker threads that touch UIA/OCR."""
+	try:
+		ctypes.windll.ole32.CoInitializeEx(None, 0)  # COINIT_MULTITHREADED
+	except Exception:
+		pass
+
+
+# Pointer-sized integer for the SendInput dwExtraInfo field.
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+	_ULONG_PTR = ctypes.c_ulonglong
+else:
+	_ULONG_PTR = ctypes.c_ulong
+
+
+class _MOUSEINPUT(ctypes.Structure):
+	_fields_ = (
+		("dx", ctypes.wintypes.LONG),
+		("dy", ctypes.wintypes.LONG),
+		("mouseData", ctypes.wintypes.DWORD),
+		("dwFlags", ctypes.wintypes.DWORD),
+		("time", ctypes.wintypes.DWORD),
+		("dwExtraInfo", _ULONG_PTR),
+	)
+
+
+class _INPUT(ctypes.Structure):
+	class _INPUTunion(ctypes.Union):
+		_fields_ = (("mi", _MOUSEINPUT),)
+
+	_anonymous_ = ("u",)
+	_fields_ = (
+		("type", ctypes.wintypes.DWORD),
+		("u", _INPUTunion),
+	)
+
+
+_INPUT_MOUSE = 0
+_MOUSEEVENTF_LEFTDOWN = 0x0002
+_MOUSEEVENTF_LEFTUP = 0x0004
+_MOUSEEVENTF_RIGHTDOWN = 0x0008
+_MOUSEEVENTF_RIGHTUP = 0x0010
+
+
+def _sendMouseClick(x, y, button="left"):
+	"""Move the cursor to (x, y) and click atomically via SendInput.
+
+	SendInput delivers the button-down and button-up events in a single
+	call, so no inter-event ``time.sleep`` is needed. This keeps clicks
+	reliable without ever blocking the calling (often main) thread, which
+	the previous SetCursorPos + mouse_event + sleep pattern did. Safe on
+	any thread.
+	"""
+	try:
+		ctypes.windll.user32.SetCursorPos(int(x), int(y))
+		if button == "right":
+			downFlag, upFlag = _MOUSEEVENTF_RIGHTDOWN, _MOUSEEVENTF_RIGHTUP
+		else:
+			downFlag, upFlag = _MOUSEEVENTF_LEFTDOWN, _MOUSEEVENTF_LEFTUP
+		events = (_INPUT * 2)()
+		for i, flag in enumerate((downFlag, upFlag)):
+			events[i].type = _INPUT_MOUSE
+			events[i].mi = _MOUSEINPUT(0, 0, 0, flag, 0, 0)
+		ctypes.windll.user32.SendInput(2, ctypes.byref(events), ctypes.sizeof(_INPUT))
+		return True
+	except Exception:
+		log.debugWarning("LINE: _sendMouseClick failed", exc_info=True)
+		return False
+
+
+def _runOnWorkerThread(work, onDone=None, taskName="task"):
+	"""Run ``work()`` on a daemon thread, then ``onDone(result)`` on the main thread.
+
+	``onDone`` receives None when ``work`` raised. Used to keep screen OCR and
+	raw-COM UIA scans (which block for seconds) off NVDA's main thread.
+	"""
+
+	def _worker():
+		_coInitializeWorker()
+		try:
+			result = work()
+		except Exception:
+			log.debugWarning(f"LINE: background {taskName} failed", exc_info=True)
+			result = None
+		if onDone is not None:
+			core.callLater(0, onDone, result)
+
+	threading.Thread(target=_worker, daemon=True, name=f"lineAddon-{taskName}").start()
+
+
 # Global variable to track the last focused object
 # This is needed because api.getFocusObject() sometimes returns the main Window
 # even when we handled a gainFocus event for a ListItem.
@@ -1969,6 +2078,9 @@ _copyReadRequestId = 0
 _copyReadClipboardOwnerId = 0
 # Debounces delayed focus queries after navigation gestures.
 _focusQueryRequestId = 0
+# Debounces the chat-list up/down arrow Tab×2 chain so rapid key repeats do not
+# stack overlapping chains that send stray Tabs and bounce the focus around.
+_chatListArrowRequestId = 0
 
 # Chat list navigation state.
 # When True, up/down arrows will be handled as chat list navigation
@@ -3042,13 +3154,22 @@ _notesWindowDetectionCache = {
 	"isNotesWindow": False,
 }
 
-# Recursion guard to prevent infinite _get_name → _getDeepText → _get_name loops
-# Uses UIA runtime IDs (stable across Python wrapper recreation) instead of id(self)
-_nameRecursionGuard = set()
-
-# Thread-level recursion depth counter as ultimate safety net
-_nameRecursionDepth = 0
+# Recursion guard to prevent infinite _get_name → _getDeepText → _get_name loops.
+# Uses UIA runtime IDs (stable across Python wrapper recreation) instead of id(self).
+# Stored thread-locally so concurrent name computation on different threads cannot
+# corrupt the shared guard set / depth counter (the previous module-level set and
+# int were not thread-safe).
+_nameRecursion = threading.local()
 _MAX_NAME_RECURSION_DEPTH = 5
+
+
+def _getNameRecursionState():
+	"""Return the calling thread's private name-recursion guard state."""
+	state = _nameRecursion
+	if not hasattr(state, "guard"):
+		state.guard = set()
+		state.depth = 0
+	return state
 
 
 def _captureRegionAsPng(left, top, width, height):
@@ -4833,11 +4954,7 @@ def _clickElement(element):
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if hwnd:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
-		ctypes.windll.user32.SetCursorPos(cx, cy)
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+		_sendMouseClick(cx, cy)
 		return True
 	except Exception:
 		log.debug("_clickElement failed", exc_info=True)
@@ -5485,6 +5602,14 @@ def _queryAndSpeakUIAFocus():
 		log.debugWarning("_queryAndSpeakUIAFocus failed", exc_info=True)
 
 
+def _getClipboardSequenceNumber():
+	"""Return the Windows clipboard sequence number (0 when unavailable)."""
+	try:
+		return ctypes.windll.user32.GetClipboardSequenceNumber()
+	except Exception:
+		return 0
+
+
 def _copyAndReadMessage(targetElement):
 	"""Read a message by right-clicking → Copy → reading clipboard content.
 
@@ -5513,19 +5638,18 @@ def _copyAndReadMessage(targetElement):
 	requestId = _copyReadRequestId
 	targetRuntimeId = _getElementRuntimeId(targetElement)
 
-	# Save current clipboard content
+	# Save the current clipboard text (only text can be snapshotted) and
+	# record the clipboard sequence number so the Copy click can be detected
+	# by the number changing. The clipboard is deliberately NOT cleared up
+	# front: when it holds non-text data (files, images), clearing would
+	# destroy content that cannot be restored.
 	origClip = None
 	try:
 		origClip = api.getClipData()
 	except Exception:
 		pass
-
-	# Clear clipboard so we can detect if copy succeeded
-	try:
-		_copyReadClipboardOwnerId = requestId
-		api.copyToClip("")
-	except Exception:
-		pass
+	_copyReadClipboardOwnerId = requestId
+	clipSeqStart = _getClipboardSequenceNumber()
 
 	# Get LINE window rect to clamp click positions
 	try:
@@ -5627,18 +5751,7 @@ def _copyAndReadMessage(targetElement):
 			pixels = sb.captureImage(mLeft, mTop, msgW, msgH)
 
 			langs = uwpOcr.getLanguages()
-			ocrLang = None
-			for cand in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-				if cand in langs:
-					ocrLang = cand
-					break
-			if not ocrLang:
-				for lang in langs:
-					if lang.startswith("zh"):
-						ocrLang = lang
-						break
-			if not ocrLang and langs:
-				ocrLang = langs[0]
+			ocrLang = pickOcrLanguage(langs)
 			if not ocrLang:
 				messageOcrCache["text"] = ""
 				return ""
@@ -5824,11 +5937,7 @@ def _copyAndReadMessage(targetElement):
 		# Perform right-click
 		if hwnd:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
-		ctypes.windll.user32.SetCursorPos(int(clickX), int(clickY))
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)  # RIGHTDOWN
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)  # RIGHTUP
+		_sendMouseClick(int(clickX), int(clickY), "right")
 
 		# Wait for context menu, then find Copy
 		core.callLater(300, lambda: _findCopyMenuItem(posIdx, retriesLeft=4))
@@ -6323,11 +6432,7 @@ def _copyAndReadMessage(targetElement):
 				itemCx = int((iRect.left + iRect.right) / 2)
 				itemCy = int((iRect.top + iRect.bottom) / 2)
 			log.info(f"LINE: copy-read clicking '複製' at ({itemCx}, {itemCy})")
-			ctypes.windll.user32.SetCursorPos(itemCx, itemCy)
-			time.sleep(0.05)
-			ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
-			time.sleep(0.05)
-			ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+			_sendMouseClick(itemCx, itemCy)
 
 			# Wait for clipboard to update, then read
 			core.callLater(200, _readClipboardAndSpeak)
@@ -6345,10 +6450,14 @@ def _copyAndReadMessage(targetElement):
 		"""Read clipboard content and speak it."""
 		if _abortIfStale("readClipboard", restoreClipboard=True):
 			return
-		try:
-			clipText = api.getClipData()
-		except Exception:
-			clipText = ""
+		clipText = ""
+		if _getClipboardSequenceNumber() != clipSeqStart:
+			# Only a changed sequence number proves the Copy click worked;
+			# otherwise the clipboard still holds the user's own content.
+			try:
+				clipText = api.getClipData()
+			except Exception:
+				clipText = ""
 
 		if clipText and clipText.strip():
 			log.info(f"LINE: copy-read success: {clipText!r}")
@@ -6372,10 +6481,14 @@ def _copyAndReadMessage(targetElement):
 			pass
 
 	def _restoreClipboard(original):
-		"""Restore the original clipboard content."""
+		"""Restore the original clipboard text if the copy flow replaced it."""
 		global _copyReadClipboardOwnerId
 		try:
 			if _copyReadClipboardOwnerId != requestId:
+				return
+			if _getClipboardSequenceNumber() == clipSeqStart:
+				# The clipboard was never touched; leave it alone (it may hold
+				# non-text data that could not be snapshotted).
 				return
 			if original is not None:
 				api.copyToClip(original)
@@ -6385,17 +6498,8 @@ def _copyAndReadMessage(targetElement):
 			if _copyReadClipboardOwnerId == requestId:
 				_copyReadClipboardOwnerId = 0
 
-	# Start the copy-read process
-	initialOcrText = _getMessageOcrText()
-	if messageOcrCache["isDateSeparator"] and initialOcrText:
-		_restoreClipboard(origClip)
-		speech.cancelSpeech()
-		ui.message(initialOcrText.strip())
-		return
-	# Background chat cache: if NVDA+Windows+U cached this room's text,
-	# look the focused bubble up by OCR snippet and read it directly,
-	# skipping the right-click copy-read flow entirely.
-	if initialOcrText:
+	def _lookupChatCacheAnnouncement(initialOcrText):
+		"""Return the cached announcement for the OCR snippet, or None."""
 		try:
 			from . import _chatCache
 
@@ -6406,41 +6510,73 @@ def _copyAndReadMessage(targetElement):
 				f" entries={_chatCache.getMessageCount()}"
 				f" ocr={initialOcrText!r}",
 			)
-			if cacheActive:
-				cachedText, _cacheIdx = _chatCache.lookupMessage(initialOcrText)
-				if cachedText:
-					replyInfo = _chatCache.getLastReplyInfo()
-					if replyInfo:
-						# Announce as "Sender 回覆 OriginalSender Content Time"
-						# in one utterance so the reply context and the time
-						# can't be split across two announcements (the
-						# follow-up timestamp element would otherwise repeat
-						# the message with the time on its own).
-						parts = [
-							replyInfo["replySender"],
-							"回覆",
-							replyInfo["originalName"],
-							replyInfo["replyContent"],
-						]
-						if replyInfo.get("replyTime"):
-							parts.append(replyInfo["replyTime"])
-						announceText = " ".join(parts)
-					else:
-						announceText = cachedText
-					log.info(
-						f"LINE: copy-read served from chat cache: {announceText!r}",
-					)
-					_restoreClipboard(origClip)
-					speech.cancelSpeech()
-					ui.message(announceText)
-					return
-				else:
-					log.debug(
-						f"LINE: chat cache lookup returned no match for OCR {initialOcrText!r}",
-					)
+			if not cacheActive:
+				return None
+			cachedText, _cacheIdx = _chatCache.lookupMessage(initialOcrText)
+			if not cachedText:
+				log.debug(
+					f"LINE: chat cache lookup returned no match for OCR {initialOcrText!r}",
+				)
+				return None
+			replyInfo = _chatCache.getLastReplyInfo()
+			if replyInfo:
+				# Announce as "Sender 回覆 OriginalSender Content Time"
+				# in one utterance so the reply context and the time
+				# can't be split across two announcements (the
+				# follow-up timestamp element would otherwise repeat
+				# the message with the time on its own).
+				parts = [
+					replyInfo["replySender"],
+					"回覆",
+					replyInfo["originalName"],
+					replyInfo["replyContent"],
+				]
+				if replyInfo.get("replyTime"):
+					parts.append(replyInfo["replyTime"])
+				return " ".join(parts)
+			return cachedText
 		except Exception:
 			log.debug("LINE: chat cache lookup failed", exc_info=True)
-	_tryKeyboardCopyFallback()
+			return None
+
+	def _initialOcrWork():
+		"""Worker-thread part: bubble OCR + chat-cache lookup (both can block)."""
+		initialOcrText = _getMessageOcrText()
+		isDateSeparator = bool(messageOcrCache["isDateSeparator"] and initialOcrText)
+		announceText = None
+		if initialOcrText and not isDateSeparator:
+			announceText = _lookupChatCacheAnnouncement(initialOcrText)
+		return (initialOcrText, isDateSeparator, announceText)
+
+	def _continueAfterInitialOcr(result):
+		initialOcrText, isDateSeparator, announceText = result or ("", False, None)
+		if _abortIfStale("initialOcr", restoreClipboard=True):
+			return
+		if isDateSeparator:
+			_restoreClipboard(origClip)
+			speech.cancelSpeech()
+			ui.message(initialOcrText.strip())
+			return
+		# Background chat cache: if NVDA+Windows+U cached this room's text,
+		# the focused bubble was already looked up on the worker thread;
+		# announcing it skips the right-click copy-read flow entirely.
+		if announceText:
+			log.info(
+				f"LINE: copy-read served from chat cache: {announceText!r}",
+			)
+			_restoreClipboard(origClip)
+			speech.cancelSpeech()
+			ui.message(announceText)
+			return
+		_tryKeyboardCopyFallback()
+
+	# Start the copy-read process. The initial bubble OCR waits up to 2.5 s
+	# and the chat-cache lookup is CPU-heavy, so both run off the main thread.
+	_runOnWorkerThread(
+		_initialOcrWork,
+		onDone=_continueAfterInitialOcr,
+		taskName="copyReadInitialOcr",
+	)
 
 
 def _ocrReadMessageFallback(targetElement):
@@ -6464,9 +6600,9 @@ class LineChatListItem(UIA):
 	"""
 
 	def _get_name(self):
-		# Prevent infinite recursion using global depth counter
-		global _nameRecursionDepth
-		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+		# Prevent infinite recursion using a per-thread depth counter
+		state = _getNameRecursionState()
+		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
 			return super().name or ""
 		# Also guard using UIA runtime ID (stable across Python wrapper recreation)
 		guardKey = None
@@ -6476,11 +6612,11 @@ class LineChatListItem(UIA):
 				guardKey = ("LineChatListItem", str(rid))
 		except Exception:
 			guardKey = ("LineChatListItem", id(self))
-		if guardKey and guardKey in _nameRecursionGuard:
+		if guardKey and guardKey in state.guard:
 			return super().name or ""
 		if guardKey:
-			_nameRecursionGuard.add(guardKey)
-		_nameRecursionDepth += 1
+			state.guard.add(guardKey)
+		state.depth += 1
 		try:
 			# First try the native name
 			name = super().name
@@ -6497,9 +6633,9 @@ class LineChatListItem(UIA):
 				return displayText
 			return ""
 		finally:
-			_nameRecursionDepth -= 1
+			state.depth -= 1
 			if guardKey:
-				_nameRecursionGuard.discard(guardKey)
+				state.guard.discard(guardKey)
 
 	def event_gainFocus(self):
 		super().event_gainFocus()
@@ -6509,8 +6645,8 @@ class LineChatMessage(UIA):
 	"""Overlay class for individual chat messages."""
 
 	def _get_name(self):
-		global _nameRecursionDepth
-		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+		state = _getNameRecursionState()
+		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
 			return super().name or ""
 		guardKey = None
 		try:
@@ -6519,11 +6655,11 @@ class LineChatMessage(UIA):
 				guardKey = ("LineChatMessage", str(rid))
 		except Exception:
 			guardKey = ("LineChatMessage", id(self))
-		if guardKey and guardKey in _nameRecursionGuard:
+		if guardKey and guardKey in state.guard:
 			return super().name or ""
 		if guardKey:
-			_nameRecursionGuard.add(guardKey)
-		_nameRecursionDepth += 1
+			state.guard.add(guardKey)
+		state.depth += 1
 		try:
 			name = super().name
 			if name and name.strip():
@@ -6536,9 +6672,9 @@ class LineChatMessage(UIA):
 				return displayText
 			return ""
 		finally:
-			_nameRecursionDepth -= 1
+			state.depth -= 1
 			if guardKey:
-				_nameRecursionGuard.discard(guardKey)
+				state.guard.discard(guardKey)
 
 	def _get_description(self):
 		desc = super().description
@@ -6691,8 +6827,8 @@ class LineContactItem(UIA):
 	"""Overlay class for contact list items."""
 
 	def _get_name(self):
-		global _nameRecursionDepth
-		if _nameRecursionDepth >= _MAX_NAME_RECURSION_DEPTH:
+		state = _getNameRecursionState()
+		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
 			return super().name or ""
 		guardKey = None
 		try:
@@ -6701,11 +6837,11 @@ class LineContactItem(UIA):
 				guardKey = ("LineContactItem", str(rid))
 		except Exception:
 			guardKey = ("LineContactItem", id(self))
-		if guardKey and guardKey in _nameRecursionGuard:
+		if guardKey and guardKey in state.guard:
 			return super().name or ""
 		if guardKey:
-			_nameRecursionGuard.add(guardKey)
-		_nameRecursionDepth += 1
+			state.guard.add(guardKey)
+		state.depth += 1
 		try:
 			name = super().name
 			if name and name.strip():
@@ -6718,9 +6854,9 @@ class LineContactItem(UIA):
 				return displayText
 			return ""
 		finally:
-			_nameRecursionDepth -= 1
+			state.depth -= 1
 			if guardKey:
-				_nameRecursionGuard.discard(guardKey)
+				state.guard.discard(guardKey)
 
 
 class LineGenericList(UIA):
@@ -6786,6 +6922,8 @@ class AppModule(appModuleHandler.AppModule):
 		# Read and cache LINE installation info
 		self._lineVersion = _readLineVersion()
 		self._lineLanguage = _readLineLanguage()
+		# Let OCR follow LINE's UI language (falls back to zh-Hant first).
+		setPreferredOcrLanguage(self._lineLanguage)
 		self._qtAccessibleSet = _isQtAccessibleSet()
 		# Decrypt the image API keys once at startup so PBKDF2 never runs
 		# during an actual image-description request.
@@ -6800,6 +6938,60 @@ class AppModule(appModuleHandler.AppModule):
 			f"lineLanguage: {self._lineLanguage}, "
 			f"qtAccessible: {self._qtAccessibleSet}",
 		)
+
+	def terminate(self):
+		"""Drop cached COM references and invalidate in-flight async chains.
+
+		Module-level globals would otherwise keep stale UIA pointers alive
+		after LINE exits, and pending callLater chains would fire against a
+		dead process. All of these caches are best-effort and rebuild
+		themselves, so clearing them is safe even when another LINE process
+		(e.g. LineCall) is still running.
+		"""
+		global lastFocusedObject, _lastAnnouncedUIAElement, _lastAnnouncedUIAName
+		global _lastOCRElement, _lastRawFocusedElement
+		global _messageContextMenuRequestId, _copyReadRequestId, _copyReadClipboardOwnerId
+		global _focusQueryRequestId
+		global _chatListMode, _chatListSearchField, _chatListCurrentIndex, _currentChatRoomName
+		global _suppressAddon
+		try:
+			lastFocusedObject = None
+			_lastAnnouncedUIAElement = None
+			_lastAnnouncedUIAName = None
+			_lastOCRElement = None
+			_lastRawFocusedElement = None
+			# Bump the request ids so still-scheduled callLater chains notice
+			# they are stale and bail out instead of touching dead objects.
+			_messageContextMenuRequestId += 1
+			_copyReadRequestId += 1
+			_copyReadClipboardOwnerId = 0
+			_focusQueryRequestId += 1
+			_chatListMode = False
+			_chatListSearchField = None
+			_chatListCurrentIndex = -1
+			_currentChatRoomName = None
+			_suppressAddon = False
+			# Reset the current (main) thread's name-recursion guard; other
+			# threads' thread-local state is cleaned up when they exit.
+			_resetNameRecursionState = _getNameRecursionState()
+			_resetNameRecursionState.guard.clear()
+			_resetNameRecursionState.depth = 0
+			_notesWindowDetectionCache["key"] = None
+			_notesWindowDetectionCache["expiresAt"] = 0.0
+			_notesWindowDetectionCache["isNotesWindow"] = False
+			VirtualWindow.currentWindow = None
+			self._inCallOcrRecognizer = None
+			self._inCallOcrPixels = None
+			self._inCallOcrImgInfo = None
+			try:
+				from . import _chatCache
+
+				_chatCache.clearCache()
+			except Exception:
+				pass
+		except Exception:
+			log.debugWarning("LINE AppModule terminate cleanup failed", exc_info=True)
+		super().terminate()
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		"""Apply custom overlay classes based on role and hierarchy."""
@@ -7045,7 +7237,11 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception:
 			pass
 
-		VirtualWindow.onFocusChanged(obj)
+		try:
+			VirtualWindow.onFocusChanged(obj)
+		except Exception:
+			# A broken virtual window must never break the focus event itself.
+			log.debugWarning("VirtualWindow focus handling failed", exc_info=True)
 		nextHandler()
 
 	def event_UIA_elementSelected(self, obj, nextHandler):
@@ -7057,7 +7253,7 @@ class AppModule(appModuleHandler.AppModule):
 			nextHandler()
 			return
 		try:
-			log.info(
+			log.debug(
 				f"LINE UIA_elementSelected: role={obj.role}, name={obj.name!r}, class={obj.windowClassName}",
 			)
 		except Exception:
@@ -7065,12 +7261,24 @@ class AppModule(appModuleHandler.AppModule):
 		# If we get a selection event for a list item, treat it as focus
 		if obj.role == controlTypes.Role.LISTITEM:
 			try:
+				# Qt6 can fire elementSelected repeatedly for the same item;
+				# announcing only on change avoids double-speaking.
+				rid = None
+				try:
+					rid = str(obj.UIAElement.GetRuntimeId())
+				except Exception:
+					rid = None
+				if rid is not None and rid == getattr(self, "_lastSelectedRuntimeId", None):
+					nextHandler()
+					return
+				self._lastSelectedRuntimeId = rid
 				obj.setFocus()
 				api.setFocusObject(obj)
 				api.setNavigatorObject(obj)
 				speech.cancelSpeech()
 				speech.speakObject(obj, reason=controlTypes.OutputReason.FOCUS)
-				braille.handler.handleGainFocus(obj)
+				if braille.handler is not None:
+					braille.handler.handleGainFocus(obj)
 			except Exception:
 				log.debugWarning("Error handling elementSelected", exc_info=True)
 		nextHandler()
@@ -7081,7 +7289,7 @@ class AppModule(appModuleHandler.AppModule):
 			nextHandler()
 			return
 		try:
-			log.info(
+			log.debug(
 				f"LINE UIA_notification: role={obj.role}, name={obj.name!r}, kwargs={kwargs}",
 			)
 		except Exception:
@@ -7096,7 +7304,7 @@ class AppModule(appModuleHandler.AppModule):
 		try:
 			if isinstance(obj, UIA) and obj.role == controlTypes.Role.LISTITEM:
 				if controlTypes.State.SELECTED in obj.states:
-					log.info(
+					log.debug(
 						f"LINE stateChange SELECTED: role={obj.role}, "
 						f"name={obj.name!r}, class={obj.windowClassName}",
 					)
@@ -7528,13 +7736,16 @@ class AppModule(appModuleHandler.AppModule):
 		return None
 
 	def _invokeElement(self, element, actionName, announce=True):
-		"""Invoke a UIA element using InvokePattern or mouse click fallback."""
+		"""Invoke a UIA element using InvokePattern or mouse click fallback.
+
+		Safe to call from worker threads (announcements are queued).
+		"""
 
 		# Try InvokePattern
 		try:
 			if _tryInvokeUIAElement(element):
 				if announce:
-					ui.message(actionName)
+					_queueUiMessage(actionName)
 				return True
 		except Exception as e:
 			log.debug(f"LINE: InvokePattern failed: {e}")
@@ -7548,12 +7759,9 @@ class AppModule(appModuleHandler.AppModule):
 			if cx > 0 and cy > 0:
 				ctypes.windll.user32.SetCursorPos(cx, cy)
 				ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
-				import time
-
-				time.sleep(0.05)
 				ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
 				if announce:
-					ui.message(actionName)
+					_queueUiMessage(actionName)
 				return True
 		except Exception as e:
 			log.debug(f"LINE: click fallback failed: {e}")
@@ -7568,18 +7776,13 @@ class AppModule(appModuleHandler.AppModule):
 		If hwnd is provided, that window is brought to foreground first.
 		"""
 		import ctypes
-		import time
 
 		if hwnd is None:
 			hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if hwnd:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
 
-		ctypes.windll.user32.SetCursorPos(int(x), int(y))
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+		_sendMouseClick(int(x), int(y))
 
 	def _getHeaderIconPosition(self):
 		"""Get the screen position of the phone icon in the LINE chat header.
@@ -8215,18 +8418,7 @@ class AppModule(appModuleHandler.AppModule):
 			pixels = sb.captureImage(left, top, width, height)
 
 			langs = uwpOcr.getLanguages()
-			ocrLang = None
-			for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-				if candidate in langs:
-					ocrLang = candidate
-					break
-			if not ocrLang:
-				for lang in langs:
-					if lang.startswith("zh"):
-						ocrLang = lang
-						break
-			if not ocrLang and langs:
-				ocrLang = langs[0]
+			ocrLang = pickOcrLanguage(langs)
 			if not ocrLang:
 				log.warning("LINE: no OCR language available")
 				return None
@@ -8630,7 +8822,7 @@ class AppModule(appModuleHandler.AppModule):
 					)
 					self._clickAtPosition(cx, cy)
 
-				ui.message(_("已接聽"))
+				_queueUiMessage(_("已接聽"))
 				return True
 
 		# Strategy 3: OCR confirms call window, then click at position
@@ -8683,7 +8875,7 @@ class AppModule(appModuleHandler.AppModule):
 			f"{rect.top},{rect.right},{rect.bottom})",
 		)
 		self._clickAtPosition(answerX, answerY)
-		ui.message(_("已接聽"))
+		_queueUiMessage(_("已接聽"))
 		return True
 
 	def _rejectIncomingCall(self, hwnd):
@@ -8752,7 +8944,7 @@ class AppModule(appModuleHandler.AppModule):
 					)
 					self._clickAtPosition(cx, cy)
 
-				ui.message(_("已拒絕"))
+				_queueUiMessage(_("已拒絕"))
 				return True
 
 		# Strategy 3: OCR confirms call window, then click at position
@@ -8804,7 +8996,7 @@ class AppModule(appModuleHandler.AppModule):
 			f"{rect.top},{rect.right},{rect.bottom})",
 		)
 		self._clickAtPosition(rejectX, rejectY)
-		ui.message(_("已拒絕"))
+		_queueUiMessage(_("已拒絕"))
 		return True
 
 	def _getCallerInfo(self, hwnd):
@@ -8830,85 +9022,115 @@ class AppModule(appModuleHandler.AppModule):
 				callerName = callerName.replace(removeKw, "")
 			callerName = callerName.strip()
 			if callerName:
-				ui.message(_("來電：{callerName}").format(callerName=callerName))
+				_queueUiMessage(_("來電：{callerName}").format(callerName=callerName))
 			else:
-				ui.message(_("來電（OCR: {ocrText}）").format(ocrText=ocrText))
+				_queueUiMessage(_("來電（OCR: {ocrText}）").format(ocrText=ocrText))
 			log.info(f"LINE: caller info OCR: {ocrText!r}")
 		else:
-			ui.message(_("無法辨識來電者"))
+			_queueUiMessage(_("無法辨識來電者"))
 			log.info("LINE: caller info OCR returned empty")
 
 	# ── Incoming call scripts ──────────────────────────────────────────
 	# Note: gesture bindings are registered in the GlobalPlugin
 	# (lineDesktopHelper.py) so they work even when LINE isn't focused.
 
+	# Serializes the call-window tasks: each one does window enumeration and
+	# screen OCR that takes seconds, so they run on a worker thread and must
+	# not overlap.
+	_callTaskInProgress = False
+	# Serializes the in-call mic/camera status checks, which move the mouse to
+	# reveal the control bar; overlapping checks would fight over the cursor.
+	_callStatusCheckInProgress = False
+
+	def _runCallTask(self, taskName, task, errorMessage):
+		"""Run a blocking call-window task off the main thread.
+
+		The task may only announce via _queueUiMessage (it runs on a worker
+		thread where ui.message is unsafe).
+		"""
+		if AppModule._callTaskInProgress:
+			log.debug(f"LINE: {taskName} skipped; another call task is running")
+			return
+		AppModule._callTaskInProgress = True
+
+		def _work():
+			try:
+				task()
+			except Exception as e:
+				log.warning(f"LINE {taskName} error: {e}", exc_info=True)
+				_queueUiMessage(errorMessage.format(error=e))
+
+		def _done(result):
+			AppModule._callTaskInProgress = False
+
+		_runOnWorkerThread(_work, onDone=_done, taskName=taskName)
+
 	def script_answerCall(self, gesture):
 		"""Answer an incoming LINE call."""
-		try:
+
+		def _task():
 			hwnd = self._findIncomingCallWindow()
 			if hwnd:
 				self._answerIncomingCall(hwnd)
 			else:
-				ui.message(_("未偵測到來電"))
-		except Exception as e:
-			log.warning(f"LINE answerCall error: {e}", exc_info=True)
-			ui.message(_("接聽功能錯誤: {error}").format(error=e))
+				_queueUiMessage(_("未偵測到來電"))
+
+		self._runCallTask("answerCall", _task, _("接聽功能錯誤: {error}"))
 
 	def script_rejectCall(self, gesture):
 		"""Reject an incoming LINE call."""
-		try:
+
+		def _task():
 			hwnd = self._findIncomingCallWindow()
 			if hwnd:
 				self._rejectIncomingCall(hwnd)
 			else:
-				ui.message(_("未偵測到來電"))
-		except Exception as e:
-			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
-			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
+				_queueUiMessage(_("未偵測到來電"))
+
+		self._runCallTask("rejectCall", _task, _("拒絕功能錯誤: {error}"))
 
 	def script_checkCaller(self, gesture):
 		"""Announce who is calling."""
-		try:
+
+		def _task():
 			hwnd = self._findIncomingCallWindow()
 			if hwnd:
 				self._getCallerInfo(hwnd)
 			else:
-				ui.message(_("未偵測到來電"))
-		except Exception as e:
-			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
-			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
+				_queueUiMessage(_("未偵測到來電"))
+
+		self._runCallTask("checkCaller", _task, _("來電查看功能錯誤: {error}"))
 
 	def script_focusCallWindow(self, gesture):
 		"""Find the LineCall window, bring it to foreground, and OCR its content."""
 		import ctypes
-		import ctypes.wintypes
 
-		hwnd = self._findIncomingCallWindow()
-		if not hwnd:
-			ui.message(_("未偵測到通話視窗"))
-			return
+		def _task():
+			hwnd = self._findIncomingCallWindow()
+			if not hwnd:
+				_queueUiMessage(_("未偵測到通話視窗"))
+				return
 
-		# Bring the call window to the foreground
-		try:
-			ctypes.windll.user32.SetForegroundWindow(hwnd)
-		except Exception:
-			pass
+			try:
+				ctypes.windll.user32.SetForegroundWindow(hwnd)
+			except Exception:
+				pass
 
-		# Give the window time to come to foreground, then OCR it
-		def _announceCallWindow():
+			# Give the window time to come to foreground, then OCR it.
+			# Sleeping is fine here: this runs on a worker thread.
+			time.sleep(0.3)
 			try:
 				ocrText = self._ocrWindowArea(hwnd, sync=True, timeout=3.0)
 				if ocrText:
-					speech.cancelSpeech()
-					ui.message(ocrText)
+					_queueUiMessage(ocrText)
 					log.info(f"LINE: call window OCR: {ocrText!r}")
 				else:
-					ui.message(_("通話視窗（無法辨識內容）"))
+					_queueUiMessage(_("通話視窗（無法辨識內容）"))
 			except Exception as e:
 				log.warning(f"LINE: call window OCR error: {e}", exc_info=True)
-				ui.message(_("通話視窗"))
+				_queueUiMessage(_("通話視窗"))
 
-		core.callLater(300, _announceCallWindow)
+		self._runCallTask("focusCallWindow", _task, _("通話視窗功能錯誤: {error}"))
 
 	# ── Outgoing call scripts ──────────────────────────────────────────
 
@@ -9097,65 +9319,73 @@ class AppModule(appModuleHandler.AppModule):
 
 		from ._virtualWindows.chatMoreOptions import ChatMoreOptions, _matchMenuLabel
 
-		bestCandidate = None
-		bestMatchCount = -1
 		topCandidates = candidates[: min(3, len(candidates))]
-		for info in topCandidates:
-			ocrText = self._ocrWindowArea(
-				info["hwnd"],
-				region=(
-					info["left"],
-					info["top"],
-					info["width"],
-					info["height"],
-				),
-				sync=True,
-				timeout=1.5,
+
+		def _ocrCandidates():
+			"""Worker thread: OCR up to 3 popup candidates (up to ~4.5 s total)."""
+			bestCandidate = None
+			bestMatchCount = -1
+			for info in topCandidates:
+				ocrText = self._ocrWindowArea(
+					info["hwnd"],
+					region=(
+						info["left"],
+						info["top"],
+						info["width"],
+						info["height"],
+					),
+					sync=True,
+					timeout=1.5,
+				)
+				labels = []
+				for line in (ocrText or "").splitlines():
+					label = _matchMenuLabel(line)
+					if label and label not in labels:
+						labels.append(label)
+				info["ocrMenuLabels"] = labels
+				log.debug(
+					f"LINE: more options candidate hwnd={info['hwnd']} OCR labels={labels}",
+				)
+				if len(labels) > bestMatchCount:
+					bestCandidate = info
+					bestMatchCount = len(labels)
+				elif (
+					len(labels) == bestMatchCount
+					and bestCandidate
+					and info["geometryScore"] < bestCandidate["geometryScore"]
+				):
+					bestCandidate = info
+			return (bestCandidate, bestMatchCount)
+
+		def _afterOcr(result):
+			bestCandidate, bestMatchCount = result if result else (None, -1)
+			if bestCandidate is None:
+				bestCandidate = candidates[0]
+
+			if bestMatchCount <= 0 and retriesLeft > 0:
+				import core
+
+				log.debug("LINE: more options popup not verified by OCR yet, retrying")
+				core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
+				return
+
+			left = bestCandidate["left"]
+			top = bestCandidate["top"]
+			right = bestCandidate["right"]
+			bottom = bestCandidate["bottom"]
+			popupRect = (left, top, right, bottom)
+			popupRowRects = _collectPopupMenuRowRects(
+				bestCandidate["hwnd"],
+				popupRect,
 			)
-			labels = []
-			for line in ocrText.splitlines():
-				label = _matchMenuLabel(line)
-				if label and label not in labels:
-					labels.append(label)
-			info["ocrMenuLabels"] = labels
-			log.debug(
-				f"LINE: more options candidate hwnd={info['hwnd']} OCR labels={labels}",
+			log.info(f"LINE: more options popup found at ({left}, {top}, {right}, {bottom})")
+			VirtualWindow.currentWindow = ChatMoreOptions(
+				popupRect,
+				rowRects=popupRowRects,
+				onAction=self._handleChatMoreOptionsAction,
 			)
-			if len(labels) > bestMatchCount:
-				bestCandidate = info
-				bestMatchCount = len(labels)
-			elif (
-				len(labels) == bestMatchCount
-				and bestCandidate
-				and info["geometryScore"] < bestCandidate["geometryScore"]
-			):
-				bestCandidate = info
 
-		if bestCandidate is None:
-			bestCandidate = candidates[0]
-
-		if bestMatchCount <= 0 and retriesLeft > 0:
-			import core
-
-			log.debug("LINE: more options popup not verified by OCR yet, retrying")
-			core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
-			return
-
-		left = bestCandidate["left"]
-		top = bestCandidate["top"]
-		right = bestCandidate["right"]
-		bottom = bestCandidate["bottom"]
-		popupRect = (left, top, right, bottom)
-		popupRowRects = _collectPopupMenuRowRects(
-			bestCandidate["hwnd"],
-			popupRect,
-		)
-		log.info(f"LINE: more options popup found at ({left}, {top}, {right}, {bottom})")
-		VirtualWindow.currentWindow = ChatMoreOptions(
-			popupRect,
-			rowRects=popupRowRects,
-			onAction=self._handleChatMoreOptionsAction,
-		)
+		_runOnWorkerThread(_ocrCandidates, onDone=_afterOcr, taskName="moreOptionsOcr")
 
 	# ── Message context menu (right-click / Shift+F10) ────────────────
 
@@ -9351,7 +9581,8 @@ class AppModule(appModuleHandler.AppModule):
 			f"LINE: OCR chat room name area: ({nameLeft},{nameTop}) {nameW}x{nameH}, scale={scale:.2f}",
 		)
 
-		try:
+		def _ocrName():
+			# The header OCR blocks up to 3 s; run it on a worker thread.
 			ocrText = self._ocrWindowArea(
 				hwnd,
 				region=(nameLeft, nameTop, nameW, nameH),
@@ -9360,12 +9591,11 @@ class AppModule(appModuleHandler.AppModule):
 			)
 			ocrText = _removeCJKSpaces(ocrText.strip()) if ocrText else ""
 			if ocrText:
-				ui.message(ocrText)
+				_queueUiMessage(ocrText)
 			else:
-				ui.message(_("無法讀取聊天室名稱"))
-		except Exception as e:
-			log.warning(f"LINE: readChatRoomName OCR error: {e}", exc_info=True)
-			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
+				_queueUiMessage(_("無法讀取聊天室名稱"))
+
+		_runOnWorkerThread(_ocrName, taskName="readChatRoomName")
 
 	@script(
 		# Translators: Description of a script to read the current chat room name
@@ -9952,8 +10182,11 @@ class AppModule(appModuleHandler.AppModule):
 			gesture.send()
 			return
 
-		global _lastOCRElement
+		global _lastOCRElement, _chatListArrowRequestId
 		_lastOCRElement = None
+		# Invalidate any in-flight Tab×2 chain from a previous (rapid) press.
+		_chatListArrowRequestId += 1
+		arrowToken = _chatListArrowRequestId
 
 		# Check if we're in the chat list context
 		try:
@@ -9966,6 +10199,8 @@ class AppModule(appModuleHandler.AppModule):
 
 					def _sendFirstTab():
 						"""Send first Tab key, then schedule second Tab."""
+						if arrowToken != _chatListArrowRequestId:
+							return
 						try:
 							from keyboardHandler import KeyboardInputGesture
 
@@ -9977,6 +10212,8 @@ class AppModule(appModuleHandler.AppModule):
 
 					def _sendSecondTabAndRead():
 						"""Send second Tab key, then read the focused element."""
+						if arrowToken != _chatListArrowRequestId:
+							return
 						try:
 							from keyboardHandler import KeyboardInputGesture
 
@@ -10113,18 +10350,13 @@ class AppModule(appModuleHandler.AppModule):
 	def _rightClickAtPosition(self, x, y, hwnd=None):
 		"""Perform a right-click at the given screen coordinates."""
 		import ctypes
-		import time
 
 		if hwnd is None:
 			hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if hwnd:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
 
-		ctypes.windll.user32.SetCursorPos(int(x), int(y))
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0008, 0, 0, 0, 0)  # RIGHTDOWN
-		time.sleep(0.05)
-		ctypes.windll.user32.mouse_event(0x0010, 0, 0, 0, 0)  # RIGHTUP
+		_sendMouseClick(int(x), int(y), "right")
 
 	def _getMessageCenter(self):
 		"""Get the center coordinates of the currently focused message.
@@ -10216,73 +10448,75 @@ class AppModule(appModuleHandler.AppModule):
 		elLeft = int(rect.left)
 		elRight = int(rect.right)
 
-		# Wait for modifier keys (Ctrl, Shift, Alt) to be physically
-		# released before proceeding.  The user likely just pressed
-		# Ctrl+C, and if we send any keystrokes while Ctrl is still
-		# held, NVDA's keyboard hook will combine them (e.g.
-		# Escape → Ctrl+Escape → Windows Start Menu).
-		VK_CONTROL = 0x11
-		VK_SHIFT = 0x10
-		VK_MENU = 0x12  # Alt
-		log.debug("LINE: waiting for modifier keys to be released")
-		GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
-		for _wait in range(40):  # up to ~2 seconds
-			held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
-			if not held:
-				break
-			time.sleep(0.05)
-		log.debug("LINE: modifiers released, proceeding with right-click")
+		appModRef = self
+		state = {}
 
-		ocrLines = []
-		try:
-			ocrResult = self._ocrWindowAreaResult(
-				hwnd,
-				region=(
-					elLeft,
-					elTop,
-					max(elRight - elLeft, 0),
-					max(elBottom - elTop, 0),
-				),
-				sync=True,
-				timeout=2.0,
-			)
-			if ocrResult is not None and not isinstance(ocrResult, Exception):
-				ocrLines = _extractOcrLines(ocrResult)
-		except Exception as e:
-			log.debug(
-				f"LINE: failed to derive OCR bubble probes for {actionName}: {e}",
-				exc_info=True,
-			)
-		ocrClickPositions = _buildMessageBubbleOcrClickPositions(
-			ocrLines,
-			(elLeft, elTop, elRight, elBottom),
-			winTop,
-			winBottom,
-		)
-		if ocrClickPositions:
-			log.debug(
-				f"LINE: {actionName} OCR-derived bubble probes: "
-				f"{[label for _x, _y, label in ocrClickPositions]}",
-			)
-		elif ocrLines:
-			log.debug(
-				f"LINE: {actionName} OCR lines yielded no bubble probes: "
-				f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}",
-			)
-		clickPositions = _mergeClickPositions(
-			ocrClickPositions,
-			_buildMessageBubbleClickPositions(
+		def _preamble():
+			"""Worker thread: wait out modifier keys, then OCR the bubble.
+
+			Both block (the modifier wait up to ~2 s, the OCR up to 2 s), so
+			they must stay off NVDA's main thread. rawEl is NOT touched here;
+			it is only used later on the main thread.
+			"""
+			# Wait for modifier keys (Ctrl, Shift, Alt) to be physically
+			# released before proceeding.  The user likely just pressed
+			# Ctrl+C, and if we send any keystrokes while Ctrl is still
+			# held, NVDA's keyboard hook will combine them (e.g.
+			# Escape → Ctrl+Escape → Windows Start Menu).
+			VK_CONTROL = 0x11
+			VK_SHIFT = 0x10
+			VK_MENU = 0x12  # Alt
+			GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
+			for _wait in range(40):  # up to ~2 seconds
+				held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
+				if not held:
+					break
+				time.sleep(0.05)
+
+			ocrLines = []
+			try:
+				ocrResult = appModRef._ocrWindowAreaResult(
+					hwnd,
+					region=(
+						elLeft,
+						elTop,
+						max(elRight - elLeft, 0),
+						max(elBottom - elTop, 0),
+					),
+					sync=True,
+					timeout=2.0,
+				)
+				if ocrResult is not None and not isinstance(ocrResult, Exception):
+					ocrLines = _extractOcrLines(ocrResult)
+			except Exception as e:
+				log.debug(
+					f"LINE: failed to derive OCR bubble probes for {actionName}: {e}",
+					exc_info=True,
+				)
+			return ocrLines
+
+		def _afterPreamble(ocrLines):
+			ocrLines = ocrLines or []
+			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
+				ocrLines,
 				(elLeft, elTop, elRight, elBottom),
 				winTop,
 				winBottom,
-				includeVerticalOffsets=True,
-			),
-		)
-
-		appModRef = self
+			)
+			state["clickPositions"] = _mergeClickPositions(
+				ocrClickPositions,
+				_buildMessageBubbleClickPositions(
+					(elLeft, elTop, elRight, elBottom),
+					winTop,
+					winBottom,
+					includeVerticalOffsets=True,
+				),
+			)
+			_attemptAtOffset(0)
 
 		def _attemptAtOffset(posIdx=0):
 			"""Right-click at clickPositions[posIdx] and find the menu item."""
+			clickPositions = state["clickPositions"]
 			if posIdx >= len(clickPositions):
 				# All click positions exhausted.
 				# For copy action, fall back to OCR + direct clipboard.
@@ -10792,26 +11026,7 @@ class AppModule(appModuleHandler.AppModule):
 						log.info(
 							f"LINE: clicking menu item '{actionName}' at ({itemCx}, {itemCy})",
 						)
-						ctypes.windll.user32.SetCursorPos(
-							itemCx,
-							itemCy,
-						)
-						time.sleep(0.05)
-						ctypes.windll.user32.mouse_event(
-							0x0002,
-							0,
-							0,
-							0,
-							0,
-						)  # LEFTDOWN
-						time.sleep(0.05)
-						ctypes.windll.user32.mouse_event(
-							0x0004,
-							0,
-							0,
-							0,
-							0,
-						)  # LEFTUP
+						_sendMouseClick(itemCx, itemCy)
 						log.info(
 							f"LINE: context menu '{actionName}' selected",
 						)
@@ -10881,7 +11096,10 @@ class AppModule(appModuleHandler.AppModule):
 			# Wait for context menu to appear, then find and click
 			core.callLater(300, _findAndClickMenuItem)
 
-		_attemptAtOffset(0)
+		# Modifier-key wait + initial bubble OCR block for up to ~4 s total,
+		# so run them on a worker thread; resume the click chain on the main
+		# thread once they finish.
+		_runOnWorkerThread(_preamble, onDone=_afterPreamble, taskName="contextMenuPreamble")
 
 	@script(
 		gesture="kb:NVDA+windows+r",
@@ -11150,9 +11368,16 @@ class AppModule(appModuleHandler.AppModule):
 								return
 						except Exception:
 							pass
-					if self._playVoiceMessageViaOcr(rawEl, hwnd):
-						ui.message(_("播放"))
-						return
+					# The OCR fallback blocks (sync OCR up to 3 s); run it on a
+					# worker thread so NVDA stays responsive.
+					def _ocrFallback():
+						if self._playVoiceMessageViaOcr(rawEl, hwnd):
+							_queueUiMessage(_("播放"))
+						else:
+							_queueUiMessage(_("找不到語音訊息的播放按鈕"))
+
+					_runOnWorkerThread(_ocrFallback, taskName="playVoiceMessageOcr")
+					return
 		except Exception as e:
 			log.debug(
 				f"LINE: play voice message UIA search failed: {e}",
@@ -11472,32 +11697,45 @@ class AppModule(appModuleHandler.AppModule):
 		}
 
 	def _beginRecallConfirmation(self):
-		"""Prompt for recall confirmation and bind Y/N/P shortcuts."""
-		state = self._refreshRecallConfirmationState()
-		prompt = _getRecallConfirmationPrompt(
-			state["actionLabels"],
-			isModernDialog=state["isModernDialog"],
-		)
-		if getattr(self, "_recallPending", False):
+		"""Prompt for recall confirmation and bind Y/N/P shortcuts.
+
+		The dialog-state capture does screen OCR (seconds), so it runs on a
+		worker thread; binding and announcing continue on the main thread.
+		"""
+
+		def _afterState(state):
+			if not state:
+				return
+			prompt = _getRecallConfirmationPrompt(
+				state["actionLabels"],
+				isModernDialog=state["isModernDialog"],
+			)
+			if getattr(self, "_recallPending", False):
+				ui.message(prompt)
+				return
+
+			token = getattr(self, "_recallConfirmationToken", 0) + 1
+			self._recallConfirmationToken = token
+			self._recallPending = True
 			ui.message(prompt)
-			return
+			self.bindGesture("kb:y", "confirmRecall")
+			self.bindGesture("kb:n", "cancelRecall")
+			self.bindGesture("kb:p", "stealthRecall")
 
-		token = getattr(self, "_recallConfirmationToken", 0) + 1
-		self._recallConfirmationToken = token
-		self._recallPending = True
-		ui.message(prompt)
-		self.bindGesture("kb:y", "confirmRecall")
-		self.bindGesture("kb:n", "cancelRecall")
-		self.bindGesture("kb:p", "stealthRecall")
+			def _autoCancel():
+				if (
+					getattr(self, "_recallPending", False)
+					and getattr(self, "_recallConfirmationToken", 0) == token
+				):
+					self._endRecallConfirmation("取消")
 
-		def _autoCancel():
-			if (
-				getattr(self, "_recallPending", False)
-				and getattr(self, "_recallConfirmationToken", 0) == token
-			):
-				self._endRecallConfirmation("取消")
+			core.callLater(10000, _autoCancel)
 
-		core.callLater(10000, _autoCancel)
+		_runOnWorkerThread(
+			self._refreshRecallConfirmationState,
+			onDone=_afterState,
+			taskName="recallConfirmationState",
+		)
 
 	def _isRecallConfirmationDialogVisible(self):
 		"""Return True when the centered LINE recall confirmation dialog is visible."""
@@ -11572,11 +11810,25 @@ class AppModule(appModuleHandler.AppModule):
 					return
 			except Exception:
 				return
-			if self._isRecallConfirmationDialogVisible():
-				self._beginRecallConfirmation()
-				return
-			if remaining > 0:
-				core.callLater(delayMs, lambda: _poll(remaining - 1))
+
+			def _afterVisible(visible):
+				if watchId != getattr(self, "_recallDialogWatchId", 0):
+					return
+				if getattr(self, "_recallPending", False):
+					return
+				if visible:
+					self._beginRecallConfirmation()
+					return
+				if remaining > 0:
+					core.callLater(delayMs, lambda: _poll(remaining - 1))
+
+			# The visibility check OCRs the dialog (up to 2 s); keep it off
+			# the main thread so polling never freezes NVDA.
+			_runOnWorkerThread(
+				self._isRecallConfirmationDialogVisible,
+				onDone=_afterVisible,
+				taskName="recallDialogVisibility",
+			)
 
 		core.callLater(delayMs, lambda: _poll(retriesLeft))
 
@@ -11674,11 +11926,11 @@ class AppModule(appModuleHandler.AppModule):
 			return True
 
 		if actionName == "收回":
-			ui.message(_("找不到收回按鈕"))
+			_queueUiMessage(_("找不到收回按鈕"))
 			return False
 
 		if actionName == "無痕收回":
-			ui.message(_("找不到無痕收回按鈕，需要 Premium"))
+			_queueUiMessage(_("找不到無痕收回按鈕，需要 Premium"))
 			return False
 
 		return False
@@ -11689,48 +11941,83 @@ class AppModule(appModuleHandler.AppModule):
 		def _finish():
 			if getattr(self, "_recallConfirmationToken", 0) != token:
 				return
-			stillVisible = self._isRecallConfirmationDialogVisible()
-			self._clearRecallConfirmationBindings()
-			if stillVisible:
-				if actionName == "無痕收回":
-					ui.message(_("無痕收回可能未成功"))
-				elif actionName == "收回":
-					ui.message(_("收回可能未成功"))
-				else:
-					ui.message(_("取消可能未成功"))
-				return
 
-			if actionName == "無痕收回":
-				ui.message(_("已無痕收回"))
-			elif actionName == "收回":
-				ui.message(_("已收回"))
-			else:
-				ui.message(_("已取消"))
+			def _afterVisible(stillVisible):
+				if getattr(self, "_recallConfirmationToken", 0) != token:
+					return
+				self._clearRecallConfirmationBindings()
+				if stillVisible:
+					if actionName == "無痕收回":
+						ui.message(_("無痕收回可能未成功"))
+					elif actionName == "收回":
+						ui.message(_("收回可能未成功"))
+					else:
+						ui.message(_("取消可能未成功"))
+					return
+
+				if actionName == "無痕收回":
+					ui.message(_("已無痕收回"))
+				elif actionName == "收回":
+					ui.message(_("已收回"))
+				else:
+					ui.message(_("已取消"))
+
+			# Visibility re-check OCRs the dialog; keep it off the main thread.
+			_runOnWorkerThread(
+				self._isRecallConfirmationDialogVisible,
+				onDone=_afterVisible,
+				taskName="recallCompletionCheck",
+			)
 
 		core.callLater(650, _finish)
 
 	def _endRecallConfirmation(self, actionName):
-		"""End the recall confirmation by activating the requested dialog action."""
+		"""End the recall confirmation by activating the requested dialog action.
+
+		The action performer re-OCRs the dialog, so it runs on a worker
+		thread. A failure must never leave the y/n/p bindings (and the
+		in-progress flag) stuck, or those letters stay swallowed in LINE.
+		"""
 		if not getattr(self, "_recallPending", False) or getattr(self, "_recallActionInProgress", False):
 			return
 		self._recallActionInProgress = True
-		if not self._performRecallConfirmationAction(actionName):
-			self._recallActionInProgress = False
-			return
 
-		token = getattr(self, "_recallConfirmationToken", 0)
-		self._scheduleRecallCompletionAnnouncement(actionName, token)
+		def _afterPerform(performed):
+			if performed is None:
+				# The worker raised; reset everything so keys are released.
+				self._clearRecallConfirmationBindings()
+				return
+			if not performed:
+				self._recallActionInProgress = False
+				return
+			token = getattr(self, "_recallConfirmationToken", 0)
+			self._scheduleRecallCompletionAnnouncement(actionName, token)
+
+		_runOnWorkerThread(
+			lambda: bool(self._performRecallConfirmationAction(actionName)),
+			onDone=_afterPerform,
+			taskName="recallConfirmationAction",
+		)
 
 	def script_confirmRecall(self, gesture):
 		"""User pressed Y to choose the standard recall action."""
+		if not getattr(self, "_recallPending", False):
+			gesture.send()
+			return
 		self._endRecallConfirmation("收回")
 
 	def script_cancelRecall(self, gesture):
 		"""User pressed N to cancel message recall."""
+		if not getattr(self, "_recallPending", False):
+			gesture.send()
+			return
 		self._endRecallConfirmation("取消")
 
 	def script_stealthRecall(self, gesture):
 		"""User pressed P to choose stealth recall (requires Premium)."""
+		if not getattr(self, "_recallPending", False):
+			gesture.send()
+			return
 		self._endRecallConfirmation("無痕收回")
 
 	def _capturePhotoTextConsentState(self):
@@ -11963,28 +12250,39 @@ class AppModule(appModuleHandler.AppModule):
 		}
 
 	def _beginPhotoTextConsent(self):
-		"""Prompt for photo upload consent and bind A/D shortcuts."""
-		self._refreshPhotoTextConsentState()
-		prompt = _getPhotoTextConsentPrompt()
-		if getattr(self, "_photoTextConsentPending", False):
+		"""Prompt for photo upload consent and bind A/D shortcuts.
+
+		The dialog-state capture does screen OCR (seconds), so it runs on a
+		worker thread; binding and announcing continue on the main thread.
+		"""
+
+		def _afterState(state):
+			prompt = _getPhotoTextConsentPrompt()
+			if getattr(self, "_photoTextConsentPending", False):
+				ui.message(prompt)
+				return
+
+			token = getattr(self, "_photoTextConsentToken", 0) + 1
+			self._photoTextConsentToken = token
+			self._photoTextConsentPending = True
 			ui.message(prompt)
-			return
+			self.bindGesture("kb:a", "acceptPhotoTextConsent")
+			self.bindGesture("kb:d", "declinePhotoTextConsent")
 
-		token = getattr(self, "_photoTextConsentToken", 0) + 1
-		self._photoTextConsentToken = token
-		self._photoTextConsentPending = True
-		ui.message(prompt)
-		self.bindGesture("kb:a", "acceptPhotoTextConsent")
-		self.bindGesture("kb:d", "declinePhotoTextConsent")
+			def _autoDecline():
+				if (
+					getattr(self, "_photoTextConsentPending", False)
+					and getattr(self, "_photoTextConsentToken", 0) == token
+				):
+					self._endPhotoTextConsent("不同意")
 
-		def _autoDecline():
-			if (
-				getattr(self, "_photoTextConsentPending", False)
-				and getattr(self, "_photoTextConsentToken", 0) == token
-			):
-				self._endPhotoTextConsent("不同意")
+			core.callLater(10000, _autoDecline)
 
-		core.callLater(10000, _autoDecline)
+		_runOnWorkerThread(
+			self._refreshPhotoTextConsentState,
+			onDone=_afterState,
+			taskName="photoConsentState",
+		)
 
 	def _isPhotoTextConsentDialogVisible(self):
 		"""Return True when LINE's first-run photo consent dialog is visible."""
@@ -12023,11 +12321,24 @@ class AppModule(appModuleHandler.AppModule):
 					return
 			except Exception:
 				return
-			if self._isPhotoTextConsentDialogVisible():
-				self._beginPhotoTextConsent()
-				return
-			if remaining > 0:
-				core.callLater(delayMs, lambda: _poll(remaining - 1))
+
+			def _afterVisible(visible):
+				if watchId != getattr(self, "_photoTextConsentWatchId", 0):
+					return
+				if getattr(self, "_photoTextConsentPending", False):
+					return
+				if visible:
+					self._beginPhotoTextConsent()
+					return
+				if remaining > 0:
+					core.callLater(delayMs, lambda: _poll(remaining - 1))
+
+			# The visibility check OCRs the dialog; keep it off the main thread.
+			_runOnWorkerThread(
+				self._isPhotoTextConsentDialogVisible,
+				onDone=_afterVisible,
+				taskName="photoConsentVisibility",
+			)
 
 		core.callLater(delayMs, lambda: _poll(retriesLeft))
 
@@ -12120,19 +12431,29 @@ class AppModule(appModuleHandler.AppModule):
 		def _finish():
 			if getattr(self, "_photoTextConsentToken", 0) != token:
 				return
-			stillVisible = self._isPhotoTextConsentDialogVisible()
-			self._clearPhotoTextConsentBindings()
-			if stillVisible:
-				if actionName == "同意":
-					ui.message(_("同意提供照片可能未成功"))
-				else:
-					ui.message(_("不同意提供照片可能未成功"))
-				return
 
-			if actionName == "同意":
-				ui.message(_("已同意提供照片"))
-			else:
-				ui.message(_("已不同意提供照片"))
+			def _afterVisible(stillVisible):
+				if getattr(self, "_photoTextConsentToken", 0) != token:
+					return
+				self._clearPhotoTextConsentBindings()
+				if stillVisible:
+					if actionName == "同意":
+						ui.message(_("同意提供照片可能未成功"))
+					else:
+						ui.message(_("不同意提供照片可能未成功"))
+					return
+
+				if actionName == "同意":
+					ui.message(_("已同意提供照片"))
+				else:
+					ui.message(_("已不同意提供照片"))
+
+			# Visibility re-check OCRs the dialog; keep it off the main thread.
+			_runOnWorkerThread(
+				self._isPhotoTextConsentDialogVisible,
+				onDone=_afterVisible,
+				taskName="photoConsentCompletionCheck",
+			)
 
 		core.callLater(650, _finish)
 
@@ -12145,19 +12466,38 @@ class AppModule(appModuleHandler.AppModule):
 		):
 			return
 		self._photoTextConsentActionInProgress = True
-		if not self._performPhotoTextConsentAction(actionName):
-			self._photoTextConsentActionInProgress = False
-			return
 
-		token = getattr(self, "_photoTextConsentToken", 0)
-		self._schedulePhotoTextConsentCompletionAnnouncement(actionName, token)
+		def _afterPerform(performed):
+			if performed is None:
+				# Never leave the a/d bindings (and the in-progress flag)
+				# stuck, or those letters stay swallowed in LINE.
+				self._clearPhotoTextConsentBindings()
+				return
+			if not performed:
+				self._photoTextConsentActionInProgress = False
+				return
+			token = getattr(self, "_photoTextConsentToken", 0)
+			self._schedulePhotoTextConsentCompletionAnnouncement(actionName, token)
+
+		# The action performer re-OCRs the dialog; run it off the main thread.
+		_runOnWorkerThread(
+			lambda: bool(self._performPhotoTextConsentAction(actionName)),
+			onDone=_afterPerform,
+			taskName="photoConsentAction",
+		)
 
 	def script_acceptPhotoTextConsent(self, gesture):
 		"""User pressed A to agree to LINE's first-run photo upload notice."""
+		if not getattr(self, "_photoTextConsentPending", False):
+			gesture.send()
+			return
 		self._endPhotoTextConsent("同意")
 
 	def script_declinePhotoTextConsent(self, gesture):
 		"""User pressed D to decline LINE's first-run photo upload notice."""
+		if not getattr(self, "_photoTextConsentPending", False):
+			gesture.send()
+			return
 		self._endPhotoTextConsent("不同意")
 
 	@script(
@@ -12247,64 +12587,66 @@ class AppModule(appModuleHandler.AppModule):
 			)
 			return True
 
-		ocrLines = []
-		try:
-			ocrResult = self._ocrWindowAreaResult(
-				hwnd,
-				region=(
-					elLeft,
-					elTop,
-					max(elRight - elLeft, 0),
-					max(elBottom - elTop, 0),
-				),
-				sync=True,
-				timeout=2.0,
-			)
-			if ocrResult is not None and not isinstance(ocrResult, Exception):
-				ocrLines = _extractOcrLines(ocrResult)
-		except Exception as e:
-			log.debug(
-				f"LINE: failed to derive OCR bubble probes for message context menu: {e}",
-				exc_info=True,
-			)
-		ocrClickPositions = _buildMessageBubbleOcrClickPositions(
-			ocrLines,
-			(elLeft, elTop, elRight, elBottom),
-			winTop,
-			winBottom,
-		)
-		if ocrClickPositions:
-			log.debug(
-				"LINE: message context menu OCR-derived bubble probes: "
-				f"{[label for _x, _y, label in ocrClickPositions]}",
-			)
-		elif ocrLines:
-			log.debug(
-				"LINE: message context menu OCR lines yielded no bubble probes: "
-				f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}",
-			)
-		clickPositions = _mergeClickPositions(
-			ocrClickPositions,
-			_buildMessageBubbleClickPositions(
+		appModRef = self
+		keyboardFallbackTried = [False]
+		state = {}
+
+		def _preamble():
+			"""Worker thread: OCR the bubble, then wait out modifier keys.
+
+			Both block, so they must stay off NVDA's main thread; rawEl is
+			only touched later on the main thread.
+			"""
+			ocrLines = []
+			try:
+				ocrResult = appModRef._ocrWindowAreaResult(
+					hwnd,
+					region=(
+						elLeft,
+						elTop,
+						max(elRight - elLeft, 0),
+						max(elBottom - elTop, 0),
+					),
+					sync=True,
+					timeout=2.0,
+				)
+				if ocrResult is not None and not isinstance(ocrResult, Exception):
+					ocrLines = _extractOcrLines(ocrResult)
+			except Exception as e:
+				log.debug(
+					f"LINE: failed to derive OCR bubble probes for message context menu: {e}",
+					exc_info=True,
+				)
+
+			VK_CONTROL = 0x11
+			VK_SHIFT = 0x10
+			VK_MENU = 0x12
+			GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
+			for _wait in range(40):
+				held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
+				if not held:
+					break
+				time.sleep(0.05)
+			return ocrLines
+
+		def _afterPreamble(ocrLines):
+			ocrLines = ocrLines or []
+			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
+				ocrLines,
 				(elLeft, elTop, elRight, elBottom),
 				winTop,
 				winBottom,
-				includeVerticalOffsets=True,
-			),
-		)
-
-		VK_CONTROL = 0x11
-		VK_SHIFT = 0x10
-		VK_MENU = 0x12
-		GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
-		for _wait in range(40):
-			held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
-			if not held:
-				break
-			time.sleep(0.05)
-
-		appModRef = self
-		keyboardFallbackTried = [False]
+			)
+			state["clickPositions"] = _mergeClickPositions(
+				ocrClickPositions,
+				_buildMessageBubbleClickPositions(
+					(elLeft, elTop, elRight, elBottom),
+					winTop,
+					winBottom,
+					includeVerticalOffsets=True,
+				),
+			)
+			_tryKeyboardFallback()
 
 		def _startMouseContextMenuProbes(reason):
 			if _logAndAbortIfStale(f"mouseContextMenuFallback:{reason}"):
@@ -12350,6 +12692,7 @@ class AppModule(appModuleHandler.AppModule):
 			core.callLater(500, _activateKeyboardFallback)
 
 		def _attemptAtOffset(posIdx=0):
+			clickPositions = state["clickPositions"]
 			if _logAndAbortIfStale(f"attemptAtOffset[{posIdx}]"):
 				return
 			if posIdx >= len(clickPositions):
@@ -12558,7 +12901,9 @@ class AppModule(appModuleHandler.AppModule):
 
 			core.callLater(300, _findPopupAndActivate)
 
-		_tryKeyboardFallback()
+		# Bubble OCR + modifier-key wait block for up to ~4 s; run them on a
+		# worker thread, then resume the menu flow on the main thread.
+		_runOnWorkerThread(_preamble, onDone=_afterPreamble, taskName="messageContextMenuPreamble")
 
 	def script_toggleMicAndAnnounce(self, gesture):
 		"""Pass Ctrl+Shift+A to LINE, then OCR the call window to announce mic status."""
@@ -12718,18 +13063,33 @@ class AppModule(appModuleHandler.AppModule):
 		def _announceMicFromOcr(ocrText):
 			"""Detect mic on/off from OCR text and announce. Returns True if detected."""
 			import wx
+			from . import _lineLabels
 
-			if any(kw in ocrText for kw in ["關麥克風", "關閉麥克風", "Mute", "mute"]):
-				wx.CallAfter(ui.message, "麥克風已開啟")
+			# The control-bar tooltip shows the toggle action, so a "mute"
+			# label means the mic is currently ON, and vice-versa.
+			if _lineLabels.containsAny(ocrText, _lineLabels._MIC_CURRENTLY_ON):
+				wx.CallAfter(ui.message, _("麥克風已開啟"))
 				return True
-			elif any(kw in ocrText for kw in ["開麥克風", "開啟麥克風", "Unmute", "unmute"]):
-				wx.CallAfter(ui.message, "麥克風已關閉")
+			elif _lineLabels.containsAny(ocrText, _lineLabels._MIC_CURRENTLY_OFF):
+				wx.CallAfter(ui.message, _("麥克風已關閉"))
 				return True
 			else:
 				log.debug(f"LINE: mic status not detected in OCR: {ocrText!r}")
 				return False
 
-		t = threading.Thread(target=_checkMicStatus, daemon=True)
+		if AppModule._callStatusCheckInProgress:
+			# The gesture already toggled the mic; skip a second overlapping
+			# OCR/announce pass rather than fighting over the cursor.
+			return
+		AppModule._callStatusCheckInProgress = True
+
+		def _runAndClear():
+			try:
+				_checkMicStatus()
+			finally:
+				AppModule._callStatusCheckInProgress = False
+
+		t = threading.Thread(target=_runAndClear, daemon=True)
 		t.start()
 
 	def script_toggleCameraAndAnnounce(self, gesture):
@@ -12889,21 +13249,35 @@ class AppModule(appModuleHandler.AppModule):
 
 			# "關鏡頭"/"關相機"/"關閉相機" means tooltip says "turn off" → camera is ON
 			if any(
-				kw in ocrText for kw in ["關鏡頭", "關相機", "關閉相機", "Turn off camera", "turn off camera"]
+				kw in ocrText
+				for kw in ["關鏡頭", "關相機", "關閉相機", "Turn off camera", "turn off camera", "カメラをオフ", "ปิดกล้อง"]
 			):
-				wx.CallAfter(ui.message, "相機已開啟")
+				wx.CallAfter(ui.message, _("相機已開啟"))
 				return True
 			# "開鏡頭"/"開相機"/"開啟相機" means tooltip says "turn on" → camera is OFF
 			elif any(
-				kw in ocrText for kw in ["開鏡頭", "開相機", "開啟相機", "Turn on camera", "turn on camera"]
+				kw in ocrText
+				for kw in ["開鏡頭", "開相機", "開啟相機", "Turn on camera", "turn on camera", "カメラをオン", "เปิดกล้อง"]
 			):
-				wx.CallAfter(ui.message, "相機已關閉")
+				wx.CallAfter(ui.message, _("相機已關閉"))
 				return True
 			else:
 				log.debug(f"LINE: camera status not detected in OCR: {ocrText!r}")
 				return False
 
-		t = threading.Thread(target=_checkCameraStatus, daemon=True)
+		if AppModule._callStatusCheckInProgress:
+			# The gesture already toggled the camera; skip a second overlapping
+			# OCR/announce pass rather than fighting over the cursor.
+			return
+		AppModule._callStatusCheckInProgress = True
+
+		def _runAndClear():
+			try:
+				_checkCameraStatus()
+			finally:
+				AppModule._callStatusCheckInProgress = False
+
+		t = threading.Thread(target=_runAndClear, daemon=True)
 		t.start()
 
 	# ── Navigate to chat room tabs ─────────────────────────────────────

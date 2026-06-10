@@ -219,6 +219,15 @@ def _longestCommonSubstring(a, b):
 	"""
 	if not a or not b:
 		return 0
+	# Bound the DP work: OCR snippets and message bubbles are short, and
+	# lookupMessage already handles long exact matches via substring
+	# containment before falling back here, so capping the inputs keeps this
+	# from blowing up (O(m*n)) on pathologically long messages.
+	_MAX_LCS_LEN = 200
+	if len(a) > _MAX_LCS_LEN:
+		a = a[:_MAX_LCS_LEN]
+	if len(b) > _MAX_LCS_LEN:
+		b = b[:_MAX_LCS_LEN]
 	if len(a) > len(b):
 		a, b = b, a
 	m, n = len(a), len(b)

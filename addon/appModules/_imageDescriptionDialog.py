@@ -3,6 +3,9 @@ import threading
 import wx
 import gui
 from logHandler import log
+import addonHandler
+
+addonHandler.initTranslation()
 
 
 class ImageDescriptionDialog(wx.Dialog):
@@ -197,8 +200,15 @@ def openImageDescriptionDialog(
 
 	def _show():
 		global _dlg
-		if _dlg and _dlg.IsShown():
-			_dlg.Close()
+		# A previously closed dialog leaves a stale Python wrapper; calling
+		# IsShown() on the destroyed wx object raises RuntimeError, so treat
+		# that as "no existing dialog".
+		if _dlg is not None:
+			try:
+				if _dlg.IsShown():
+					_dlg.Close()
+			except RuntimeError:
+				pass
 		_dlg = ImageDescriptionDialog(
 			apiCaller,
 			initialContents,

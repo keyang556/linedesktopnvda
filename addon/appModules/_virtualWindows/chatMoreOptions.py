@@ -90,7 +90,12 @@ def _matchMenuLabel(text: str) -> str | None:
 
 	if bestLabel and bestRatio >= 0.62:
 		return bestLabel
-	return None
+
+	# Cross-language fallback for non-Chinese LINE UIs: exact alias containment
+	# only (threshold > 1 disables fuzzy, which the zh pass above already did).
+	from .._lineLabels import _MORE_OPTIONS_LABELS, matchLabel
+
+	return matchLabel(text, _MORE_OPTIONS_LABELS, threshold=2.0)
 
 
 def _getObjectValue(obj: Any, *names: str) -> Any:
@@ -506,6 +511,7 @@ class ChatMoreOptions(VirtualWindow):
 		self.popupRect = popupRect
 		self.rowRects = rowRects or []
 		self.onAction = onAction
+		self.captureForegroundHwnd()
 		left, top, right, bottom = popupRect
 		width = right - left
 		height = bottom - top
@@ -516,7 +522,22 @@ class ChatMoreOptions(VirtualWindow):
 	def makeElements(self):
 		pass
 
+	def isStillValid(self):
+		# This window is built from a screen rect, not a focused object, so
+		# only the popup-foreground liveness check applies.
+		return self._isPopupForegroundAlive()
+
 	def _onOcrResult(self, result):
+		# UWP OCR invokes this on a background thread; hop to the main thread
+		# before touching elements / speech / braille.
+		import core
+
+		core.callLater(0, self._handleOcrResult, result)
+
+	def _handleOcrResult(self, result):
+		if VirtualWindow.currentWindow is not self:
+			# The menu was dismissed while OCR was still running.
+			return
 		if not result or isinstance(result, Exception):
 			log.debug(f"LINE: ChatMoreOptions OCR error: {result}")
 			return

@@ -1,6 +1,9 @@
 import wx
 import gui
 from logHandler import log
+import addonHandler
+
+addonHandler.initTranslation()
 
 
 class MessageReaderDialog(wx.Dialog):
@@ -158,7 +161,16 @@ def openMessageReader(messages, title=None, cleanupPath=None):
 
 	def _show():
 		global _readerDlg
-		if _readerDlg and _readerDlg.IsShown():
+		# A previously closed dialog leaves a stale Python wrapper; calling
+		# IsShown() on the destroyed wx object raises RuntimeError, so treat
+		# that as "no existing dialog" and create a fresh one.
+		existing = False
+		if _readerDlg is not None:
+			try:
+				existing = _readerDlg.IsShown()
+			except RuntimeError:
+				existing = False
+		if existing:
 			_readerDlg.Raise()
 			return
 		_readerDlg = MessageReaderDialog(messages, title=title, cleanupPath=cleanupPath)
