@@ -2168,7 +2168,6 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-2.5-flash-lite",
 	"gemma-4-26b-a4b-it",
 	"gemma-4-31b-it",
-	"gemma-3-27b-it",
 )
 # Vision-capable models commonly available on Ollama Cloud. Users can pick
 # whichever they have access to; unavailable IDs surface as an HTTP error.
