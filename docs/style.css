@@ -1,25 +1,38 @@
 :root {
     --bg-color: #ffffff;
     --text-color: #1a1a1a;
-    --primary-color: #00b900;
-    --primary-dark: #008f00;
-    --focus-color: #0056b3;
+    /* Greens deepened so white text meets WCAG AA (>=4.5:1); LINE brand green is too light for white text. */
+    --primary-color: #007a00;
+    --primary-dark: #006400;
+    --heading-color: #006400;
+    --focus-color: #0056b3;   /* skip-link background (white text sits on it) */
+    --focus-ring: #0056b3;    /* focus outline (needs >=3:1 vs page) */
     --card-bg: #f8f9fa;
     --border-color: #e0e0e0;
     --contact-color: #0056b3;
     --contact-dark: #004494;
+    --line-color: #00803a;
+    --line-dark: #006e31;
+    --secondary-color: #4a4a4a;
+    --secondary-dark: #333333;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
         --bg-color: #121212;
         --text-color: #f1f1f1;
-        --primary-color: #00d600;
-        --primary-dark: #00b900;
+        /* Header/button fills with white text: kept dark enough for >=4.5:1. */
+        --primary-color: #008a00;
+        --primary-dark: #007000;
+        /* Heading text sits ON the dark card, so it can be a bright green. */
+        --heading-color: #2bd451;
+        --focus-ring: #4dabf7;    /* bright outline for >=3:1 vs dark page */
         --card-bg: #1e1e1e;
         --border-color: #333333;
-        --contact-color: #339af0;
-        --contact-dark: #1c7ed6;
+        --contact-color: #1971c2;
+        --contact-dark: #155a96;
+        --secondary-color: #6a6a6a;
+        --secondary-dark: #757575;
     }
 }
 
@@ -92,7 +105,7 @@ h1 {
 }
 
 h2 {
-    color: var(--primary-dark);
+    color: var(--heading-color);
     border-bottom: 2px solid var(--border-color);
     padding-bottom: 0.5rem;
     margin-top: 0;
@@ -154,10 +167,10 @@ main:focus {
 }
 
 .button-secondary {
-    background-color: #555555;
+    background-color: var(--secondary-color);
 }
 .button-secondary:hover {
-    background-color: #333333;
+    background-color: var(--secondary-dark);
 }
 
 .button-outline {
@@ -171,11 +184,11 @@ main:focus {
 }
 
 .button-line {
-    background-color: #06c755;
+    background-color: var(--line-color);
     color: #ffffff !important;
 }
 .button-line:hover {
-    background-color: #05a044;
+    background-color: var(--line-dark);
 }
 
 .button-contact {
@@ -187,7 +200,7 @@ main:focus {
 }
 
 *:focus-visible {
-    outline: 3px solid var(--focus-color);
+    outline: 3px solid var(--focus-ring);
     outline-offset: 3px;
 }
 
