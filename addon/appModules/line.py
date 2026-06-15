@@ -2101,11 +2101,13 @@ _IMAGE_DESCRIPTION_PROVIDER_GOOGLE = "google"
 _IMAGE_DESCRIPTION_PROVIDER_OLLAMA = "ollama"
 _IMAGE_DESCRIPTION_PROVIDER_NVIDIA = "nvidia"
 _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS = "pollinations"
+_IMAGE_DESCRIPTION_PROVIDER_OPENAI = "openai"
 _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE,
 	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
+	_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 )
 _IMAGE_DESCRIPTION_DEFAULT_PROVIDER = _IMAGE_DESCRIPTION_PROVIDER_GOOGLE
 _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
@@ -2113,6 +2115,7 @@ _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
 	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA: "Ollama Cloud",
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA: "NVIDIA NIM",
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS: "Pollinations.AI",
+	_IMAGE_DESCRIPTION_PROVIDER_OPENAI: "OpenAI",
 }
 _IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME = "line_desktop_image_provider.txt"
 
@@ -2134,14 +2137,21 @@ _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_KEY_BLOB = "z4L9t8i44kXzffkss7ukUYezYDRvTRxxgK
 _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB = (
 	"9djyxTd4B3//wSRROFV/x5bpuusesK71/tOYdrtn4jf6YeRcniZVExF4//O0M+0G61hO0fkmB99ToQl9b3awbnwgPw=="
 )
+_IMAGE_DESCRIPTION_OPENAI_DEFAULT_KEY_BLOB = (
+	"lAm3ikqneka+uk2yk1QsqH08/47ADNiQ72/WbiqYSBpFL5WP4DlJbj4iir03qcxpcA0s1Bq92JPom2+5LrbpAqNSYngmW9aIrPQ"
+	"svswUoTj/3/DGp8+xOWf/vEIHPyTdQgafiJDlqlnf4/PI9oPSmmT0f4qRQn99TZzrdl+VbyQlXRoc+7N9cikjINQyT/N6j0sxA0"
+	"9N1noxqL6EBcouFFUAe6xtfy9lWzamsggrc/BGwQeCMiojshNKZQY6xfBg1bnF/Q=="
+)
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_NVIDIA_KEY_FILENAME = "line_desktop_nvidia_api_key.dat"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_KEY_FILENAME = "line_desktop_pollinations_api_key.dat"
+_IMAGE_DESCRIPTION_USER_OPENAI_KEY_FILENAME = "line_desktop_openai_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
 _IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME = "line_desktop_ollama_model.txt"
 _IMAGE_DESCRIPTION_USER_NVIDIA_MODEL_FILENAME = "line_desktop_nvidia_model.txt"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME = "line_desktop_pollinations_model.txt"
+_IMAGE_DESCRIPTION_USER_OPENAI_MODEL_FILENAME = "line_desktop_openai_model.txt"
 _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
 _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt"
 # Default Google model used when the user has not picked one in the settings panel.
@@ -2242,12 +2252,22 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"qwen-large": "Qwen3.6 Plus",
 	"step-flash": "StepFun Step 3.7 Flash",
 }
+# Default OpenAI model used when the user has not picked one in the settings panel.
+_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
+# Vision-capable OpenAI models exposed in the settings panel.
+_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS = (
+	"gpt-5.5",
+	"gpt-5.4",
+	"gpt-5.4-mini",
+	"gpt-5.4-nano",
+)
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 )
 _IMAGE_DESCRIPTION_OLLAMA_ENDPOINT = "https://ollama.com/api/chat"
 _IMAGE_DESCRIPTION_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 _IMAGE_DESCRIPTION_POLLINATIONS_ENDPOINT = "https://gen.pollinations.ai/v1/chat/completions"
+_IMAGE_DESCRIPTION_OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 _IMAGE_DESCRIPTION_DEFAULT_PROMPT = (
 	"Describe this image succinctly, but in as much detail as possible. "
 	"If there is text, ensure it is included in your response exactly as shown."
@@ -2273,10 +2293,12 @@ _cachedEffectiveImageApiKey = _NOT_COMPUTED
 _cachedEffectiveOllamaApiKey = _NOT_COMPUTED
 _cachedEffectiveNvidiaApiKey = _NOT_COMPUTED
 _cachedEffectivePollinationsApiKey = _NOT_COMPUTED
+_cachedEffectiveOpenaiApiKey = _NOT_COMPUTED
 _cachedEffectiveImageProvider = _NOT_COMPUTED
 _cachedEffectiveOllamaModel = _NOT_COMPUTED
 _cachedEffectiveNvidiaModel = _NOT_COMPUTED
 _cachedEffectivePollinationsModel = _NOT_COMPUTED
+_cachedEffectiveOpenaiModel = _NOT_COMPUTED
 
 
 def _deriveImageApiKeyMaterial(salt, length):
@@ -2603,6 +2625,71 @@ def _getEffectivePollinationsApiKey():
 	return _cachedEffectivePollinationsApiKey
 
 
+def _getOpenaiApiKeyStorePath():
+	"""Return the filesystem path for the user-supplied OpenAI API key file."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OPENAI_KEY_FILENAME)
+
+
+def getUserOpenaiApiKey():
+	"""Return the plain OpenAI API key previously set by the user, or None."""
+	path = _getOpenaiApiKeyStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			blob = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user OpenAI API key: {e}", exc_info=True)
+		return None
+	return _deobfuscateImageApiKey(blob)
+
+
+def setUserOpenaiApiKey(plain):
+	"""Persist a user-supplied OpenAI API key (obfuscated). Empty/None clears it."""
+	global _cachedEffectiveOpenaiApiKey
+	path = _getOpenaiApiKeyStorePath()
+	if not path:
+		return False
+	try:
+		if not plain:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveOpenaiApiKey = _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_OPENAI_DEFAULT_KEY_BLOB)
+		else:
+			blob = _obfuscateImageApiKey(plain)
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(blob)
+			_cachedEffectiveOpenaiApiKey = plain
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user OpenAI API key: {e}", exc_info=True)
+		return False
+
+
+def _initEffectiveOpenaiApiKey():
+	"""Decrypt and cache the effective OpenAI API key."""
+	global _cachedEffectiveOpenaiApiKey
+	userKey = getUserOpenaiApiKey()
+	_cachedEffectiveOpenaiApiKey = userKey or _deobfuscateImageApiKey(
+		_IMAGE_DESCRIPTION_OPENAI_DEFAULT_KEY_BLOB,
+	)
+
+
+def _getEffectiveOpenaiApiKey():
+	"""Return the cached OpenAI API key; falls back to lazy init if not yet computed."""
+	if _cachedEffectiveOpenaiApiKey is _NOT_COMPUTED:
+		_initEffectiveOpenaiApiKey()
+	return _cachedEffectiveOpenaiApiKey
+
+
 def _getImageProviderStorePath():
 	"""Return the filesystem path for the user-selected provider preference."""
 	try:
@@ -2926,6 +3013,70 @@ def _getEffectivePollinationsModel():
 			getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
 		)
 	return _cachedEffectivePollinationsModel
+
+
+def _getOpenaiModelStorePath():
+	"""Return the filesystem path for the user-selected OpenAI model preference."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OPENAI_MODEL_FILENAME)
+
+
+def getUserOpenaiModel():
+	"""Return the OpenAI model ID previously chosen by the user, or None."""
+	path = _getOpenaiModelStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user OpenAI model: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	if value not in _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS:
+		log.debug(f"LINE: stored OpenAI model {value!r} is not in the allowed list")
+		return None
+	return value
+
+
+def setUserOpenaiModel(name):
+	"""Persist a user-selected OpenAI model. Empty/None or default clears the file."""
+	global _cachedEffectiveOpenaiModel
+	path = _getOpenaiModelStorePath()
+	if not path:
+		return False
+	try:
+		if not name or name == _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveOpenaiModel = _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
+			return True
+		if name not in _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS:
+			log.warning(f"LINE: refusing to save unknown OpenAI model {name!r}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(name)
+		_cachedEffectiveOpenaiModel = name
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user OpenAI model: {e}", exc_info=True)
+		return False
+
+
+def _getEffectiveOpenaiModel():
+	"""Return the cached OpenAI model ID; lazily resolved from disk on first call."""
+	global _cachedEffectiveOpenaiModel
+	if _cachedEffectiveOpenaiModel is _NOT_COMPUTED:
+		_cachedEffectiveOpenaiModel = getUserOpenaiModel() or _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
+	return _cachedEffectiveOpenaiModel
 
 
 def _getImagePromptStorePath():
@@ -3293,6 +3444,11 @@ def _callImageDescriptionApi(contents, timeout=None):
 		)
 	if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 		return _callPollinationsImageDescriptionApi(
+			contents,
+			timeout=timeout if timeout is not None else 60.0,
+		)
+	if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+		return _callOpenaiImageDescriptionApi(
 			contents,
 			timeout=timeout if timeout is not None else 60.0,
 		)
@@ -3700,6 +3856,120 @@ def _callPollinationsImageDescriptionApi(contents, timeout=60.0):
 	except Exception as e:
 		log.warning(
 			f"LINE: Pollinations image description response parse failed: {e}",
+			exc_info=True,
+		)
+	return None, _("圖片描述失敗 (無回應)")
+
+
+def _geminiContentsToOpenaiMessages(contents):
+	"""Convert canonical Gemini-shaped contents into OpenAI chat messages.
+
+	OpenAI's /v1/chat/completions schema is the same OpenAI-compatible shape used
+	by the NVIDIA NIM and Pollinations.AI helpers above. Kept as a separate
+	function so provider-specific tweaks remain easy without touching the other
+	backends.
+	"""
+	messages = []
+	for turn in contents or []:
+		role = turn.get("role") if isinstance(turn, dict) else None
+		oaiRole = "assistant" if role == "model" else "user"
+		parts = []
+		for part in (turn.get("parts") or []) if isinstance(turn, dict) else []:
+			if not isinstance(part, dict):
+				continue
+			if "text" in part and part["text"]:
+				parts.append({"type": "text", "text": part["text"]})
+			elif "inline_data" in part:
+				inline = part.get("inline_data") or {}
+				data = inline.get("data")
+				mime = inline.get("mime_type") or "image/png"
+				if data:
+					parts.append(
+						{
+							"type": "image_url",
+							"image_url": {"url": f"data:{mime};base64,{data}"},
+						},
+					)
+		if not parts:
+			log.debug(f"LINE: skipping empty OpenAI turn with role {oaiRole!r}")
+			continue
+		messages.append({"role": oaiRole, "content": parts})
+	return messages
+
+
+def _callOpenaiImageDescriptionApi(contents, timeout=60.0):
+	"""Send the canonical contents to OpenAI's chat completions endpoint.
+
+	Returns (text, None) on success or (None, error_msg) on failure.
+	"""
+	try:
+		import json
+		import urllib.request
+		import urllib.error
+
+		apiKey = _getEffectiveOpenaiApiKey()
+		if not apiKey:
+			log.warning("LINE: no OpenAI API key available")
+			return None, _("未設定 API Key")
+		messages = _geminiContentsToOpenaiMessages(contents)
+		body = {
+			"model": _getEffectiveOpenaiModel(),
+			"messages": messages,
+			"stream": False,
+		}
+		userMaxTokens = getUserImageMaxTokens()
+		if userMaxTokens is not None:
+			body["max_tokens"] = userMaxTokens
+		req = urllib.request.Request(
+			_IMAGE_DESCRIPTION_OPENAI_ENDPOINT,
+			data=json.dumps(body).encode("utf-8"),
+			headers={
+				"Content-Type": "application/json",
+				"Authorization": f"Bearer {apiKey}",
+				"Accept": "application/json",
+			},
+			method="POST",
+		)
+		try:
+			with urllib.request.urlopen(req, timeout=timeout) as resp:
+				raw = resp.read()
+		except urllib.error.HTTPError as e:
+			errBody = e.read().decode("utf-8", errors="replace")
+			log.warning(
+				f"LINE: OpenAI image description HTTP {e.code} {e.reason}: {errBody[:500]}",
+			)
+			return None, _("圖片描述失敗 (HTTP {code})").format(code=e.code)
+		except Exception as e:
+			log.warning(f"LINE: OpenAI image description network error: {e}", exc_info=True)
+			return None, _("圖片描述失敗 (網路錯誤)")
+		data = json.loads(raw.decode("utf-8", errors="replace"))
+	except Exception as e:
+		log.warning(
+			f"LINE: OpenAI image description request failed: {e}",
+			exc_info=True,
+		)
+		return None, _("圖片描述失敗")
+
+	try:
+		choices = data.get("choices") if isinstance(data, dict) else None
+		if isinstance(choices, list) and choices:
+			message = choices[0].get("message") if isinstance(choices[0], dict) else None
+			if isinstance(message, dict):
+				text = message.get("content")
+				if isinstance(text, list):
+					collected = []
+					for part in text:
+						if isinstance(part, dict):
+							inner = part.get("text")
+							if inner:
+								collected.append(inner)
+					text = "".join(collected)
+				if text:
+					return text.strip(), None
+		log.info(f"LINE: OpenAI image description returned no content: {data!r}")
+	except Exception as e:
+		log.warning(
+			f"LINE: OpenAI image description response parse failed: {e}",
 			exc_info=True,
 		)
 	return None, _("圖片描述失敗 (無回應)")
@@ -6933,6 +7203,7 @@ class AppModule(appModuleHandler.AppModule):
 		_initEffectiveOllamaApiKey()
 		_initEffectiveNvidiaApiKey()
 		_initEffectivePollinationsApiKey()
+		_initEffectiveOpenaiApiKey()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "

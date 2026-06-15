@@ -291,10 +291,12 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
+				getUserOpenaiApiKey,
 				getUserPollinationsApiKey,
 			)
 
@@ -304,6 +306,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				return getUserNvidiaApiKey() or ""
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 				return getUserPollinationsApiKey() or ""
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+				return getUserOpenaiApiKey() or ""
 			return getUserImageApiKey() or ""
 		except Exception:
 			log.debug(
@@ -318,13 +322,16 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
+				getUserOpenaiModel,
 				getUserPollinationsModel,
 			)
 
@@ -334,6 +341,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				return getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 				return getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+				return getUserOpenaiModel() or _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
 			return getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 		except Exception:
 			log.debug(
@@ -360,11 +369,14 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 			)
 
@@ -384,6 +396,12 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				ids = _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS
 				labels = tuple(_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.get(mid, mid) for mid in ids)
 				return (ids, labels, _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL)
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+				return (
+					_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
+				)
 			return (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
@@ -485,14 +503,17 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
+				getUserOpenaiApiKey,
 				getUserPollinationsApiKey,
 				setUserImageApiKey,
 				setUserNvidiaApiKey,
 				setUserOllamaApiKey,
+				setUserOpenaiApiKey,
 				setUserPollinationsApiKey,
 			)
 
@@ -506,6 +527,9 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 					currentKey = getUserPollinationsApiKey() or ""
 					setter = setUserPollinationsApiKey
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+					currentKey = getUserOpenaiApiKey() or ""
+					setter = setUserOpenaiApiKey
 				else:
 					currentKey = getUserImageApiKey() or ""
 					setter = setUserImageApiKey
@@ -537,17 +561,21 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
+				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
+				getUserOpenaiModel,
 				getUserPollinationsModel,
 				setUserImageModel,
 				setUserNvidiaModel,
 				setUserOllamaModel,
+				setUserOpenaiModel,
 				setUserPollinationsModel,
 			)
 
@@ -563,6 +591,9 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
 					currentModel = getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
 					setter = setUserPollinationsModel
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
+					currentModel = getUserOpenaiModel() or _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
+					setter = setUserOpenaiModel
 				else:
 					currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 					setter = setUserImageModel
