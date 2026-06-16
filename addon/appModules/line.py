@@ -2249,7 +2249,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"nova": "Nova 2 Lite",
 	"qwen-vision-pro": "Qwen3 VL 235B A22B Thinking",
 	"qwen-vision": "Qwen3 VL 30B A3B Thinking",
-	"qwen-large": "Qwen3.6 Plus",
+	"qwen-large": "Qwen3.7 Plus",
 	"step-flash": "StepFun Step 3.7 Flash",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
