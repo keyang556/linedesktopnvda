@@ -289,11 +289,13 @@ class LineDesktopSettingsPanel(SettingsPanel):
 	def _loadStoredApiKey(self, provider):
 		try:
 			from appModules.line import (
+				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
+				getUserMistralApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
 				getUserOpenaiApiKey,
@@ -308,6 +310,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				return getUserPollinationsApiKey() or ""
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
 				return getUserOpenaiApiKey() or ""
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+				return getUserMistralApiKey() or ""
 			return getUserImageApiKey() or ""
 		except Exception:
 			log.debug(
@@ -320,15 +324,18 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		try:
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
+				getUserMistralModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
 				getUserOpenaiModel,
@@ -343,6 +350,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				return getUserPollinationsModel() or _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
 				return getUserOpenaiModel() or _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+				return getUserMistralModel() or _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL
 			return getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 		except Exception:
 			log.debug(
@@ -365,6 +374,8 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS,
+				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
@@ -374,6 +385,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS,
+				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
@@ -401,6 +413,12 @@ class LineDesktopSettingsPanel(SettingsPanel):
 					_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
 					_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
 					_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
+				)
+			if provider == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+				return (
+					_IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS,
+					_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				)
 			return (
 				_IMAGE_DESCRIPTION_AVAILABLE_MODELS,
@@ -501,16 +519,19 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		# Image description API keys (one per provider)
 		try:
 			from appModules.line import (
+				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
+				getUserMistralApiKey,
 				getUserNvidiaApiKey,
 				getUserOllamaApiKey,
 				getUserOpenaiApiKey,
 				getUserPollinationsApiKey,
 				setUserImageApiKey,
+				setUserMistralApiKey,
 				setUserNvidiaApiKey,
 				setUserOllamaApiKey,
 				setUserOpenaiApiKey,
@@ -530,6 +551,9 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
 					currentKey = getUserOpenaiApiKey() or ""
 					setter = setUserOpenaiApiKey
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+					currentKey = getUserMistralApiKey() or ""
+					setter = setUserMistralApiKey
 				else:
 					currentKey = getUserImageApiKey() or ""
 					setter = setUserImageApiKey
@@ -559,20 +583,24 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		try:
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
+				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
+				getUserMistralModel,
 				getUserNvidiaModel,
 				getUserOllamaModel,
 				getUserOpenaiModel,
 				getUserPollinationsModel,
 				setUserImageModel,
+				setUserMistralModel,
 				setUserNvidiaModel,
 				setUserOllamaModel,
 				setUserOpenaiModel,
@@ -594,6 +622,9 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
 					currentModel = getUserOpenaiModel() or _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL
 					setter = setUserOpenaiModel
+				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+					currentModel = getUserMistralModel() or _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL
+					setter = setUserMistralModel
 				else:
 					currentModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 					setter = setUserImageModel

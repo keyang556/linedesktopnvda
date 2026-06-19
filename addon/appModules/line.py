@@ -2102,12 +2102,14 @@ _IMAGE_DESCRIPTION_PROVIDER_OLLAMA = "ollama"
 _IMAGE_DESCRIPTION_PROVIDER_NVIDIA = "nvidia"
 _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS = "pollinations"
 _IMAGE_DESCRIPTION_PROVIDER_OPENAI = "openai"
+_IMAGE_DESCRIPTION_PROVIDER_MISTRAL = "mistral"
 _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE,
 	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 	_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
+	_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 )
 _IMAGE_DESCRIPTION_DEFAULT_PROVIDER = _IMAGE_DESCRIPTION_PROVIDER_GOOGLE
 _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
@@ -2116,6 +2118,7 @@ _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA: "NVIDIA NIM",
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS: "Pollinations.AI",
 	_IMAGE_DESCRIPTION_PROVIDER_OPENAI: "OpenAI",
+	_IMAGE_DESCRIPTION_PROVIDER_MISTRAL: "Mistral AI",
 }
 _IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME = "line_desktop_image_provider.txt"
 
@@ -2142,16 +2145,21 @@ _IMAGE_DESCRIPTION_OPENAI_DEFAULT_KEY_BLOB = (
 	"svswUoTj/3/DGp8+xOWf/vEIHPyTdQgafiJDlqlnf4/PI9oPSmmT0f4qRQn99TZzrdl+VbyQlXRoc+7N9cikjINQyT/N6j0sxA0"
 	"9N1noxqL6EBcouFFUAe6xtfy9lWzamsggrc/BGwQeCMiojshNKZQY6xfBg1bnF/Q=="
 )
+_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB = (
+	"gv024MC6257LD65vvtsLcSv06bdTsV1dCeRDwhaaob/PHZFHRusKQixxW1RHSFIDfJRfF937g9Z7Df1VLkazZg=="
+)
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_NVIDIA_KEY_FILENAME = "line_desktop_nvidia_api_key.dat"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_KEY_FILENAME = "line_desktop_pollinations_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OPENAI_KEY_FILENAME = "line_desktop_openai_api_key.dat"
+_IMAGE_DESCRIPTION_USER_MISTRAL_KEY_FILENAME = "line_desktop_mistral_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
 _IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME = "line_desktop_ollama_model.txt"
 _IMAGE_DESCRIPTION_USER_NVIDIA_MODEL_FILENAME = "line_desktop_nvidia_model.txt"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME = "line_desktop_pollinations_model.txt"
 _IMAGE_DESCRIPTION_USER_OPENAI_MODEL_FILENAME = "line_desktop_openai_model.txt"
+_IMAGE_DESCRIPTION_USER_MISTRAL_MODEL_FILENAME = "line_desktop_mistral_model.txt"
 _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
 _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt"
 # Default Google model used when the user has not picked one in the settings panel.
@@ -2261,6 +2269,14 @@ _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS = (
 	"gpt-5.4-mini",
 	"gpt-5.4-nano",
 )
+# Default Mistral AI model used when the user has not picked one in the settings panel.
+_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL = "mistral-medium-latest"
+# Vision-capable Mistral AI models exposed in the settings panel.
+_IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS = (
+	"mistral-large-latest",
+	"mistral-medium-latest",
+	"mistral-small-latest",
+)
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 )
@@ -2268,6 +2284,7 @@ _IMAGE_DESCRIPTION_OLLAMA_ENDPOINT = "https://ollama.com/api/chat"
 _IMAGE_DESCRIPTION_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 _IMAGE_DESCRIPTION_POLLINATIONS_ENDPOINT = "https://gen.pollinations.ai/v1/chat/completions"
 _IMAGE_DESCRIPTION_OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+_IMAGE_DESCRIPTION_MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions"
 _IMAGE_DESCRIPTION_DEFAULT_PROMPT = (
 	"Describe this image succinctly, but in as much detail as possible. "
 	"If there is text, ensure it is included in your response exactly as shown."
@@ -2294,11 +2311,13 @@ _cachedEffectiveOllamaApiKey = _NOT_COMPUTED
 _cachedEffectiveNvidiaApiKey = _NOT_COMPUTED
 _cachedEffectivePollinationsApiKey = _NOT_COMPUTED
 _cachedEffectiveOpenaiApiKey = _NOT_COMPUTED
+_cachedEffectiveMistralApiKey = _NOT_COMPUTED
 _cachedEffectiveImageProvider = _NOT_COMPUTED
 _cachedEffectiveOllamaModel = _NOT_COMPUTED
 _cachedEffectiveNvidiaModel = _NOT_COMPUTED
 _cachedEffectivePollinationsModel = _NOT_COMPUTED
 _cachedEffectiveOpenaiModel = _NOT_COMPUTED
+_cachedEffectiveMistralModel = _NOT_COMPUTED
 
 
 def _deriveImageApiKeyMaterial(salt, length):
@@ -2690,6 +2709,71 @@ def _getEffectiveOpenaiApiKey():
 	return _cachedEffectiveOpenaiApiKey
 
 
+def _getMistralApiKeyStorePath():
+	"""Return the filesystem path for the user-supplied Mistral AI API key file."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_MISTRAL_KEY_FILENAME)
+
+
+def getUserMistralApiKey():
+	"""Return the plain Mistral AI API key previously set by the user, or None."""
+	path = _getMistralApiKeyStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			blob = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Mistral API key: {e}", exc_info=True)
+		return None
+	return _deobfuscateImageApiKey(blob)
+
+
+def setUserMistralApiKey(plain):
+	"""Persist a user-supplied Mistral AI API key (obfuscated). Empty/None clears it."""
+	global _cachedEffectiveMistralApiKey
+	path = _getMistralApiKeyStorePath()
+	if not path:
+		return False
+	try:
+		if not plain:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveMistralApiKey = _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB)
+		else:
+			blob = _obfuscateImageApiKey(plain)
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(blob)
+			_cachedEffectiveMistralApiKey = plain
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Mistral API key: {e}", exc_info=True)
+		return False
+
+
+def _initEffectiveMistralApiKey():
+	"""Decrypt and cache the effective Mistral AI API key."""
+	global _cachedEffectiveMistralApiKey
+	userKey = getUserMistralApiKey()
+	_cachedEffectiveMistralApiKey = userKey or _deobfuscateImageApiKey(
+		_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB,
+	)
+
+
+def _getEffectiveMistralApiKey():
+	"""Return the cached Mistral AI API key; falls back to lazy init if not yet computed."""
+	if _cachedEffectiveMistralApiKey is _NOT_COMPUTED:
+		_initEffectiveMistralApiKey()
+	return _cachedEffectiveMistralApiKey
+
+
 def _getImageProviderStorePath():
 	"""Return the filesystem path for the user-selected provider preference."""
 	try:
@@ -3079,6 +3163,70 @@ def _getEffectiveOpenaiModel():
 	return _cachedEffectiveOpenaiModel
 
 
+def _getMistralModelStorePath():
+	"""Return the filesystem path for the user-selected Mistral AI model preference."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_MISTRAL_MODEL_FILENAME)
+
+
+def getUserMistralModel():
+	"""Return the Mistral AI model ID previously chosen by the user, or None."""
+	path = _getMistralModelStorePath()
+	if not path or not os.path.isfile(path):
+		return None
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			value = f.read().strip()
+	except Exception as e:
+		log.debug(f"LINE: failed to read user Mistral model: {e}", exc_info=True)
+		return None
+	if not value:
+		return None
+	if value not in _IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS:
+		log.debug(f"LINE: stored Mistral model {value!r} is not in the allowed list")
+		return None
+	return value
+
+
+def setUserMistralModel(name):
+	"""Persist a user-selected Mistral AI model. Empty/None or default clears the file."""
+	global _cachedEffectiveMistralModel
+	path = _getMistralModelStorePath()
+	if not path:
+		return False
+	try:
+		if not name or name == _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL:
+			if os.path.isfile(path):
+				os.remove(path)
+			_cachedEffectiveMistralModel = _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL
+			return True
+		if name not in _IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS:
+			log.warning(f"LINE: refusing to save unknown Mistral model {name!r}")
+			return False
+		with open(path, "w", encoding="utf-8") as f:
+			f.write(name)
+		_cachedEffectiveMistralModel = name
+		return True
+	except Exception as e:
+		log.warning(f"LINE: failed to save user Mistral model: {e}", exc_info=True)
+		return False
+
+
+def _getEffectiveMistralModel():
+	"""Return the cached Mistral AI model ID; lazily resolved from disk on first call."""
+	global _cachedEffectiveMistralModel
+	if _cachedEffectiveMistralModel is _NOT_COMPUTED:
+		_cachedEffectiveMistralModel = getUserMistralModel() or _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL
+	return _cachedEffectiveMistralModel
+
+
 def _getImagePromptStorePath():
 	"""Return the filesystem path for the user-supplied description prompt."""
 	try:
@@ -3449,6 +3597,11 @@ def _callImageDescriptionApi(contents, timeout=None):
 		)
 	if provider == _IMAGE_DESCRIPTION_PROVIDER_OPENAI:
 		return _callOpenaiImageDescriptionApi(
+			contents,
+			timeout=timeout if timeout is not None else 60.0,
+		)
+	if provider == _IMAGE_DESCRIPTION_PROVIDER_MISTRAL:
+		return _callMistralImageDescriptionApi(
 			contents,
 			timeout=timeout if timeout is not None else 60.0,
 		)
@@ -3970,6 +4123,119 @@ def _callOpenaiImageDescriptionApi(contents, timeout=60.0):
 	except Exception as e:
 		log.warning(
 			f"LINE: OpenAI image description response parse failed: {e}",
+			exc_info=True,
+		)
+	return None, _("圖片描述失敗 (無回應)")
+
+
+def _geminiContentsToMistralMessages(contents):
+	"""Convert canonical Gemini-shaped contents into Mistral AI chat messages.
+
+	Mistral's /v1/chat/completions schema is OpenAI-compatible except that the
+	"image_url" content part is a plain string (the URL or data URI) rather than
+	an {"url": ...} object as used by OpenAI/NVIDIA/Pollinations.
+	"""
+	messages = []
+	for turn in contents or []:
+		role = turn.get("role") if isinstance(turn, dict) else None
+		mistralRole = "assistant" if role == "model" else "user"
+		parts = []
+		for part in (turn.get("parts") or []) if isinstance(turn, dict) else []:
+			if not isinstance(part, dict):
+				continue
+			if "text" in part and part["text"]:
+				parts.append({"type": "text", "text": part["text"]})
+			elif "inline_data" in part:
+				inline = part.get("inline_data") or {}
+				data = inline.get("data")
+				mime = inline.get("mime_type") or "image/png"
+				if data:
+					parts.append(
+						{
+							"type": "image_url",
+							"image_url": f"data:{mime};base64,{data}",
+						},
+					)
+		if not parts:
+			log.debug(f"LINE: skipping empty Mistral turn with role {mistralRole!r}")
+			continue
+		messages.append({"role": mistralRole, "content": parts})
+	return messages
+
+
+def _callMistralImageDescriptionApi(contents, timeout=60.0):
+	"""Send the canonical contents to Mistral AI's chat completions endpoint.
+
+	Returns (text, None) on success or (None, error_msg) on failure.
+	"""
+	try:
+		import json
+		import urllib.request
+		import urllib.error
+
+		apiKey = _getEffectiveMistralApiKey()
+		if not apiKey:
+			log.warning("LINE: no Mistral API key available")
+			return None, _("未設定 API Key")
+		messages = _geminiContentsToMistralMessages(contents)
+		body = {
+			"model": _getEffectiveMistralModel(),
+			"messages": messages,
+			"stream": False,
+		}
+		userMaxTokens = getUserImageMaxTokens()
+		if userMaxTokens is not None:
+			body["max_tokens"] = userMaxTokens
+		req = urllib.request.Request(
+			_IMAGE_DESCRIPTION_MISTRAL_ENDPOINT,
+			data=json.dumps(body).encode("utf-8"),
+			headers={
+				"Content-Type": "application/json",
+				"Authorization": f"Bearer {apiKey}",
+				"Accept": "application/json",
+			},
+			method="POST",
+		)
+		try:
+			with urllib.request.urlopen(req, timeout=timeout) as resp:
+				raw = resp.read()
+		except urllib.error.HTTPError as e:
+			errBody = e.read().decode("utf-8", errors="replace")
+			log.warning(
+				f"LINE: Mistral image description HTTP {e.code} {e.reason}: {errBody[:500]}",
+			)
+			return None, _("圖片描述失敗 (HTTP {code})").format(code=e.code)
+		except Exception as e:
+			log.warning(f"LINE: Mistral image description network error: {e}", exc_info=True)
+			return None, _("圖片描述失敗 (網路錯誤)")
+		data = json.loads(raw.decode("utf-8", errors="replace"))
+	except Exception as e:
+		log.warning(
+			f"LINE: Mistral image description request failed: {e}",
+			exc_info=True,
+		)
+		return None, _("圖片描述失敗")
+
+	try:
+		choices = data.get("choices") if isinstance(data, dict) else None
+		if isinstance(choices, list) and choices:
+			message = choices[0].get("message") if isinstance(choices[0], dict) else None
+			if isinstance(message, dict):
+				text = message.get("content")
+				if isinstance(text, list):
+					collected = []
+					for part in text:
+						if isinstance(part, dict):
+							inner = part.get("text")
+							if inner:
+								collected.append(inner)
+					text = "".join(collected)
+				if text:
+					return text.strip(), None
+		log.info(f"LINE: Mistral image description returned no content: {data!r}")
+	except Exception as e:
+		log.warning(
+			f"LINE: Mistral image description response parse failed: {e}",
 			exc_info=True,
 		)
 	return None, _("圖片描述失敗 (無回應)")
@@ -7204,6 +7470,7 @@ class AppModule(appModuleHandler.AppModule):
 		_initEffectiveNvidiaApiKey()
 		_initEffectivePollinationsApiKey()
 		_initEffectiveOpenaiApiKey()
+		_initEffectiveMistralApiKey()
 		log.info(
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "
