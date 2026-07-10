@@ -2267,6 +2267,9 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
 # Vision-capable OpenAI models exposed in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS = (
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
 	"gpt-5.5",
 	"gpt-5.4",
 	"gpt-5.4-mini",
