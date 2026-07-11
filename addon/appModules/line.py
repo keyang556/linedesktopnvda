@@ -2207,7 +2207,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"stepfun-ai/step-3.7-flash",
 )
 # Default Pollinations.AI model used when the user has not picked one.
-_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "openai"
+_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
@@ -2264,7 +2264,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"step-flash": "StepFun Step 3.7 Flash",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
+_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"
 # Vision-capable OpenAI models exposed in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS = (
 	"gpt-5.6-sol",
