@@ -2200,6 +2200,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/diffusiongemma-26b-a4b-it",
 	"mistralai/mistral-large-3-675b-instruct-2512",
 	"mistralai/mistral-medium-3.5-128b",
+	"moonshotai/kimi-k2.6",
 	"mistralai/mistral-small-4-119b-2603",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"qwen/qwen3.5-122b-a10b",
