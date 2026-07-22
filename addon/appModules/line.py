@@ -2171,14 +2171,11 @@ _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "mistralai/mistral-medium-3.5-128b"
 # Models exposed in the settings panel dropdown. The order here is the order
 # the user sees. Strings are the actual model IDs sent to the API endpoint.
 # VERIFY all IDs against: GET https://generativelanguage.googleapis.com/v1beta/models
-# Notable uncertainties: "gemini-3-flash-preview" (vs "gemini-3.1-…" naming style),
-# "gemini-flash-latest"/"gemini-flash-lite-latest" (versionless aliases),
-# "gemini-2.5-flash-lite" (may need a "-preview" suffix),
-# "gemma-4-26b-a4b-it"/"gemma-4-31b-it" (availability in Generative Language API),
-# "gemma-3-27b-it" (Gemma 3 27B — confirm exact API model ID).
 _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-3-flash-preview",
 	"gemini-3.1-flash-lite",
+	"gemini-3.5-flash-lite",
+	"gemini-3.6-flash",
 	"gemini-3.5-flash",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
