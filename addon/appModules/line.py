@@ -2893,10 +2893,11 @@ def _getEffectiveImageProvider():
 	return _cachedEffectiveImageProvider
 
 
-# One-time consent before the image-description feature uploads screenshots
-# to a cloud AI provider using the bundled shared key. Users who configured
-# their own API key are never asked. Stored as a loose file like the other
-# image-description settings.
+# One-time consent before the image-description feature uploads screenshots to
+# a cloud AI provider. Asked on first use of each provider regardless of whose
+# API key is used: the privacy question is "which company receives my
+# screenshot", which a user-supplied key does not answer. Stored as a loose
+# file like the other image-description settings, one provider ID per line.
 _AI_CONSENT_FILENAME = "line_desktop_ai_consent.txt"
 
 
@@ -2913,37 +2914,55 @@ def _getAiConsentStorePath():
 	return os.path.join(configPath, _AI_CONSENT_FILENAME)
 
 
-# In-memory fallback for when _recordAiConsent can't persist to disk (e.g. a
-# read-only config directory), so a granted "Yes" stays honored for the rest
-# of this NVDA session instead of every subsequent use failing with "not
-# consented" right after the user agreed.
-_aiConsentGrantedInSession = False
+# Providers consented to during this NVDA session. Also serves as the fallback
+# when _recordAiConsent can't persist to disk (e.g. a read-only config
+# directory), so a granted "Yes" stays honored for the rest of the session
+# instead of every subsequent use failing with "not consented" right after the
+# user agreed.
+_aiConsentGrantedInSession = set()
 
 
-def _hasAiConsent():
-	"""True when the user has accepted the one-time AI upload consent."""
-	if _aiConsentGrantedInSession:
-		return True
+def _readConsentedAiProviders():
+	"""Return the set of provider IDs the user has consented to, from disk."""
 	path = _getAiConsentStorePath()
 	if not path or not os.path.isfile(path):
-		return False
+		return set()
 	try:
 		with open(path, "r", encoding="utf-8") as f:
-			return f.read().strip() == "1"
+			# Older versions stored a bare "1" with no provider ID; such a
+			# marker matches no provider, so consent is asked once more per
+			# provider — the safe direction.
+			return {line.strip() for line in f if line.strip()}
 	except Exception:
-		return False
+		return set()
 
 
-def _recordAiConsent():
-	"""Persist the user's acceptance of the AI upload consent."""
-	global _aiConsentGrantedInSession
-	_aiConsentGrantedInSession = True
+def _hasAiConsent(provider=None):
+	"""True when the user has consented to uploads for ``provider``.
+
+	Consent is per provider: agreeing to send screenshots to one cloud service
+	must never imply agreement for a different company the user was never
+	shown by name.
+	"""
+	if provider is None:
+		provider = _getEffectiveImageProvider()
+	if provider in _aiConsentGrantedInSession:
+		return True
+	return provider in _readConsentedAiProviders()
+
+
+def _recordAiConsent(provider=None):
+	"""Persist the user's acceptance of AI uploads for ``provider``."""
+	if provider is None:
+		provider = _getEffectiveImageProvider()
+	_aiConsentGrantedInSession.add(provider)
 	path = _getAiConsentStorePath()
 	if not path:
 		return False
 	try:
+		providers = _readConsentedAiProviders() | {provider}
 		with open(path, "w", encoding="utf-8") as f:
-			f.write("1")
+			f.write("\n".join(sorted(providers)))
 		return True
 	except Exception as e:
 		log.warning(
@@ -2953,60 +2972,40 @@ def _recordAiConsent():
 		return False
 
 
-def _isImageDescriptionUsingUserKey():
-	"""True when the active provider will use an API key the user supplied."""
-	provider = _getEffectiveImageProvider()
-	getter = {
-		_IMAGE_DESCRIPTION_PROVIDER_GOOGLE: getUserImageApiKey,
-		_IMAGE_DESCRIPTION_PROVIDER_OLLAMA: getUserOllamaApiKey,
-		_IMAGE_DESCRIPTION_PROVIDER_NVIDIA: getUserNvidiaApiKey,
-		_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS: getUserPollinationsApiKey,
-		_IMAGE_DESCRIPTION_PROVIDER_OPENAI: getUserOpenaiApiKey,
-		_IMAGE_DESCRIPTION_PROVIDER_MISTRAL: getUserMistralApiKey,
-	}.get(provider)
-	if getter is None:
-		return False
-	try:
-		return bool(getter())
-	except Exception:
-		return False
-
-
 def _ensureImageDescriptionConsent():
-	"""Ask once before sending a screenshot to a cloud AI with the bundled key.
+	"""Ask once per cloud AI provider before sending it a screenshot.
 
-	Returns True when sending is allowed: the active provider uses a key the
-	user supplied themselves, or the user already accepted the one-time
-	consent. Otherwise shows a blocking Yes/No dialog (main thread only).
-	Declining is not persisted, so the question is asked again on next use.
+	Returns True when sending is allowed, i.e. the user already accepted for
+	the active provider. Otherwise shows a blocking Yes/No dialog naming that
+	provider (main thread only). Asked on first use of each provider whether
+	the request uses the add-on's bundled key or the user's own, since the
+	disclosure is about which company receives the screenshot. Declining is
+	not persisted, so the question is asked again on next use.
 	"""
-	if _isImageDescriptionUsingUserKey():
-		return True
-	if _hasAiConsent():
-		return True
 	provider = _getEffectiveImageProvider()
+	if _hasAiConsent(provider):
+		return True
 	providerLabel = _IMAGE_DESCRIPTION_PROVIDER_LABELS.get(provider, provider)
 	try:
 		import gui
 		import wx
 
 		result = gui.messageBox(
-			# Translators: Message of the one-time consent dialog shown before
-			# the image-description feature uploads a screenshot to a cloud AI
-			# service using the add-on's bundled shared key.
+			# Translators: Message of the consent dialog shown before the
+			# image-description feature uploads a screenshot to a cloud AI
+			# service. {provider} is the name of that service.
 			_(
-				"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider}"
-				"（使用附加元件內建的共用金鑰）進行辨識。\n"
-				"是否同意？選「是」之後不會再詢問。\n"
-				"若不想使用內建金鑰，可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」"
-				"設定自己的 API 金鑰。",
+				"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider} 進行辨識。\n"
+				"是否同意？選「是」之後，使用這項服務時不會再詢問。\n"
+				"可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」更換服務或設定自己的 API 金鑰；"
+				"更換服務後會再次詢問。",
 			).format(provider=providerLabel),
 			# Translators: Title of the one-time AI image description consent dialog
 			_("LINE 圖片描述 - 隱私確認"),
 			wx.YES_NO | wx.ICON_WARNING,
 		)
 		if result == wx.YES:
-			_recordAiConsent()
+			_recordAiConsent(provider)
 			return True
 		return False
 	except Exception:
@@ -3755,12 +3754,14 @@ def _callImageDescriptionApi(contents, timeout=None):
 	each backend uses its own appropriate default (30 s for Google, 60 s for
 	Ollama Cloud which typically needs more time).
 	"""
-	if not _isImageDescriptionUsingUserKey() and not _hasAiConsent():
+	provider = _getEffectiveImageProvider()
+	if not _hasAiConsent(provider):
 		# Defense in depth: script_describeImage asks for consent on the main
-		# thread before this runs; never show UI here (worker thread).
+		# thread before this runs; never show UI here (worker thread). Checked
+		# against the provider resolved above, so switching provider
+		# mid-conversation cannot inherit the previous provider's consent.
 		# Translators: Error when image description is attempted without AI consent
 		return None, _("尚未同意將圖片傳送給第三方 AI 服務")
-	provider = _getEffectiveImageProvider()
 	if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
 		return _callOllamaImageDescriptionApi(
 			contents,
@@ -7692,6 +7693,11 @@ class AppModule(appModuleHandler.AppModule):
 			_chatListCurrentIndex = -1
 			_currentChatRoomName = None
 			_suppressAddon = False
+			# Invalidate any in-flight file-dialog watcher so its worker thread
+			# stops at the next poll instead of outliving this AppModule (it
+			# polls by process ID, which Windows can recycle for the next LINE
+			# session).
+			AppModule._fileDialogWaitToken += 1
 			# Reset the current (main) thread's name-recursion guard; other
 			# threads' thread-local state is cleaned up when they exit.
 			_resetNameRecursionState = _getNameRecursionState()
@@ -10464,6 +10470,13 @@ class AppModule(appModuleHandler.AppModule):
 
 			def _dialogSeenThenClosed():
 				nonlocal seenDialog
+				if token != AppModule._fileDialogWaitToken:
+					# Superseded by a newer watch, or LINE exited (terminate
+					# bumps the token). Stop now instead of polling a dead
+					# process — with a recycled PID — for up to the full
+					# give-up window, which would keep this thread and the
+					# old AppModule alive across the next LINE session.
+					return True
 				if self._lineFileDialogExists():
 					seenDialog = True
 					return False
@@ -10472,8 +10485,8 @@ class AppModule(appModuleHandler.AppModule):
 			try:
 				from utils.blockUntilConditionMet import blockUntilConditionMet
 
-				# Self-terminates when LINE exits (a dead process owns no
-				# dialogs) or after giving up if no dialog ever appeared.
+				# Self-terminates when the dialog closes, when the token is
+				# invalidated, or after giving up if no dialog ever appeared.
 				blockUntilConditionMet(
 					getValue=_dialogSeenThenClosed,
 					giveUpAfterSeconds=1800.0,

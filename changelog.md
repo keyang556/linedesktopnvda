@@ -5,7 +5,7 @@
 ### English
 
 - The incoming-call shortcuts (NVDA+Windows+A/D/S/F) and their Tools-menu equivalents now run on a worker thread on the actual gesture path, so answering or rejecting a call no longer freezes NVDA for several seconds.
-- AI image description now asks for one-time consent before uploading a screenshot to a cloud AI service with the add-on's bundled shared key. Users who configured their own API key are never asked.
+- AI image description now asks for consent, naming the service, before uploading a screenshot to a cloud AI service for the first time. This applies whether the add-on's bundled shared key or your own API key is used, and consent is remembered per service, so switching to a different service asks again.
 - All of the add-on's gestures now appear under a single translated "LINE Desktop" category in NVDA's Input Gestures dialog, and the navigation scripts (Tab/arrows, Enter, Ctrl+1/2/3, mic/camera toggles) now have translatable descriptions in input help.
 - Braille messages now follow NVDA's braille message timeout settings (set the timeout to "show indefinitely" to keep the old persistent behavior).
 - NVDA no longer reacts to the add-on's own synthetic mouse clicks, and the mouse pointer returns to its previous position after such clicks.
@@ -16,7 +16,7 @@
 ### 繁體中文
 
 - 來電快速鍵（NVDA+Windows+A/D/S/F）與工具功能表的對應項目現在會在實際按鍵路徑上於背景執行緒執行，接聽或拒絕來電不再讓 NVDA 凍結數秒。
-- AI 圖片描述在使用附加元件內建的共用金鑰上傳螢幕截圖到雲端 AI 服務前，會先徵求一次性同意；已設定自己 API 金鑰的使用者不會被詢問。
+- AI 圖片描述第一次上傳螢幕截圖到某項雲端 AI 服務前，會先顯示載明該服務名稱的同意對話方塊；無論使用內建共用金鑰或自己的 API 金鑰都會詢問，且同意狀態依服務分別記錄，更換服務後會再次詢問。
 - 附加元件的所有手勢現在都顯示在 NVDA 輸入手勢對話方塊中單一的「LINE Desktop」翻譯分類下，導覽腳本（Tab／方向鍵、Enter、Ctrl+1/2/3、麥克風／鏡頭切換）在輸入說明中也有可翻譯的描述。
 - 點字訊息現在遵循 NVDA 的點字訊息逾時設定（將逾時設定為「持續顯示」可保留舊有的永久顯示行為）。
 - NVDA 不再對附加元件自身合成的滑鼠點擊做出反應，點擊後滑鼠游標會回到原本的位置。
@@ -27,7 +27,7 @@
 ### 日本語
 
 - 着信ショートカット（NVDA+Windows+A/D/S/F）とツールメニューの対応項目が、実際のジェスチャ経路でもワーカースレッドで実行されるようになり、着信の応答や拒否で NVDA が数秒間フリーズしなくなりました。
-- AI 画像説明は、アドオン内蔵の共有キーでスクリーンショットをクラウド AI サービスにアップロードする前に、一度だけ同意を求めるようになりました。自分の API キーを設定しているユーザーには確認しません。
+- AI 画像説明は、クラウド AI サービスへ初めてスクリーンショットをアップロードする前に、そのサービス名を明記した同意ダイアログを表示するようになりました。アドオン内蔵の共有キーでも自分の API キーでも確認し、同意はサービスごとに記憶されるため、別のサービスに変更すると再度確認します。
 - アドオンのすべてのジェスチャが NVDA の入力ジェスチャダイアログで翻訳された単一の「LINE Desktop」カテゴリに表示されるようになり、ナビゲーション スクリプト（Tab／矢印キー、Enter、Ctrl+1/2/3、マイク／カメラ切り替え）にも入力ヘルプで翻訳可能な説明が付きました。
 - 点字メッセージが NVDA の点字メッセージ表示時間の設定に従うようになりました（従来の常時表示にするには表示時間を「無期限に表示」に設定してください）。
 - アドオン自身が合成したマウスクリックに NVDA が反応しなくなり、クリック後にマウスポインターが元の位置に戻るようになりました。
@@ -38,7 +38,7 @@
 ### ภาษาไทย
 
 - ปุ่มลัดสายเรียกเข้า (NVDA+Windows+A/D/S/F) และรายการที่ตรงกันในเมนูเครื่องมือ ตอนนี้ทำงานบนเธรดพื้นหลังในเส้นทางการกดปุ่มจริง การรับหรือปฏิเสธสายจึงไม่ทำให้ NVDA ค้างหลายวินาทีอีกต่อไป
-- การอธิบายรูปภาพด้วย AI จะขอความยินยอมครั้งเดียวก่อนอัปโหลดภาพหน้าจอไปยังบริการ AI คลาวด์ด้วยคีย์ส่วนกลางที่มากับส่วนเสริม ผู้ใช้ที่ตั้งค่า API คีย์ของตนเองจะไม่ถูกถาม
+- การอธิบายรูปภาพด้วย AI จะขอความยินยอมโดยระบุชื่อบริการ ก่อนอัปโหลดภาพหน้าจอไปยังบริการ AI คลาวด์เป็นครั้งแรก โดยถามทั้งกรณีที่ใช้คีย์ส่วนกลางที่มากับส่วนเสริมและ API คีย์ของคุณเอง และจดจำความยินยอมแยกตามบริการ หากเปลี่ยนไปใช้บริการอื่นจะถามอีกครั้ง
 - ท่าทางทั้งหมดของส่วนเสริมแสดงอยู่ใต้หมวดหมู่ "LINE Desktop" ที่แปลแล้วเพียงหมวดเดียวในกล่องโต้ตอบท่าทางการป้อนข้อมูลของ NVDA และสคริปต์การนำทาง (Tab/ลูกศร, Enter, Ctrl+1/2/3, สลับไมค์/กล้อง) มีคำอธิบายที่แปลได้ในวิธีใช้การป้อนข้อมูลแล้ว
 - ข้อความอักษรเบรลล์เป็นไปตามการตั้งค่าเวลาแสดงข้อความเบรลล์ของ NVDA แล้ว (ตั้งค่าเป็น "แสดงตลอดไป" เพื่อคงพฤติกรรมแสดงถาวรแบบเดิม)
 - NVDA จะไม่ตอบสนองต่อการคลิกเมาส์สังเคราะห์ของส่วนเสริมเอง และตัวชี้เมาส์จะกลับสู่ตำแหน่งเดิมหลังการคลิก

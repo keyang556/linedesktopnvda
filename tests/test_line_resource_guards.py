@@ -2390,3 +2390,43 @@ def test_file_dialog_wait_requires_seeing_dialog_before_declaring_it_gone():
 		and any(isinstance(target, ast.Name) and target.id == "seenDialog" for target in node.targets)
 	]
 	assert seen_flag_writes, "the poll must track whether the dialog was ever observed open"
+
+	# ...but a watch whose token was invalidated (superseded, or LINE exited)
+	# must stop at the next poll rather than run out the full give-up window,
+	# which would keep the thread and the old AppModule alive into the next
+	# LINE session, polling a process ID Windows may have recycled.
+	evaluator = next(
+		node
+		for node in ast.walk(wait_for_gone)
+		if isinstance(node, ast.FunctionDef) and node.name == "_dialogSeenThenClosed"
+	)
+	assert any(
+		isinstance(node, ast.Compare)
+		and any(isinstance(op, ast.NotEq) for op in node.ops)
+		and any(isinstance(name, ast.Name) and name.id == "token" for name in ast.walk(node))
+		and any(
+			isinstance(attr, ast.Attribute) and attr.attr == "_fileDialogWaitToken" for attr in ast.walk(node)
+		)
+		for node in ast.walk(evaluator)
+	), "the poll must bail out once its watch token has been invalidated"
+
+
+def test_terminate_invalidates_file_dialog_watch_token():
+	"""terminate() must bump the watch token so any in-flight file-dialog
+	watcher stops instead of outliving this AppModule."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	terminate = next(
+		node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == "terminate"
+	)
+	token_bumps = [
+		node
+		for node in ast.walk(terminate)
+		if isinstance(node, ast.AugAssign)
+		and isinstance(node.target, ast.Attribute)
+		and node.target.attr == "_fileDialogWaitToken"
+	]
+	assert token_bumps, "terminate must invalidate the file-dialog watch token"

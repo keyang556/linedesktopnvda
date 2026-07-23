@@ -1,11 +1,14 @@
-"""Behavioral tests for the one-time AI image-description consent.
+"""Behavioral tests for the AI image-description consent.
 
 The consent gate must:
-- never ask users whose active provider uses their own API key;
-- ask once, persist acceptance, and never ask again;
+- ask on first use of each provider, whether the request would use the
+  add-on's bundled key or the user's own (the disclosure is about which
+  company receives the screenshot, which owning a key does not answer);
+- never let consent for one provider carry over to another;
+- persist acceptance, and not ask again for that provider;
 - block the upload (without persisting anything) when declined;
 - refuse on the worker-thread chokepoint (_callImageDescriptionApi) without
-  showing UI when consent is somehow missing there.
+  showing UI when consent is missing for the provider it is about to call.
 """
 
 from __future__ import annotations
@@ -23,9 +26,9 @@ NEEDED_ASSIGNMENTS = {
 }
 NEEDED_FUNCTIONS = {
 	"_getAiConsentStorePath",
+	"_readConsentedAiProviders",
 	"_hasAiConsent",
 	"_recordAiConsent",
-	"_isImageDescriptionUsingUserKey",
 	"_ensureImageDescriptionConsent",
 	"_callImageDescriptionApi",
 }
@@ -104,29 +107,33 @@ class _FakeGuiWx:
 		return False
 
 
-def _make_namespace(user_key=None, provider="google"):
-	return _load_consent_helpers(
+def _make_namespace(provider="google"):
+	"""Build the extracted-helper namespace.
+
+	Returns (namespace, providerHolder); mutate providerHolder[0] to simulate
+	the user switching provider in the settings panel.
+	"""
+	providerHolder = [provider]
+	namespace = _load_consent_helpers(
 		{
-			"_getEffectiveImageProvider": lambda: provider,
-			"_IMAGE_DESCRIPTION_PROVIDER_LABELS": {"google": "Google AI"},
+			"_getEffectiveImageProvider": lambda: providerHolder[0],
+			"_IMAGE_DESCRIPTION_PROVIDER_LABELS": {
+				"google": "Google AI",
+				"mistral": "Mistral AI",
+			},
 			"_IMAGE_DESCRIPTION_PROVIDER_GOOGLE": "google",
 			"_IMAGE_DESCRIPTION_PROVIDER_OLLAMA": "ollama",
 			"_IMAGE_DESCRIPTION_PROVIDER_NVIDIA": "nvidia",
 			"_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS": "pollinations",
 			"_IMAGE_DESCRIPTION_PROVIDER_OPENAI": "openai",
 			"_IMAGE_DESCRIPTION_PROVIDER_MISTRAL": "mistral",
-			"getUserImageApiKey": lambda: user_key,
-			"getUserOllamaApiKey": lambda: None,
-			"getUserNvidiaApiKey": lambda: None,
-			"getUserPollinationsApiKey": lambda: None,
-			"getUserOpenaiApiKey": lambda: None,
-			"getUserMistralApiKey": lambda: None,
 		},
 	)
+	return namespace, providerHolder
 
 
 def test_consent_dialog_accept_persists_and_never_asks_again(tmp_path):
-	ns = _make_namespace()
+	ns, _provider = _make_namespace()
 	with _FakeGuiWx(tmp_path, answers=[2, 2]) as fake:  # wx.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
 		assert len(fake.message_boxes) == 1
@@ -137,7 +144,7 @@ def test_consent_dialog_accept_persists_and_never_asks_again(tmp_path):
 
 
 def test_consent_dialog_decline_blocks_and_persists_nothing(tmp_path):
-	ns = _make_namespace()
+	ns, _provider = _make_namespace()
 	with _FakeGuiWx(tmp_path, answers=[8, 8]) as fake:  # wx.NO
 		assert ns["_ensureImageDescriptionConsent"]() is False
 		assert ns["_hasAiConsent"]() is False
@@ -151,7 +158,7 @@ def test_consent_grant_falls_back_to_in_session_cache_when_disk_write_fails(tmp_
 	etc.), a granted "Yes" must still be honored for the rest of this NVDA
 	session instead of every subsequent call failing with "not consented"
 	right after the user agreed."""
-	ns = _make_namespace()
+	ns, _provider = _make_namespace()
 	unwritable_config_path = tmp_path / "does-not-exist"  # never created
 	with _FakeGuiWx(unwritable_config_path, answers=[2, 2]) as fake:  # wx.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
@@ -161,17 +168,53 @@ def test_consent_grant_falls_back_to_in_session_cache_when_disk_write_fails(tmp_
 		assert len(fake.message_boxes) == 1
 
 
-def test_consent_not_asked_when_user_key_configured(tmp_path):
-	ns = _make_namespace(user_key="sk-user-supplied")
-	with _FakeGuiWx(tmp_path, answers=[]) as fake:
+def test_consent_is_asked_even_when_user_supplied_their_own_key(tmp_path):
+	"""Owning the API key does not answer "which company gets my screenshot",
+	so the first use of a provider is disclosed regardless of key source."""
+	ns, _provider = _make_namespace()
+	with _FakeGuiWx(tmp_path, answers=[2]) as fake:  # wx.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert fake.message_boxes == []
-		assert ns["_hasAiConsent"]() is False
+		assert len(fake.message_boxes) == 1
 
 
-def test_worker_chokepoint_refuses_without_consent(tmp_path):
-	provider_calls = []
-	ns = _make_namespace()
+def test_consent_does_not_carry_over_to_another_provider(tmp_path):
+	"""Consenting to one cloud service must never imply consent for a
+	different company the user was never shown by name."""
+	ns, provider = _make_namespace(provider="google")
+	with _FakeGuiWx(tmp_path, answers=[2, 2]) as fake:  # wx.YES, wx.YES
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 1
+
+		provider[0] = "mistral"
+		assert ns["_hasAiConsent"]() is False, "consent must not transfer between providers"
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 2
+		# The second dialog must name the newly selected service.
+		assert "Mistral AI" in fake.message_boxes[1][0]
+
+		# Both providers are now independently remembered.
+		assert ns["_hasAiConsent"]("google") is True
+		assert ns["_hasAiConsent"]("mistral") is True
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 2
+
+
+def test_declining_for_new_provider_does_not_revoke_the_previous_one(tmp_path):
+	ns, provider = _make_namespace(provider="google")
+	with _FakeGuiWx(tmp_path, answers=[2, 8]) as fake:  # wx.YES, then wx.NO
+		assert ns["_ensureImageDescriptionConsent"]() is True
+
+		provider[0] = "mistral"
+		assert ns["_ensureImageDescriptionConsent"]() is False
+		assert len(fake.message_boxes) == 2
+
+		provider[0] = "google"
+		assert ns["_hasAiConsent"]() is True
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 2
+
+
+def _stub_provider_backends(ns, provider_calls):
 	for name in (
 		"_callGoogleImageDescriptionApi",
 		"_callOllamaImageDescriptionApi",
@@ -181,6 +224,12 @@ def test_worker_chokepoint_refuses_without_consent(tmp_path):
 		"_callMistralImageDescriptionApi",
 	):
 		ns[name] = lambda *args, **kwargs: provider_calls.append("called") or ("text", None)
+
+
+def test_worker_chokepoint_refuses_without_consent(tmp_path):
+	provider_calls = []
+	ns, _provider = _make_namespace()
+	_stub_provider_backends(ns, provider_calls)
 
 	with _FakeGuiWx(tmp_path, answers=[]):
 		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
@@ -191,16 +240,8 @@ def test_worker_chokepoint_refuses_without_consent(tmp_path):
 
 def test_worker_chokepoint_dispatches_after_consent(tmp_path):
 	provider_calls = []
-	ns = _make_namespace()
-	for name in (
-		"_callGoogleImageDescriptionApi",
-		"_callOllamaImageDescriptionApi",
-		"_callNvidiaImageDescriptionApi",
-		"_callPollinationsImageDescriptionApi",
-		"_callOpenaiImageDescriptionApi",
-		"_callMistralImageDescriptionApi",
-	):
-		ns[name] = lambda *args, **kwargs: provider_calls.append("called") or ("text", None)
+	ns, _provider = _make_namespace()
+	_stub_provider_backends(ns, provider_calls)
 
 	with _FakeGuiWx(tmp_path, answers=[]):
 		assert ns["_recordAiConsent"]() is True
@@ -208,3 +249,23 @@ def test_worker_chokepoint_dispatches_after_consent(tmp_path):
 	assert text == "text"
 	assert error is None
 	assert provider_calls == ["called"]
+
+
+def test_worker_chokepoint_refuses_after_switching_to_an_unconsented_provider(tmp_path):
+	"""The follow-up Q&A path re-resolves the provider on every turn, so
+	switching provider mid-conversation must not inherit the previous
+	provider's consent."""
+	provider_calls = []
+	ns, provider = _make_namespace(provider="google")
+	_stub_provider_backends(ns, provider_calls)
+
+	with _FakeGuiWx(tmp_path, answers=[]):
+		assert ns["_recordAiConsent"]("google") is True
+		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
+		assert text == "text"
+
+		provider[0] = "mistral"
+		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
+	assert text is None
+	assert error
+	assert provider_calls == ["called"], "no second upload may reach the new provider"

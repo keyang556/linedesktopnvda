@@ -34,7 +34,7 @@ Supports calls, incoming call handling, OCR-assisted reading, message export rea
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""Incoming-call shortcuts (NVDA+Windows+A/D/S/F) no longer freeze NVDA: they now run on a worker thread on the real gesture path.
-AI image description asks for one-time consent before sending a screenshot to a cloud provider with the bundled key.
+AI image description asks for consent, naming the service, before sending a screenshot to a cloud AI provider for the first time; consent is remembered per service.
 All gestures now appear under a single translated "LINE Desktop" category in the Input Gestures dialog.
 Braille messages follow NVDA's braille message timeout settings.
 NVDA 2024.1 or later is now required."""),
