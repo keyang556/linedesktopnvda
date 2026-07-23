@@ -2209,6 +2209,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"gemma",
+	"gemma-4-31b",
 	"openai-fast",
 	"gpt-5.4",
 	"gpt-5.4-mini",
@@ -2236,6 +2237,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gemma": "Gemma 4 26B A4B",
+	"Gemma 4 31B": "gemma-4-31b",
 	"openai-fast": "GPT-5 Nano",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
