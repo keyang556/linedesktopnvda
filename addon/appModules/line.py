@@ -30,6 +30,10 @@ import addonHandler
 
 addonHandler.initTranslation()
 
+# Translators: The single category under which all of this add-on's scripts
+# appear in NVDA's Input Gestures dialog.
+SCRIPT_CATEGORY = _("LINE Desktop")
+
 
 # ---------------------------------------------------------------------------
 # LINE installation info — version detection and window type classification
@@ -1973,6 +1977,25 @@ def _coInitializeWorker():
 		pass
 
 
+def _waitForForegroundWindow(hwnd, timeoutSec=1.0):
+	"""Wait until ``hwnd`` is the foreground window (worker threads only).
+
+	Returns as soon as the window actually reaches the foreground instead of
+	sleeping a fixed interval; gives up after ``timeoutSec``. Blocking, so
+	never call from NVDA's main thread.
+	"""
+	try:
+		from utils.blockUntilConditionMet import blockUntilConditionMet
+
+		blockUntilConditionMet(
+			getValue=lambda: ctypes.windll.user32.GetForegroundWindow() == hwnd,
+			giveUpAfterSeconds=timeoutSec,
+			intervalBetweenSeconds=0.05,
+		)
+	except Exception:
+		time.sleep(0.3)
+
+
 # Pointer-sized integer for the SendInput dwExtraInfo field.
 if ctypes.sizeof(ctypes.c_void_p) == 8:
 	_ULONG_PTR = ctypes.c_ulonglong
@@ -2017,18 +2040,41 @@ def _sendMouseClick(x, y, button="left"):
 	reliable without ever blocking the calling (often main) thread, which
 	the previous SetCursorPos + mouse_event + sleep pattern did. Safe on
 	any thread.
+
+	The whole sequence runs under mouseHandler.ignoreInjection() so NVDA's
+	mouse hook does not react to the synthetic move/click (e.g. speaking the
+	object under the mouse), and the cursor is restored afterwards like
+	_virtualWindow.VirtualWindow.click does. The injected events are queued
+	in order, so restoring immediately after SendInput cannot retarget the
+	click.
 	"""
 	try:
-		ctypes.windll.user32.SetCursorPos(int(x), int(y))
-		if button == "right":
-			downFlag, upFlag = _MOUSEEVENTF_RIGHTDOWN, _MOUSEEVENTF_RIGHTUP
-		else:
-			downFlag, upFlag = _MOUSEEVENTF_LEFTDOWN, _MOUSEEVENTF_LEFTUP
-		events = (_INPUT * 2)()
-		for i, flag in enumerate((downFlag, upFlag)):
-			events[i].type = _INPUT_MOUSE
-			events[i].mi = _MOUSEINPUT(0, 0, 0, flag, 0, 0)
-		ctypes.windll.user32.SendInput(2, ctypes.byref(events), ctypes.sizeof(_INPUT))
+		import mouseHandler
+		import winUser
+
+		originalPos = None
+		try:
+			originalPos = winUser.getCursorPos()
+		except Exception:
+			pass
+		with mouseHandler.ignoreInjection():
+			try:
+				ctypes.windll.user32.SetCursorPos(int(x), int(y))
+				if button == "right":
+					downFlag, upFlag = _MOUSEEVENTF_RIGHTDOWN, _MOUSEEVENTF_RIGHTUP
+				else:
+					downFlag, upFlag = _MOUSEEVENTF_LEFTDOWN, _MOUSEEVENTF_LEFTUP
+				events = (_INPUT * 2)()
+				for i, flag in enumerate((downFlag, upFlag)):
+					events[i].type = _INPUT_MOUSE
+					events[i].mi = _MOUSEINPUT(0, 0, 0, flag, 0, 0)
+				ctypes.windll.user32.SendInput(2, ctypes.byref(events), ctypes.sizeof(_INPUT))
+			finally:
+				if originalPos is not None:
+					try:
+						winUser.setCursorPos(*originalPos)
+					except Exception:
+						pass
 		return True
 	except Exception:
 		log.debugWarning("LINE: _sendMouseClick failed", exc_info=True)
@@ -2233,7 +2279,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"qwen-vision-pro",
 	"qwen-vision",
 	"qwen-large",
-"step-flash",
+	"step-flash",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
@@ -2244,9 +2290,9 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gpt-5.4-mini": "GPT-5.4 Mini",
 	"openai": "GPT-5.4 Nano",
 	"openai-large": "GPT-5.5",
-	"gpt-5.6-sol":  "GPT-5.6 Sol",
-	"gpt-5.6-terra":  "GPT-5.6 Terra",
-	"gpt-5.6-luna":  "GPT-5.6 Luna",
+	"gpt-5.6-sol": "GPT-5.6 Sol",
+	"gpt-5.6-terra": "GPT-5.6 Terra",
+	"gpt-5.6-luna": "GPT-5.6 Luna",
 	"grok": "Grok 4.20 Non-Reasoning",
 	"grok-4-20-reasoning": "Grok 4.20 Reasoning",
 	"grok-large": "Grok 4.3",
@@ -2753,7 +2799,9 @@ def setUserMistralApiKey(plain):
 		if not plain:
 			if os.path.isfile(path):
 				os.remove(path)
-			_cachedEffectiveMistralApiKey = _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB)
+			_cachedEffectiveMistralApiKey = _deobfuscateImageApiKey(
+				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB,
+			)
 		else:
 			blob = _obfuscateImageApiKey(plain)
 			with open(path, "w", encoding="utf-8") as f:
@@ -2843,6 +2891,126 @@ def _getEffectiveImageProvider():
 	if _cachedEffectiveImageProvider is _NOT_COMPUTED:
 		_cachedEffectiveImageProvider = getUserImageProvider() or _IMAGE_DESCRIPTION_DEFAULT_PROVIDER
 	return _cachedEffectiveImageProvider
+
+
+# One-time consent before the image-description feature uploads screenshots to
+# a cloud AI provider. Asked on first use of each provider regardless of whose
+# API key is used: the privacy question is "which company receives my
+# screenshot", which a user-supplied key does not answer. Stored as a loose
+# file like the other image-description settings, one provider ID per line.
+_AI_CONSENT_FILENAME = "line_desktop_ai_consent.txt"
+
+
+def _getAiConsentStorePath():
+	"""Return the filesystem path for the AI-upload consent marker file."""
+	try:
+		import globalVars
+
+		configPath = globalVars.appArgs.configPath
+	except Exception:
+		return None
+	if not configPath:
+		return None
+	return os.path.join(configPath, _AI_CONSENT_FILENAME)
+
+
+# Providers consented to during this NVDA session. Also serves as the fallback
+# when _recordAiConsent can't persist to disk (e.g. a read-only config
+# directory), so a granted "Yes" stays honored for the rest of the session
+# instead of every subsequent use failing with "not consented" right after the
+# user agreed.
+_aiConsentGrantedInSession = set()
+
+
+def _readConsentedAiProviders():
+	"""Return the set of provider IDs the user has consented to, from disk."""
+	path = _getAiConsentStorePath()
+	if not path or not os.path.isfile(path):
+		return set()
+	try:
+		with open(path, "r", encoding="utf-8") as f:
+			# Older versions stored a bare "1" with no provider ID; such a
+			# marker matches no provider, so consent is asked once more per
+			# provider — the safe direction.
+			return {line.strip() for line in f if line.strip()}
+	except Exception:
+		return set()
+
+
+def _hasAiConsent(provider=None):
+	"""True when the user has consented to uploads for ``provider``.
+
+	Consent is per provider: agreeing to send screenshots to one cloud service
+	must never imply agreement for a different company the user was never
+	shown by name.
+	"""
+	if provider is None:
+		provider = _getEffectiveImageProvider()
+	if provider in _aiConsentGrantedInSession:
+		return True
+	return provider in _readConsentedAiProviders()
+
+
+def _recordAiConsent(provider=None):
+	"""Persist the user's acceptance of AI uploads for ``provider``."""
+	if provider is None:
+		provider = _getEffectiveImageProvider()
+	_aiConsentGrantedInSession.add(provider)
+	path = _getAiConsentStorePath()
+	if not path:
+		return False
+	try:
+		providers = _readConsentedAiProviders() | {provider}
+		with open(path, "w", encoding="utf-8") as f:
+			f.write("\n".join(sorted(providers)))
+		return True
+	except Exception as e:
+		log.warning(
+			f"LINE: failed to persist AI consent to disk; will re-ask next session: {e}",
+			exc_info=True,
+		)
+		return False
+
+
+def _ensureImageDescriptionConsent():
+	"""Ask once per cloud AI provider before sending it a screenshot.
+
+	Returns True when sending is allowed, i.e. the user already accepted for
+	the active provider. Otherwise shows a blocking Yes/No dialog naming that
+	provider (main thread only). Asked on first use of each provider whether
+	the request uses the add-on's bundled key or the user's own, since the
+	disclosure is about which company receives the screenshot. Declining is
+	not persisted, so the question is asked again on next use.
+	"""
+	provider = _getEffectiveImageProvider()
+	if _hasAiConsent(provider):
+		return True
+	providerLabel = _IMAGE_DESCRIPTION_PROVIDER_LABELS.get(provider, provider)
+	try:
+		import gui
+		import wx
+
+		result = gui.messageBox(
+			# Translators: Message of the consent dialog shown before the
+			# image-description feature uploads a screenshot to a cloud AI
+			# service. {provider} is the name of that service.
+			_(
+				"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider} 進行辨識。\n"
+				"是否同意？選「是」之後，使用這項服務時不會再詢問。\n"
+				"可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」更換服務或設定自己的 API 金鑰；"
+				"更換服務後會再次詢問。",
+			).format(provider=providerLabel),
+			# Translators: Title of the one-time AI image description consent dialog
+			_("LINE 圖片描述 - 隱私確認"),
+			wx.YES_NO | wx.ICON_WARNING,
+		)
+		if result == wx.YES:
+			_recordAiConsent(provider)
+			return True
+		return False
+	except Exception:
+		log.warning("LINE: AI consent dialog failed", exc_info=True)
+		return False
 
 
 def _getImageModelStorePath():
@@ -3587,6 +3755,13 @@ def _callImageDescriptionApi(contents, timeout=None):
 	Ollama Cloud which typically needs more time).
 	"""
 	provider = _getEffectiveImageProvider()
+	if not _hasAiConsent(provider):
+		# Defense in depth: script_describeImage asks for consent on the main
+		# thread before this runs; never show UI here (worker thread). Checked
+		# against the provider resolved above, so switching provider
+		# mid-conversation cannot inherit the previous provider's consent.
+		# Translators: Error when image description is attempted without AI consent
+		return None, _("尚未同意將圖片傳送給第三方 AI 服務")
 	if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
 		return _callOllamaImageDescriptionApi(
 			contents,
@@ -7518,6 +7693,11 @@ class AppModule(appModuleHandler.AppModule):
 			_chatListCurrentIndex = -1
 			_currentChatRoomName = None
 			_suppressAddon = False
+			# Invalidate any in-flight file-dialog watcher so its worker thread
+			# stops at the next poll instead of outliving this AppModule (it
+			# polls by process ID, which Windows can recycle for the next LINE
+			# session).
+			AppModule._fileDialogWaitToken += 1
 			# Reset the current (main) thread's name-recursion guard; other
 			# threads' thread-local state is cleaned up when they exit.
 			_resetNameRecursionState = _getNameRecursionState()
@@ -7534,6 +7714,12 @@ class AppModule(appModuleHandler.AppModule):
 				from . import _chatCache
 
 				_chatCache.clearCache()
+			except Exception:
+				pass
+			try:
+				from . import _utils
+
+				_utils.schedulePendingOcrCleanup()
 			except Exception:
 				pass
 		except Exception:
@@ -7876,7 +8062,7 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a debug script that logs UIA tree info
 		description=_("Debug: log UIA tree info for the focused element"),
 		gesture="kb:NVDA+shift+k",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_debugUIATree(self, gesture):
 		"""Debug helper: probes focused element properties + display model.
@@ -9315,12 +9501,11 @@ class AppModule(appModuleHandler.AppModule):
 		"""
 		import ctypes
 		import ctypes.wintypes
-		import time
 
 		# Step 0: Bring call window to foreground
 		try:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
-			time.sleep(0.3)
+			_waitForForegroundWindow(hwnd)
 		except Exception:
 			pass
 
@@ -9437,12 +9622,11 @@ class AppModule(appModuleHandler.AppModule):
 		"""
 		import ctypes
 		import ctypes.wintypes
-		import time
 
 		# Step 0: Bring call window to foreground
 		try:
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
-			time.sleep(0.3)
+			_waitForForegroundWindow(hwnd)
 		except Exception:
 			pass
 
@@ -9663,9 +9847,9 @@ class AppModule(appModuleHandler.AppModule):
 			except Exception:
 				pass
 
-			# Give the window time to come to foreground, then OCR it.
-			# Sleeping is fine here: this runs on a worker thread.
-			time.sleep(0.3)
+			# Wait for the window to actually reach the foreground, then OCR
+			# it. Blocking is fine here: this runs on a worker thread.
+			_waitForForegroundWindow(hwnd)
 			try:
 				ocrText = self._ocrWindowArea(hwnd, sync=True, timeout=3.0)
 				if ocrText:
@@ -9685,7 +9869,7 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a script to make a voice call
 		description=_("撥打語音通話"),
 		gesture="kb:NVDA+windows+c",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_makeCall(self, gesture):
 		"""Click the phone icon, then auto-select voice call from the popup menu."""
@@ -9700,7 +9884,7 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a script to make a video call
 		description=_("撥打視訊通話"),
 		gesture="kb:NVDA+windows+v",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_makeVideoCall(self, gesture):
 		"""Click the phone icon, then auto-select video call from the popup menu."""
@@ -9715,7 +9899,7 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a script to click the more options button
 		description=_("LINE: 點擊更多選項按鈕"),
 		gesture="kb:NVDA+windows+o",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_clickMoreOptions(self, gesture):
 		"""Click the more options (⋮) button in the chat header."""
@@ -10148,7 +10332,7 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a script to read the current chat room name
 		description=_("讀出目前聊天室名稱"),
 		gesture="kb:NVDA+windows+t",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_readChatRoomName(self, gesture):
 		"""Read the current chat room name.
@@ -10165,7 +10349,8 @@ class AppModule(appModuleHandler.AppModule):
 		# Translators: Description of a script to report LINE version and window type
 		description=_("報告 LINE 版本與視窗類型"),
 		gesture="kb:NVDA+shift+v",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
+		speakOnDemand=True,
 	)
 	def script_reportLineInfo(self, gesture):
 		"""Report LINE version, language, and current window type."""
@@ -10213,71 +10398,112 @@ class AppModule(appModuleHandler.AppModule):
 			else:
 				ui.message(_("設定 QT_ACCESSIBILITY 環境變數失敗"))
 
-	def _pollFileDialog(self):
-		"""Poll to detect when the file dialog closes, then resume addon.
+	def _lineFileDialogExists(self):
+		"""True if a #32770 dialog owned by LINE's process is currently open.
 
 		We enumerate all #32770 windows and check if any belong to LINE's
 		process. Using FindWindowW("#32770", None) is wrong because it finds
 		ANY #32770 window in the system (e.g. battery warning dialogs).
 		"""
-		global _suppressAddon
 		import ctypes
 		import ctypes.wintypes
 
 		lineProcessId = self.processID
+		found = False
 
-		try:
-			foundOurDialog = False
+		WNDENUMPROC = ctypes.WINFUNCTYPE(
+			ctypes.wintypes.BOOL,
+			ctypes.wintypes.HWND,
+			ctypes.wintypes.LPARAM,
+		)
 
-			# Callback for EnumWindows
-			WNDENUMPROC = ctypes.WINFUNCTYPE(
-				ctypes.wintypes.BOOL,
-				ctypes.wintypes.HWND,
-				ctypes.wintypes.LPARAM,
+		def _enumCallback(hwnd, lParam):
+			nonlocal found
+			buf = ctypes.create_unicode_buffer(256)
+			ctypes.windll.user32.GetClassNameW(
+				hwnd,
+				buf,
+				256,
 			)
-
-			def _enumCallback(hwnd, lParam):
-				nonlocal foundOurDialog
-				# Get the class name of this window
-				buf = ctypes.create_unicode_buffer(256)
-				ctypes.windll.user32.GetClassNameW(
+			if buf.value == "#32770":
+				pid = ctypes.wintypes.DWORD()
+				ctypes.windll.user32.GetWindowThreadProcessId(
 					hwnd,
-					buf,
-					256,
+					ctypes.byref(pid),
 				)
-				if buf.value == "#32770":
-					# Check if this dialog belongs to LINE's process
-					pid = ctypes.wintypes.DWORD()
-					ctypes.windll.user32.GetWindowThreadProcessId(
-						hwnd,
-						ctypes.byref(pid),
-					)
-					if pid.value == lineProcessId:
-						foundOurDialog = True
-						return False  # stop enumeration
-				return True  # continue enumeration
+				if pid.value == lineProcessId:
+					found = True
+					return False  # stop enumeration
+			return True  # continue enumeration
 
-			ctypes.windll.user32.EnumWindows(
-				WNDENUMPROC(_enumCallback),
-				0,
-			)
+		ctypes.windll.user32.EnumWindows(
+			WNDENUMPROC(_enumCallback),
+			0,
+		)
+		return found
 
-			if foundOurDialog:
-				log.debug("LINE: file dialog still open, polling...")
-				core.callLater(500, self._pollFileDialog)
-			else:
-				_suppressAddon = False
-				log.info("LINE: file dialog closed, addon resumed")
-		except Exception as e:
-			log.warning(f"LINE: file dialog poll error: {e}")
-			_suppressAddon = False
+	# Increments on every file-dialog watch so a stale watcher (e.g. from a
+	# previous LINE session) cannot clear a newer session's suppression.
+	_fileDialogWaitToken = 0
 
 	def _suppressAddonForFileDialog(self, reason):
-		"""Pause addon behavior until LINE's file dialog closes."""
+		"""Pause addon behavior until LINE's file dialog closes.
+
+		The dialog watch runs on a worker thread (the EnumWindows scan every
+		500 ms used to run indefinitely on the main thread); the resume flips
+		_suppressAddon back on the main thread via _runOnWorkerThread's onDone.
+		"""
 		global _suppressAddon
 		_suppressAddon = True
 		log.info(f"LINE: {reason}, addon suppressed, waiting for file dialog...")
-		core.callLater(1000, self._pollFileDialog)
+		AppModule._fileDialogWaitToken += 1
+		token = AppModule._fileDialogWaitToken
+
+		def _waitForDialogGone():
+			# A single stateful poll: "done" only once the dialog has been
+			# observed open and then closed. A prior two-phase version (wait
+			# to appear, then wait to be gone) would give up on a slow-to-
+			# appear dialog and immediately treat "never seen" as "gone",
+			# clearing _suppressAddon while the real dialog was still about
+			# to open.
+			seenDialog = False
+
+			def _dialogSeenThenClosed():
+				nonlocal seenDialog
+				if token != AppModule._fileDialogWaitToken:
+					# Superseded by a newer watch, or LINE exited (terminate
+					# bumps the token). Stop now instead of polling a dead
+					# process — with a recycled PID — for up to the full
+					# give-up window, which would keep this thread and the
+					# old AppModule alive across the next LINE session.
+					return True
+				if self._lineFileDialogExists():
+					seenDialog = True
+					return False
+				return seenDialog
+
+			try:
+				from utils.blockUntilConditionMet import blockUntilConditionMet
+
+				# Self-terminates when the dialog closes, when the token is
+				# invalidated, or after giving up if no dialog ever appeared.
+				blockUntilConditionMet(
+					getValue=_dialogSeenThenClosed,
+					giveUpAfterSeconds=1800.0,
+					intervalBetweenSeconds=0.5,
+				)
+			except Exception as e:
+				log.warning(f"LINE: file dialog poll error: {e}")
+
+		def _resume(result):
+			global _suppressAddon
+			if token != AppModule._fileDialogWaitToken:
+				# A newer suppress request owns the flag now.
+				return
+			_suppressAddon = False
+			log.info("LINE: file dialog closed, addon resumed")
+
+		_runOnWorkerThread(_waitForDialogGone, onDone=_resume, taskName="fileDialogWatch")
 
 	def _handleChatMoreOptionsAction(self, actionName):
 		"""Handle post-click actions from the chat more-options virtual window."""
@@ -10666,11 +10892,21 @@ class AppModule(appModuleHandler.AppModule):
 			self._messageReaderPending = False
 			self._messageReaderBackgroundCache = False
 
+	@script(
+		# Translators: Description of the script bound to control+O in LINE
+		description=_("開啟檔案選擇對話方塊，並暫停附加元件輔助直到對話方塊關閉"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_openFileDialog(self, gesture):
 		"""Pass Ctrl+O to LINE, suppress addon while file dialog is open."""
 		self._suppressAddonForFileDialog("Ctrl+O pressed")
 		gesture.send()
 
+	@script(
+		# Translators: Description of the script bound to tab/shift+tab/left/right in LINE
+		description=_("在 LINE 介面中移動焦點並讀出目前項目"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_navigateAndTrack(self, gesture):
 		"""Pass navigation key to LINE, then poll UIA focused element.
 
@@ -10715,6 +10951,11 @@ class AppModule(appModuleHandler.AppModule):
 		gesture.send()
 		_scheduleQueryAndSpeakUIAFocus(100)
 
+	@script(
+		# Translators: Description of the script bound to up/down arrows in LINE
+		description=_("在聊天列表中上下移動並讀出目前聊天室"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_chatListArrow(self, gesture):
 		"""Navigate the chat list with up/down arrows.
 
@@ -10787,6 +11028,11 @@ class AppModule(appModuleHandler.AppModule):
 		"3": _("Add friends"),
 	}
 
+	@script(
+		# Translators: Description of the script bound to control+1/2/3 in LINE
+		description=_("切換 LINE 主要分頁並讀出分頁名稱"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_switchTabAndAnnounce(self, gesture):
 		"""Pass Control+1/2/3 to LINE and announce the tab name.
 
@@ -10816,6 +11062,11 @@ class AppModule(appModuleHandler.AppModule):
 		if tabName:
 			ui.message(tabName)
 
+	@script(
+		# Translators: Description of the script bound to enter in LINE's message input
+		description=_("傳送訊息，成功送出時播放提示音"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_sendMessageAndPlaySound(self, gesture):
 		"""Pass Enter to LINE. If a message was sent, play a sound.
 
@@ -11651,7 +11902,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:NVDA+windows+r",
 		description=_("Reply to the current message"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_replyMessage(self, gesture):
 		"""Reply to the current message via right-click context menu."""
@@ -11660,7 +11911,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:control+c",
 		description=_("Copy the current message"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_copyMessage(self, gesture):
 		"""Copy the current message via right-click context menu.
@@ -11690,7 +11941,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:NVDA+windows+k",
 		description=_("Save the current message as a file"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_saveAsMessage(self, gesture):
 		"""Save the current message via right-click context menu (Save As)."""
@@ -11706,7 +11957,7 @@ class AppModule(appModuleHandler.AppModule):
 		gesture="kb:NVDA+windows+i",
 		# Translators: Input help message for the image-description command.
 		description=_("使用設定的 AI 服務描述目前的圖片訊息"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_describeImage(self, gesture):
 		"""Send the focused message bubble to Google AI and speak the result.
@@ -11718,6 +11969,21 @@ class AppModule(appModuleHandler.AppModule):
 		``wx.CallAfter(ui.message, ...)`` to stay on the UI thread.
 		"""
 		if _suppressAddon:
+			return
+
+		# Deferred like every dialog-opening script in NVDA's own
+		# globalCommands.py: this script runs synchronously on the keyboard
+		# hook's call stack, so a modal consent dialog must not be shown
+		# directly from here (showing one crashed on the first NVDA+Windows+I
+		# use, before consent had ever been granted).
+		import wx
+
+		wx.CallAfter(self._describeImageAfterConsent)
+
+	def _describeImageAfterConsent(self):
+		if not _ensureImageDescriptionConsent():
+			# Translators: Announced when the user declines the AI upload consent dialog
+			ui.message(_("已取消，未傳送圖片"))
 			return
 
 		try:
@@ -11870,7 +12136,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:NVDA+windows+p",
 		description=_("Play the current voice message"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_playVoiceMessage(self, gesture):
 		"""Play the current voice message by clicking the Play button."""
@@ -11915,6 +12181,7 @@ class AppModule(appModuleHandler.AppModule):
 								return
 						except Exception:
 							pass
+
 					# The OCR fallback blocks (sync OCR up to 3 s); run it on a
 					# worker thread so NVDA stays responsive.
 					def _ocrFallback():
@@ -11935,7 +12202,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:NVDA+windows+delete",
 		description=_("Recall (unsend) the current message"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_recallMessage(self, gesture):
 		"""Recall (unsend) the current message via right-click context menu.
@@ -12397,13 +12664,11 @@ class AppModule(appModuleHandler.AppModule):
 		self._recallDialogIsModern = False
 
 		# Remove dynamic confirmation gesture bindings.
-		import inputCore
-
 		for key in ("kb:y", "kb:n", "kb:p"):
 			try:
-				normalized = inputCore.normalizeGestureIdentifier(key)
-				if normalized in self._gestureMap:
-					del self._gestureMap[normalized]
+				self.removeGestureBinding(key)
+			except LookupError:
+				pass
 			except Exception:
 				pass
 
@@ -12898,13 +13163,11 @@ class AppModule(appModuleHandler.AppModule):
 		self._photoTextConsentDialogRect = None
 		self._photoTextConsentDialogHwnd = None
 
-		import inputCore
-
 		for key in ("kb:a", "kb:d"):
 			try:
-				normalized = inputCore.normalizeGestureIdentifier(key)
-				if normalized in self._gestureMap:
-					del self._gestureMap[normalized]
+				self.removeGestureBinding(key)
+			except LookupError:
+				pass
 			except Exception:
 				pass
 
@@ -13050,7 +13313,7 @@ class AppModule(appModuleHandler.AppModule):
 	@script(
 		gesture="kb:applications",
 		description=_("Open message context menu"),
-		category="LINE",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_messageContextMenu(self, gesture):
 		"""Right-click current message and open a virtual window for browsing the context menu."""
@@ -13452,6 +13715,11 @@ class AppModule(appModuleHandler.AppModule):
 		# worker thread, then resume the menu flow on the main thread.
 		_runOnWorkerThread(_preamble, onDone=_afterPreamble, taskName="messageContextMenuPreamble")
 
+	@script(
+		# Translators: Description of the script bound to control+shift+A during LINE calls
+		description=_("切換麥克風並讀出開關狀態"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_toggleMicAndAnnounce(self, gesture):
 		"""Pass Ctrl+Shift+A to LINE, then OCR the call window to announce mic status."""
 		# Always pass the gesture through first
@@ -13639,6 +13907,11 @@ class AppModule(appModuleHandler.AppModule):
 		t = threading.Thread(target=_runAndClear, daemon=True)
 		t.start()
 
+	@script(
+		# Translators: Description of the script bound to control+shift+V during LINE calls
+		description=_("切換鏡頭並讀出開關狀態"),
+		category=SCRIPT_CATEGORY,
+	)
 	def script_toggleCameraAndAnnounce(self, gesture):
 		"""Pass Ctrl+Shift+V to LINE, then OCR the call window to announce camera status."""
 		# Always pass the gesture through first
@@ -13797,14 +14070,30 @@ class AppModule(appModuleHandler.AppModule):
 			# "關鏡頭"/"關相機"/"關閉相機" means tooltip says "turn off" → camera is ON
 			if any(
 				kw in ocrText
-				for kw in ["關鏡頭", "關相機", "關閉相機", "Turn off camera", "turn off camera", "カメラをオフ", "ปิดกล้อง"]
+				for kw in [
+					"關鏡頭",
+					"關相機",
+					"關閉相機",
+					"Turn off camera",
+					"turn off camera",
+					"カメラをオフ",
+					"ปิดกล้อง",
+				]
 			):
 				wx.CallAfter(ui.message, _("相機已開啟"))
 				return True
 			# "開鏡頭"/"開相機"/"開啟相機" means tooltip says "turn on" → camera is OFF
 			elif any(
 				kw in ocrText
-				for kw in ["開鏡頭", "開相機", "開啟相機", "Turn on camera", "turn on camera", "カメラをオン", "เปิดกล้อง"]
+				for kw in [
+					"開鏡頭",
+					"開相機",
+					"開啟相機",
+					"Turn on camera",
+					"turn on camera",
+					"カメラをオン",
+					"เปิดกล้อง",
+				]
 			):
 				wx.CallAfter(ui.message, _("相機已關閉"))
 				return True

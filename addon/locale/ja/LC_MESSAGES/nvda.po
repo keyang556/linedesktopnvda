@@ -841,3 +841,53 @@ msgstr ""
 "読み取り専用の会話履歴と追加質問に対応したAI画像説明ダイアログを追加しました。\n"
 "画像説明サービス、API Key、モデル、プロンプトの設定を追加しました。\n"
 "対応するすべての言語の翻訳と説明ドキュメントを補完しました。"
+
+#: addon\appModules\line.py:10861
+msgid "開啟檔案選擇對話方塊，並暫停附加元件輔助直到對話方塊關閉"
+msgstr "ファイル選択ダイアログを開き、閉じるまでアドオンの支援を一時停止"
+
+#: addon\appModules\line.py:10871
+msgid "在 LINE 介面中移動焦點並讀出目前項目"
+msgstr "LINE のインターフェースでフォーカスを移動し、現在の項目を読み上げ"
+
+#: addon\appModules\line.py:10920
+msgid "在聊天列表中上下移動並讀出目前聊天室"
+msgstr "チャットリストを上下に移動し、現在のトークルームを読み上げ"
+
+#: addon\appModules\line.py:10997
+msgid "切換 LINE 主要分頁並讀出分頁名稱"
+msgstr "LINE のメインタブを切り替えてタブ名を読み上げ"
+
+#: addon\appModules\line.py:11031
+msgid "傳送訊息，成功送出時播放提示音"
+msgstr "メッセージを送信し、送信できたら効果音を再生"
+
+#: addon\appModules\line.py:13674
+msgid "切換麥克風並讀出開關狀態"
+msgstr "マイクを切り替えて状態を読み上げ"
+
+#: addon\appModules\line.py:13866
+msgid "切換鏡頭並讀出開關狀態"
+msgstr "カメラを切り替えて状態を読み上げ"
+
+#: addon\appModules\line.py:2998
+msgid ""
+"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider} 進行辨識。\n"
+"是否同意？選「是」之後，使用這項服務時不會再詢問。\n"
+"可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」更換服務或設定自己的 API 金鑰；更換服務後會再次詢問。"
+msgstr ""
+"画像説明機能は、現在のメッセージのスクリーンショットをクラウド AI サービス {provider} にアップロードして認識します。\n"
+"同意しますか？「はい」を選ぶと、このサービスについては今後確認しません。\n"
+"「NVDA メニュー → 設定 → LINE Desktop」でサービスの変更や自分の API キーの設定ができます。サービスを変更すると再度確認します。"
+
+#: addon\appModules\line.py:3004
+msgid "LINE 圖片描述 - 隱私確認"
+msgstr "LINE 画像説明 - プライバシー確認"
+
+#: addon\appModules\line.py:11940
+msgid "已取消，未傳送圖片"
+msgstr "キャンセルしました。画像は送信されていません"
+
+#: addon\appModules\line.py:3764
+msgid "尚未同意將圖片傳送給第三方 AI 服務"
+msgstr "サードパーティの AI サービスへの画像送信にまだ同意していません"

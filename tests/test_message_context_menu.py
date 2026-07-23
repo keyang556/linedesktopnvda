@@ -16,55 +16,75 @@ def _load_message_context_menu_module():
 		/ "messageContextMenu.py"
 	)
 
-	for name in (
+	# Fakes are only needed while the module executes; leaking them (notably
+	# the empty-__path__ addon.* parents) would shadow the real
+	# addon.appModules namespace for tests that run later in the session.
+	fakedNames = (
 		"addon",
 		"addon.appModules",
 		"addon.appModules._virtualWindows",
-	):
-		pkg = types.ModuleType(name)
-		pkg.__path__ = []  # type: ignore[attr-defined]
-		sys.modules[name] = pkg
+		"addon.appModules._virtualWindow",
+		"addon.appModules._utils",
+		"logHandler",
+		module_name,
+	)
+	saved = {name: sys.modules.get(name) for name in fakedNames}
+	try:
+		for name in (
+			"addon",
+			"addon.appModules",
+			"addon.appModules._virtualWindows",
+		):
+			pkg = types.ModuleType(name)
+			pkg.__path__ = []  # type: ignore[attr-defined]
+			sys.modules[name] = pkg
 
-	virtual_window_mod = types.ModuleType("addon.appModules._virtualWindow")
+		virtual_window_mod = types.ModuleType("addon.appModules._virtualWindow")
 
-	class VirtualWindow:
-		currentWindow = None
+		class VirtualWindow:
+			currentWindow = None
 
-		@property
-		def element(self):
-			if not getattr(self, "elements", None):
+			@property
+			def element(self):
+				if not getattr(self, "elements", None):
+					return None
+				return self.elements[self.pos]
+
+			def click(self):
 				return None
-			return self.elements[self.pos]
 
-		def click(self):
-			return None
+		virtual_window_mod.VirtualWindow = VirtualWindow
+		sys.modules["addon.appModules._virtualWindow"] = virtual_window_mod
 
-	virtual_window_mod.VirtualWindow = VirtualWindow
-	sys.modules["addon.appModules._virtualWindow"] = virtual_window_mod
+		utils_mod = types.ModuleType("addon.appModules._utils")
+		utils_mod.ocrGetText = lambda *args, **kwargs: None
+		utils_mod.message = lambda *args, **kwargs: None
+		sys.modules["addon.appModules._utils"] = utils_mod
 
-	utils_mod = types.ModuleType("addon.appModules._utils")
-	utils_mod.ocrGetText = lambda *args, **kwargs: None
-	utils_mod.message = lambda *args, **kwargs: None
-	sys.modules["addon.appModules._utils"] = utils_mod
+		log_handler_mod = types.ModuleType("logHandler")
 
-	log_handler_mod = types.ModuleType("logHandler")
+		class _Log:
+			def debug(self, *args, **kwargs):
+				pass
 
-	class _Log:
-		def debug(self, *args, **kwargs):
-			pass
+			def info(self, *args, **kwargs):
+				pass
 
-		def info(self, *args, **kwargs):
-			pass
+		log_handler_mod.log = _Log()
+		sys.modules["logHandler"] = log_handler_mod
 
-	log_handler_mod.log = _Log()
-	sys.modules["logHandler"] = log_handler_mod
-
-	spec = importlib.util.spec_from_file_location(module_name, module_path)
-	assert spec and spec.loader
-	module = importlib.util.module_from_spec(spec)
-	sys.modules[module_name] = module
-	spec.loader.exec_module(module)
-	return module
+		spec = importlib.util.spec_from_file_location(module_name, module_path)
+		assert spec and spec.loader
+		module = importlib.util.module_from_spec(spec)
+		sys.modules[module_name] = module
+		spec.loader.exec_module(module)
+		return module
+	finally:
+		for name, mod in saved.items():
+			if mod is None:
+				sys.modules.pop(name, None)
+			else:
+				sys.modules[name] = mod
 
 
 message_context_menu = _load_message_context_menu_module()

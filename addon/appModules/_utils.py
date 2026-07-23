@@ -1,13 +1,44 @@
 import itertools
+import time
 
 from logHandler import log
 
 
 # Keeps recognizer/pixel buffers referenced until each async recognition
 # finishes; without this they can be garbage-collected mid-recognition and the
-# callback never fires (or crashes). Keyed by a monotonic token.
+# callback never fires (or crashes). Keyed by a monotonic token; each entry
+# starts with a time.monotonic() timestamp so stale entries (recognitions
+# whose callback never fired) can be pruned safely.
 _pendingOcr = {}
 _ocrTokenCounter = itertools.count()
+
+# UWP OCR completes within a few seconds; an entry this old belongs to a
+# recognition whose callback will never fire, so its buffers can be released.
+_PENDING_OCR_MAX_AGE_SEC = 30
+
+
+def _prunePendingOcr(maxAge=_PENDING_OCR_MAX_AGE_SEC):
+	"""Drop pending-OCR entries old enough that recognition cannot still be in flight."""
+	now = time.monotonic()
+	for token in [t for t, entry in _pendingOcr.items() if now - entry[0] > maxAge]:
+		_pendingOcr.pop(token, None)
+
+
+def schedulePendingOcrCleanup():
+	"""Best-effort release of leaked OCR buffers after LINE exits.
+
+	Called from AppModule.terminate. Delayed so a genuinely in-flight
+	recognition finishes first (clearing too early would free pixel buffers
+	the native OCR may still be reading), and age-checked so recognitions
+	started by a quickly restarted LINE session are left alone.
+	"""
+	try:
+		import core
+
+		core.callLater(15000, _prunePendingOcr, 10)
+	except Exception:
+		log.debug("Failed to schedule pending-OCR cleanup", exc_info=True)
+
 
 # Optional hint (LINE's UI language code, e.g. 'zh-TW', 'ja', 'th') so OCR can
 # prefer the language LINE is actually displaying. Set by the app module at
@@ -130,8 +161,9 @@ def ocrGetText(left, top, width, height, onResult):
 
 		# Keep the recognizer and pixel buffer alive until recognition
 		# completes, then release them in the wrapper.
+		_prunePendingOcr()
 		token = next(_ocrTokenCounter)
-		_pendingOcr[token] = (recognizer, ocrPixels, imgInfo, sb)
+		_pendingOcr[token] = (time.monotonic(), recognizer, ocrPixels, imgInfo, sb)
 
 		def _wrappedOnResult(result):
 			_pendingOcr.pop(token, None)
@@ -140,14 +172,24 @@ def ocrGetText(left, top, width, height, onResult):
 			except Exception:
 				log.debug("OCR onResult callback failed", exc_info=True)
 
-		recognizer.recognize(ocrPixels, imgInfo, _wrappedOnResult)
+		try:
+			recognizer.recognize(ocrPixels, imgInfo, _wrappedOnResult)
+		except Exception:
+			# recognize never took ownership; drop the entry or it leaks forever.
+			_pendingOcr.pop(token, None)
+			raise
 	except Exception:
 		log.debug("OCR fallback failed", exc_info=True)
 
 
 def message(text):
 	"""
-	Same as ui.message, but without the time limit for braille display.
+	Same as ui.message, but tolerant of braille being uninitialized.
+
+	Braille output goes through braille.handler.message, so it honors the
+	user's braille message timeout settings (set the timeout to "show
+	indefinitely" in NVDA's braille settings for the old persistent
+	behavior).
 	"""
 	import speech
 	import braille
@@ -160,15 +202,6 @@ def message(text):
 		# speech already happened, so just skip braille output.
 		return
 	try:
-		if handler.buffer is handler.messageBuffer:
-			handler.buffer.clear()
-		else:
-			handler.buffer = handler.messageBuffer
-
-		region = braille.TextRegion(text)
-		region.update()
-		handler.buffer.regions.append(region)
-		handler.buffer.update()
-		handler.update()
+		handler.message(text)
 	except Exception:
 		log.debug("Braille output failed for text, skipping braille output", exc_info=True)
