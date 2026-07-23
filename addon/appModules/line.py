@@ -2913,8 +2913,17 @@ def _getAiConsentStorePath():
 	return os.path.join(configPath, _AI_CONSENT_FILENAME)
 
 
+# In-memory fallback for when _recordAiConsent can't persist to disk (e.g. a
+# read-only config directory), so a granted "Yes" stays honored for the rest
+# of this NVDA session instead of every subsequent use failing with "not
+# consented" right after the user agreed.
+_aiConsentGrantedInSession = False
+
+
 def _hasAiConsent():
 	"""True when the user has accepted the one-time AI upload consent."""
+	if _aiConsentGrantedInSession:
+		return True
 	path = _getAiConsentStorePath()
 	if not path or not os.path.isfile(path):
 		return False
@@ -2927,6 +2936,8 @@ def _hasAiConsent():
 
 def _recordAiConsent():
 	"""Persist the user's acceptance of the AI upload consent."""
+	global _aiConsentGrantedInSession
+	_aiConsentGrantedInSession = True
 	path = _getAiConsentStorePath()
 	if not path:
 		return False
@@ -2935,7 +2946,10 @@ def _recordAiConsent():
 			f.write("1")
 		return True
 	except Exception as e:
-		log.warning(f"LINE: failed to record AI consent: {e}", exc_info=True)
+		log.warning(
+			f"LINE: failed to persist AI consent to disk; will re-ask next session: {e}",
+			exc_info=True,
+		)
 		return False
 
 
@@ -10440,19 +10454,28 @@ class AppModule(appModuleHandler.AppModule):
 		token = AppModule._fileDialogWaitToken
 
 		def _waitForDialogGone():
+			# A single stateful poll: "done" only once the dialog has been
+			# observed open and then closed. A prior two-phase version (wait
+			# to appear, then wait to be gone) would give up on a slow-to-
+			# appear dialog and immediately treat "never seen" as "gone",
+			# clearing _suppressAddon while the real dialog was still about
+			# to open.
+			seenDialog = False
+
+			def _dialogSeenThenClosed():
+				nonlocal seenDialog
+				if self._lineFileDialogExists():
+					seenDialog = True
+					return False
+				return seenDialog
+
 			try:
 				from utils.blockUntilConditionMet import blockUntilConditionMet
 
-				# The dialog opens asynchronously; give it a moment to appear.
+				# Self-terminates when LINE exits (a dead process owns no
+				# dialogs) or after giving up if no dialog ever appeared.
 				blockUntilConditionMet(
-					getValue=self._lineFileDialogExists,
-					giveUpAfterSeconds=2.0,
-					intervalBetweenSeconds=0.25,
-				)
-				# Then wait for it to be gone. Self-terminates when LINE
-				# exits, since a dead process owns no dialogs.
-				blockUntilConditionMet(
-					getValue=lambda: not self._lineFileDialogExists(),
+					getValue=_dialogSeenThenClosed,
 					giveUpAfterSeconds=1800.0,
 					intervalBetweenSeconds=0.5,
 				)
@@ -11935,6 +11958,16 @@ class AppModule(appModuleHandler.AppModule):
 		if _suppressAddon:
 			return
 
+		# Deferred like every dialog-opening script in NVDA's own
+		# globalCommands.py: this script runs synchronously on the keyboard
+		# hook's call stack, so a modal consent dialog must not be shown
+		# directly from here (showing one crashed on the first NVDA+Windows+I
+		# use, before consent had ever been granted).
+		import wx
+
+		wx.CallAfter(self._describeImageAfterConsent)
+
+	def _describeImageAfterConsent(self):
 		if not _ensureImageDescriptionConsent():
 			# Translators: Announced when the user declines the AI upload consent dialog
 			ui.message(_("已取消，未傳送圖片"))

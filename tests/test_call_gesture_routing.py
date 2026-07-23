@@ -40,13 +40,9 @@ def _get_global_plugin_methods():
 	source = MODULE_PATH.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	plugin = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.ClassDef) and node.name == "GlobalPlugin"
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "GlobalPlugin"
 	)
-	return {
-		node.name: node for node in plugin.body if isinstance(node, ast.FunctionDef)
-	}
+	return {node.name: node for node in plugin.body if isinstance(node, ast.FunctionDef)}
 
 
 def test_call_handlers_delegate_to_app_module_scripts():
@@ -69,11 +65,7 @@ def test_call_handlers_do_not_inline_blocking_call_work():
 	methods = _get_global_plugin_methods()
 	for handler_name in DELEGATING_HANDLERS:
 		method = methods[handler_name]
-		used = {
-			node.attr
-			for node in ast.walk(method)
-			if isinstance(node, ast.Attribute)
-		}
+		used = {node.attr for node in ast.walk(method) if isinstance(node, ast.Attribute)}
 		inlined = used & FORBIDDEN_ATTRIBUTES
 		assert not inlined, (
 			f"{handler_name} references {sorted(inlined)}; blocking call work "

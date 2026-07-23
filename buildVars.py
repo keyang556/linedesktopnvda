@@ -70,7 +70,10 @@ pythonSources: list[str] = ["addon/appModules/*.py", "addon/globalPlugins/*.py"]
 i18nSources: list[str] = pythonSources + ["buildVars.py"]
 
 # Files that will be ignored when building the nvda-addon file
-excludedFiles: list[str] = []
+# *.pyc excludes __pycache__ contents left behind by running tests or
+# py_compile against the addon sources (e.g. in CI, where the test step runs
+# before the build step and imports addon.appModules.* as real packages).
+excludedFiles: list[str] = ["*.pyc"]
 
 # Base language for the NVDA add-on
 baseLanguage: str = "en"

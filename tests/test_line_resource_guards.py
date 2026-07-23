@@ -2299,3 +2299,94 @@ def test_terminate_schedules_pending_ocr_cleanup():
 		and node.func.attr == "schedulePendingOcrCleanup"
 	]
 	assert cleanup_calls, "terminate must call _utils.schedulePendingOcrCleanup"
+
+
+def test_describe_image_defers_consent_dialog_off_the_hook_stack():
+	"""script_describeImage must not show its (potentially modal) consent
+	dialog synchronously: scripts run on the keyboard hook's call stack, and
+	every dialog-opening script in NVDA's own globalCommands.py defers via
+	wx.CallAfter for exactly this reason. Calling _ensureImageDescriptionConsent
+	directly from the script crashed on the first NVDA+Windows+I use."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	script_describe_image = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "script_describeImage"
+	)
+	after_consent = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_describeImageAfterConsent"
+	)
+
+	assert not any(
+		isinstance(call, ast.Call)
+		and isinstance(call.func, ast.Name)
+		and call.func.id == "_ensureImageDescriptionConsent"
+		for call in ast.walk(script_describe_image)
+	), "script_describeImage must not call the consent check synchronously"
+
+	assert any(
+		isinstance(call, ast.Call)
+		and isinstance(call.func, ast.Attribute)
+		and call.func.attr == "CallAfter"
+		and call.args
+		and isinstance(call.args[0], ast.Attribute)
+		and call.args[0].attr == "_describeImageAfterConsent"
+		for call in ast.walk(script_describe_image)
+	), "script_describeImage must defer to _describeImageAfterConsent via wx.CallAfter"
+
+	assert any(
+		isinstance(call, ast.Call)
+		and isinstance(call.func, ast.Name)
+		and call.func.id == "_ensureImageDescriptionConsent"
+		for call in ast.walk(after_consent)
+	), "_describeImageAfterConsent must perform the consent check"
+
+
+def test_file_dialog_wait_requires_seeing_dialog_before_declaring_it_gone():
+	"""_suppressAddonForFileDialog's watcher must only resume the add-on once
+	the dialog has actually been observed open and then closed. A prior
+	two-phase version (wait up to 2s for it to appear, then wait for "not
+	exists") would time out on a slow-to-appear dialog and immediately treat
+	"never seen" as "gone", re-enabling navigation/copy interception while
+	the real file dialog was still about to open."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	suppress_method = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_suppressAddonForFileDialog"
+	)
+
+	block_calls = [
+		node
+		for node in ast.walk(suppress_method)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "blockUntilConditionMet"
+	]
+	assert len(block_calls) == 1, (
+		"the wait must be a single poll, not a separate appear-then-disappear pair "
+		"(the pair is what let a slow-to-appear dialog be missed entirely)"
+	)
+
+	wait_for_gone = next(
+		node
+		for node in ast.walk(suppress_method)
+		if isinstance(node, ast.FunctionDef) and node.name == "_waitForDialogGone"
+	)
+	seen_flag_writes = [
+		node
+		for node in ast.walk(wait_for_gone)
+		if isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "seenDialog" for target in node.targets)
+	]
+	assert seen_flag_writes, "the poll must track whether the dialog was ever observed open"

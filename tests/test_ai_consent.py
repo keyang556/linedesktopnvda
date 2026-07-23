@@ -19,6 +19,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "li
 
 NEEDED_ASSIGNMENTS = {
 	"_AI_CONSENT_FILENAME",
+	"_aiConsentGrantedInSession",
 }
 NEEDED_FUNCTIONS = {
 	"_getAiConsentStorePath",
@@ -50,8 +51,7 @@ def _load_consent_helpers(extra_namespace):
 	namespace.update(extra_namespace)
 	for node in module.body:
 		is_needed_assignment = isinstance(node, ast.Assign) and any(
-			isinstance(target, ast.Name) and target.id in NEEDED_ASSIGNMENTS
-			for target in node.targets
+			isinstance(target, ast.Name) and target.id in NEEDED_ASSIGNMENTS for target in node.targets
 		)
 		is_needed_function = isinstance(node, ast.FunctionDef) and node.name in NEEDED_FUNCTIONS
 		if is_needed_assignment or is_needed_function:
@@ -144,6 +144,21 @@ def test_consent_dialog_decline_blocks_and_persists_nothing(tmp_path):
 		# Declining is not remembered: the next use asks again.
 		assert ns["_ensureImageDescriptionConsent"]() is False
 		assert len(fake.message_boxes) == 2
+
+
+def test_consent_grant_falls_back_to_in_session_cache_when_disk_write_fails(tmp_path):
+	"""If the config directory can't be written to (read-only, full disk,
+	etc.), a granted "Yes" must still be honored for the rest of this NVDA
+	session instead of every subsequent call failing with "not consented"
+	right after the user agreed."""
+	ns = _make_namespace()
+	unwritable_config_path = tmp_path / "does-not-exist"  # never created
+	with _FakeGuiWx(unwritable_config_path, answers=[2, 2]) as fake:  # wx.YES
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 1
+		assert ns["_hasAiConsent"]() is True
+		assert ns["_ensureImageDescriptionConsent"]() is True
+		assert len(fake.message_boxes) == 1
 
 
 def test_consent_not_asked_when_user_key_configured(tmp_path):
