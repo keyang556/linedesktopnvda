@@ -845,3 +845,53 @@ msgstr ""
 "Added an AI image description dialog with a read-only transcript and follow-up questions.\n"
 "Added settings for the image description service, API key, model, and prompt.\n"
 "Completed translations and documentation for all supported languages."
+
+#: addon\appModules\line.py:10861
+msgid "開啟檔案選擇對話方塊，並暫停附加元件輔助直到對話方塊關閉"
+msgstr "Open the file dialog and pause add-on assistance until it closes"
+
+#: addon\appModules\line.py:10871
+msgid "在 LINE 介面中移動焦點並讀出目前項目"
+msgstr "Move focus in the LINE interface and announce the current item"
+
+#: addon\appModules\line.py:10920
+msgid "在聊天列表中上下移動並讀出目前聊天室"
+msgstr "Move up and down the chat list and announce the current chat room"
+
+#: addon\appModules\line.py:10997
+msgid "切換 LINE 主要分頁並讀出分頁名稱"
+msgstr "Switch LINE's main tab and announce the tab name"
+
+#: addon\appModules\line.py:11031
+msgid "傳送訊息，成功送出時播放提示音"
+msgstr "Send the message, playing a sound when it is sent"
+
+#: addon\appModules\line.py:13674
+msgid "切換麥克風並讀出開關狀態"
+msgstr "Toggle the microphone and announce its state"
+
+#: addon\appModules\line.py:13866
+msgid "切換鏡頭並讀出開關狀態"
+msgstr "Toggle the camera and announce its state"
+
+#: addon\appModules\line.py:2984
+msgid ""
+"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider}（使用附加元件內建的共用金鑰）進行辨識。\n"
+"是否同意？選「是」之後不會再詢問。\n"
+"若不想使用內建金鑰，可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」設定自己的 API 金鑰。"
+msgstr ""
+"The image description feature uploads a screenshot of the current message to the cloud AI service {provider} (using the add-on's bundled shared key).\n"
+"Do you agree? After choosing Yes you will not be asked again.\n"
+"If you prefer not to use the bundled key, set your own API key under NVDA menu → Preferences → Settings → LINE Desktop."
+
+#: addon\appModules\line.py:2991
+msgid "LINE 圖片描述 - 隱私確認"
+msgstr "LINE image description - privacy confirmation"
+
+#: addon\appModules\line.py:11940
+msgid "已取消，未傳送圖片"
+msgstr "Cancelled; no image was sent"
+
+#: addon\appModules\line.py:3748
+msgid "尚未同意將圖片傳送給第三方 AI 服務"
+msgstr "Consent to send images to the third-party AI service has not been given"

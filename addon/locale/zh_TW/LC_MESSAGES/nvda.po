@@ -841,3 +841,53 @@ msgstr ""
 "新增 AI 圖片描述對話視窗，支援唯讀對話紀錄與後續提問。\n"
 "新增圖片描述服務、API Key、模型與提示詞設定。\n"
 "補齊所有支援語言的翻譯與說明文件。"
+
+#: addon\appModules\line.py:10861
+msgid "開啟檔案選擇對話方塊，並暫停附加元件輔助直到對話方塊關閉"
+msgstr "開啟檔案選擇對話方塊，並暫停附加元件輔助直到對話方塊關閉"
+
+#: addon\appModules\line.py:10871
+msgid "在 LINE 介面中移動焦點並讀出目前項目"
+msgstr "在 LINE 介面中移動焦點並讀出目前項目"
+
+#: addon\appModules\line.py:10920
+msgid "在聊天列表中上下移動並讀出目前聊天室"
+msgstr "在聊天列表中上下移動並讀出目前聊天室"
+
+#: addon\appModules\line.py:10997
+msgid "切換 LINE 主要分頁並讀出分頁名稱"
+msgstr "切換 LINE 主要分頁並讀出分頁名稱"
+
+#: addon\appModules\line.py:11031
+msgid "傳送訊息，成功送出時播放提示音"
+msgstr "傳送訊息，成功送出時播放提示音"
+
+#: addon\appModules\line.py:13674
+msgid "切換麥克風並讀出開關狀態"
+msgstr "切換麥克風並讀出開關狀態"
+
+#: addon\appModules\line.py:13866
+msgid "切換鏡頭並讀出開關狀態"
+msgstr "切換鏡頭並讀出開關狀態"
+
+#: addon\appModules\line.py:2984
+msgid ""
+"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider}（使用附加元件內建的共用金鑰）進行辨識。\n"
+"是否同意？選「是」之後不會再詢問。\n"
+"若不想使用內建金鑰，可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」設定自己的 API 金鑰。"
+msgstr ""
+"圖片描述功能會將目前訊息的螢幕截圖上傳至雲端 AI 服務 {provider}（使用附加元件內建的共用金鑰）進行辨識。\n"
+"是否同意？選「是」之後不會再詢問。\n"
+"若不想使用內建金鑰，可在「NVDA 功能表 → 偏好設定 → 設定 → LINE Desktop」設定自己的 API 金鑰。"
+
+#: addon\appModules\line.py:2991
+msgid "LINE 圖片描述 - 隱私確認"
+msgstr "LINE 圖片描述 - 隱私確認"
+
+#: addon\appModules\line.py:11940
+msgid "已取消，未傳送圖片"
+msgstr "已取消，未傳送圖片"
+
+#: addon\appModules\line.py:3748
+msgid "尚未同意將圖片傳送給第三方 AI 服務"
+msgstr "尚未同意將圖片傳送給第三方 AI 服務"

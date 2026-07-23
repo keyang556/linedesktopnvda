@@ -16,6 +16,10 @@ import addonHandler
 
 addonHandler.initTranslation()
 
+# Translators: The single category under which all of this add-on's scripts
+# appear in NVDA's Input Gestures dialog (kept in sync with line.py).
+SCRIPT_CATEGORY = _("LINE Desktop")
+
 
 # ---------------------------------------------------------------------------
 # Qt accessibility environment variable helpers (duplicated from line.py
@@ -1109,11 +1113,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._answerIncomingCall(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			# The appModule script runs the blocking window-enumeration/OCR
+			# work on a worker thread; never inline that work here (main thread).
+			lineApp.script_answerCall(None)
 		except Exception as e:
 			log.warning(f"LINE answerCall error: {e}", exc_info=True)
 			ui.message(_("接聽功能錯誤: {error}").format(error=e))
@@ -1129,11 +1131,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._rejectIncomingCall(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			lineApp.script_rejectCall(None)
 		except Exception as e:
 			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
 			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
@@ -1149,11 +1147,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._getCallerInfo(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			lineApp.script_checkCaller(None)
 		except Exception as e:
 			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
 			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
@@ -1163,40 +1157,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def _doFocusCallWindow(self):
 		import ui
-		import core
-		import speech
 
 		lineApp = _getLineAppModule()
 		if not lineApp:
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			import ctypes
-			import ctypes.wintypes
-
-			hwnd = lineApp._findIncomingCallWindow()
-			if not hwnd:
-				ui.message(_("未偵測到通話視窗"))
-				return
-			try:
-				ctypes.windll.user32.SetForegroundWindow(hwnd)
-			except Exception:
-				pass
-
-			def _announceCallWindow():
-				try:
-					ocrText = lineApp._ocrWindowArea(hwnd, sync=True, timeout=3.0)
-					if ocrText:
-						speech.cancelSpeech()
-						ui.message(ocrText)
-						log.info(f"LINE: call window OCR: {ocrText!r}")
-					else:
-						ui.message(_("通話視窗（無法辨識內容）"))
-				except Exception as e:
-					log.warning(f"LINE: call window OCR error: {e}", exc_info=True)
-					ui.message(_("通話視窗"))
-
-			core.callLater(300, _announceCallWindow)
+			lineApp.script_focusCallWindow(None)
 		except Exception as e:
 			log.warning(f"LINE focusCallWindow error: {e}", exc_info=True)
 			ui.message(_("跳到通話視窗功能錯誤: {error}").format(error=e))
@@ -1215,6 +1182,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a debug script to report focused object info
 		description=_("Debug: Report focused object's appModule and executable"),
 		gesture="kb:NVDA+shift+j",
+		category=SCRIPT_CATEGORY,
+		speakOnDemand=True,
 	)
 	def script_reportFocusInfo(self, gesture):
 		import api
@@ -1232,12 +1201,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		ui.message(msg)
 
 	# ── Incoming call global shortcuts ─────────────────────────────
+	# These delegate to the appModule scripts, which run the blocking
+	# window-enumeration/OCR work on a worker thread (_runCallTask); never
+	# inline that work here, as these handlers run on NVDA's main thread.
 
 	@script(
 		# Translators: Description of a script to answer an incoming LINE call
 		description=_("LINE: 接聽來電"),
 		gesture="kb:NVDA+windows+a",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_answerCall(self, gesture):
 		import ui
@@ -1247,11 +1219,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._answerIncomingCall(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			lineApp.script_answerCall(gesture)
 		except Exception as e:
 			log.warning(f"LINE answerCall error: {e}", exc_info=True)
 			ui.message(_("接聽功能錯誤: {error}").format(error=e))
@@ -1260,7 +1228,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to reject an incoming LINE call
 		description=_("LINE: 拒絕來電"),
 		gesture="kb:NVDA+windows+d",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_rejectCall(self, gesture):
 		import ui
@@ -1270,11 +1238,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._rejectIncomingCall(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			lineApp.script_rejectCall(gesture)
 		except Exception as e:
 			log.warning(f"LINE rejectCall error: {e}", exc_info=True)
 			ui.message(_("拒絕功能錯誤: {error}").format(error=e))
@@ -1283,7 +1247,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to check who is calling
 		description=_("LINE: 查看來電者"),
 		gesture="kb:NVDA+windows+s",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_checkCaller(self, gesture):
 		import ui
@@ -1293,11 +1257,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			hwnd = lineApp._findIncomingCallWindow()
-			if hwnd:
-				lineApp._getCallerInfo(hwnd)
-			else:
-				ui.message(_("未偵測到來電"))
+			lineApp.script_checkCaller(gesture)
 		except Exception as e:
 			log.warning(f"LINE checkCaller error: {e}", exc_info=True)
 			ui.message(_("來電查看功能錯誤: {error}").format(error=e))
@@ -1306,7 +1266,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to focus the call window
 		description=_("LINE: 跳到通話視窗"),
 		gesture="kb:NVDA+windows+f",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_focusCallWindow(self, gesture):
 		import ui
@@ -1325,7 +1285,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to read the current chat room name
 		description=_("LINE: 讀出目前聊天室名稱"),
 		gesture="kb:NVDA+windows+t",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_readChatRoomName(self, gesture):
 		import ui
@@ -1344,7 +1304,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to open the message reader
 		description=_("LINE: 開啟訊息閱讀器"),
 		gesture="kb:NVDA+windows+j",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_openMessageReader(self, gesture):
 		import ui
@@ -1363,7 +1323,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to cache chat text in the background
 		description=_("LINE: 將聊天快取到背景供訊息列表直接讀取"),
 		gesture="kb:NVDA+windows+u",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_cacheChatToBackground(self, gesture):
 		import ui
@@ -1382,7 +1342,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to click the more options button
 		description=_("LINE: 點擊更多選項按鈕"),
 		gesture="kb:NVDA+windows+o",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_clickMoreOptions(self, gesture):
 		import ui
@@ -1403,7 +1363,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to navigate to all chats tab
 		description=_("LINE: 跳到全部聊天室"),
 		gesture="kb:NVDA+windows+1",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_navigateAllChats(self, gesture):
 		import ui
@@ -1429,7 +1389,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to navigate to friends tab
 		description=_("LINE: 跳到好友"),
 		gesture="kb:NVDA+windows+2",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_navigateFriends(self, gesture):
 		import ui
@@ -1454,7 +1414,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to navigate to groups tab
 		description=_("LINE: 跳到群組"),
 		gesture="kb:NVDA+windows+3",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_navigateGroups(self, gesture):
 		import ui
@@ -1479,7 +1439,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to navigate to communities tab
 		description=_("LINE: 跳到社群"),
 		gesture="kb:NVDA+windows+4",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_navigateCommunities(self, gesture):
 		import ui
@@ -1504,7 +1464,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		# Translators: Description of a script to navigate to official accounts tab
 		description=_("LINE: 跳到官方帳號"),
 		gesture="kb:NVDA+windows+5",
-		category="LINE Desktop",
+		category=SCRIPT_CATEGORY,
 	)
 	def script_navigateOfficial(self, gesture):
 		import ui

@@ -12,33 +12,46 @@ def _load_message_reader_module():
 	module_name = "addon.appModules._messageReader"
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "_messageReader.py"
 
-	gui_mod = types.ModuleType("gui")
-	gui_mod.mainFrame = object()
-	sys.modules["gui"] = gui_mod
+	fakedNames = ("gui", "wx", "logHandler", "addonHandler", module_name)
+	saved = {name: sys.modules.get(name) for name in fakedNames}
+	try:
+		gui_mod = types.ModuleType("gui")
+		gui_mod.mainFrame = object()
+		sys.modules["gui"] = gui_mod
 
-	wx_mod = types.ModuleType("wx")
-	wx_mod.Dialog = type("Dialog", (), {})
-	sys.modules["wx"] = wx_mod
+		wx_mod = types.ModuleType("wx")
+		wx_mod.Dialog = type("Dialog", (), {})
+		sys.modules["wx"] = wx_mod
 
-	log_handler_mod = types.ModuleType("logHandler")
+		log_handler_mod = types.ModuleType("logHandler")
 
-	class _Log:
-		def debug(self, *args, **kwargs):
-			pass
+		class _Log:
+			def debug(self, *args, **kwargs):
+				pass
 
-		def warning(self, *args, **kwargs):
-			pass
+			def warning(self, *args, **kwargs):
+				pass
 
-	log_handler_mod.log = _Log()
-	sys.modules["logHandler"] = log_handler_mod
+		log_handler_mod.log = _Log()
+		sys.modules["logHandler"] = log_handler_mod
 
-	spec = importlib.util.spec_from_file_location(module_name, module_path)
-	assert spec and spec.loader
-	module = importlib.util.module_from_spec(spec)
-	module._ = lambda text: text
-	sys.modules[module_name] = module
-	spec.loader.exec_module(module)
-	return module
+		addon_handler_mod = types.ModuleType("addonHandler")
+		addon_handler_mod.initTranslation = lambda: None
+		sys.modules["addonHandler"] = addon_handler_mod
+
+		spec = importlib.util.spec_from_file_location(module_name, module_path)
+		assert spec and spec.loader
+		module = importlib.util.module_from_spec(spec)
+		module._ = lambda text: text
+		sys.modules[module_name] = module
+		spec.loader.exec_module(module)
+		return module
+	finally:
+		for name, mod in saved.items():
+			if mod is None:
+				sys.modules.pop(name, None)
+			else:
+				sys.modules[name] = mod
 
 
 message_reader = _load_message_reader_module()

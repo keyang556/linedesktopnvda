@@ -65,7 +65,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Shortcut (`NVDA+Windows+I`)**: Captures the focused image or sticker message and sends it to the configured image-description service.
 * **Dialog**: The first description opens in a resizable dialog with a read-only transcript. Use the edit field to ask follow-up questions about the same image; press `Ctrl+Enter` to send.
 * **Settings**: Open "NVDA Menu -> Preferences -> Settings -> LINE Desktop" to choose the image-description service, API key, model, and prompt. Leaving the API key or prompt blank uses the configured default.
-* **Privacy Reminder**: Image description sends the captured message image to the selected AI service. Use a provider and prompt appropriate for the content you are describing.
+* **Privacy Reminder**: Image description sends the captured message image to the selected cloud AI service. When the add-on's bundled shared key would be used (no API key of your own configured), a one-time consent dialog appears the first time you use the feature; nothing is uploaded unless you agree. Users who configure their own API key are never asked. Use a provider and prompt appropriate for the content you are describing.
 
 ## Virtual Windows
 
@@ -243,4 +243,4 @@ This add-on currently provides the following virtual windows:
 ## Supported Versions
 
 * LINE Desktop for Windows (Standard installer or Microsoft Store version).
-* NVDA 2019.3 or higher.
+* NVDA 2024.1 or higher.

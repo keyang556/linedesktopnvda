@@ -8,5 +8,7 @@ manifest.ini
 *.py[co]
 *.nvda-addon
 .sconsign.dblite
+*.egg-info/
+.venv/
 /[0-9]*.[0-9]*.[0-9]*.json
 .claude/settings.local.json

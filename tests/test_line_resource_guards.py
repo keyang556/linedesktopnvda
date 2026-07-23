@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import re
-import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -1350,7 +1349,39 @@ def test_end_recall_confirmation_defers_user_feedback_until_post_click_verificat
 
 	assert "_performRecallConfirmationAction" in calls
 	assert "_scheduleRecallCompletionAnnouncement" in calls
-	assert "_clearRecallConfirmationBindings" not in calls
+
+	# On the success path the binding teardown (and the user feedback) is
+	# deferred to _scheduleRecallCompletionAnnouncement's post-click
+	# verification; the only direct clear allowed here is the worker-failure
+	# branch (performed is None), which must release the y/n/p keys so they
+	# are never left swallowed in LINE.
+	clear_calls = [
+		node
+		for node in ast.walk(end_method)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Attribute)
+		and node.func.attr == "_clearRecallConfirmationBindings"
+	]
+	failure_ifs = [
+		node
+		for node in ast.walk(end_method)
+		if isinstance(node, ast.If)
+		and isinstance(node.test, ast.Compare)
+		and any(isinstance(op, ast.Is) for op in node.test.ops)
+		and any(isinstance(name, ast.Name) and name.id == "performed" for name in ast.walk(node.test))
+	]
+	guarded_clear_calls = [
+		call
+		for branch in failure_ifs
+		for stmt in branch.body
+		for call in ast.walk(stmt)
+		if isinstance(call, ast.Call)
+		and isinstance(call.func, ast.Attribute)
+		and call.func.attr == "_clearRecallConfirmationBindings"
+	]
+	assert len(clear_calls) == len(guarded_clear_calls), (
+		"_endRecallConfirmation may clear the recall bindings only on the worker-failure branch"
+	)
 
 
 def test_perform_recall_confirmation_action_prefers_ocr_click_point_for_legacy_recall():
@@ -1700,12 +1731,17 @@ def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
 		if isinstance(node, ast.FunctionDef) and node.name == "_startMouseContextMenuProbes"
 	)
 
+	# The flow starts with a worker-thread preamble whose completion callback
+	# (_afterPreamble) enters the keyboard-first path; mouse probes only run
+	# from _startMouseContextMenuProbes on keyboard failure.
+	after_preamble = next(
+		node for node in method.body if isinstance(node, ast.FunctionDef) and node.name == "_afterPreamble"
+	)
 	assert any(
-		isinstance(node, ast.Expr)
-		and isinstance(node.value, ast.Call)
-		and isinstance(node.value.func, ast.Name)
-		and node.value.func.id == "_tryKeyboardFallback"
-		for node in method.body
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_tryKeyboardFallback"
+		for node in ast.walk(after_preamble)
 	), "message context menu should try the native applications key before mouse probes"
 
 	assert any(
@@ -1983,207 +2019,126 @@ def test_schedule_query_invalidates_active_copy_read():
 	assert focus_calls == ["focus"]
 
 
+def _get_copy_read_nested_function(name):
+	"""Return (``_copyAndReadMessage`` AST, its nested function ``name``)."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	module = ast.parse(source)
+	copy_read = next(
+		node
+		for node in module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
+	)
+	nested = next(node for node in copy_read.body if isinstance(node, ast.FunctionDef) and node.name == name)
+	return copy_read, nested
+
+
 def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_windows():
-	copy_calls = []
-	escape_calls = []
-	scheduled = []
-	fallback_calls = []
+	"""_abortIfStale must restore the clipboard only when asked, and must not
+	blanket-dismiss menus or yank focus for a request that is no longer
+	current (e.g. the user has moved on to another window)."""
+	_copy_read, abort_if_stale = _get_copy_read_nested_function("_abortIfStale")
 
-	class _Rect:
-		left = 100
-		top = 200
-		right = 400
-		bottom = 260
+	def guard_tests_for(name):
+		return [
+			node.test
+			for node in ast.walk(abort_if_stale)
+			if isinstance(node, ast.If)
+			and any(
+				isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == name
+				for stmt in node.body
+				for call in ast.walk(stmt)
+			)
+		]
 
-	class _Target:
-		CurrentBoundingRectangle = _Rect()
+	assert any(
+		isinstance(test, ast.Name) and test.id == "restoreClipboard"
+		for test in guard_tests_for("_restoreClipboard")
+	), "_abortIfStale must restore the clipboard only under the restoreClipboard flag"
+	assert any(
+		isinstance(test, ast.Name) and test.id == "dismissMenu" for test in guard_tests_for("_dismissMenu")
+	), "_abortIfStale must dismiss menus only under the dismissMenu flag"
+	assert any(
+		isinstance(test, ast.Name) and test.id == "shouldRestoreFocus"
+		for test in guard_tests_for("_restoreFocusToElement")
+	), "_abortIfStale must gate focus restore on shouldRestoreFocus"
 
-		def GetRuntimeId(self):
-			return (1, 2, 3)
-
-	user32 = SimpleNamespace(
-		GetForegroundWindow=lambda: 101,
-		SetForegroundWindow=lambda _hwnd: None,
-		SetCursorPos=lambda _x, _y: None,
-		mouse_event=lambda *_args: None,
-	)
-	previousKeyboardHandler = sys.modules.get("keyboardHandler")
-	sys.modules["keyboardHandler"] = SimpleNamespace(
-		KeyboardInputGesture=SimpleNamespace(
-			fromName=lambda name: SimpleNamespace(
-				send=lambda: escape_calls.append(name),
-			),
-		),
-	)
-
-	try:
-		ns = _load_line_symbols(
-			assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
-			function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
-			namespace={
-				"api": SimpleNamespace(
-					getClipData=lambda: "orig",
-					copyToClip=lambda value: copy_calls.append(value),
-				),
-				"core": SimpleNamespace(
-					callLater=lambda _delay, callback: scheduled.append(callback),
-				),
-				"ctypes": SimpleNamespace(windll=SimpleNamespace(user32=user32)),
-				"time": SimpleNamespace(sleep=lambda _seconds: None),
-				"log": _Log(),
-				"_getElementRuntimeId": lambda _element: (1, 2, 3),
-				"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
-				"_messageProbePointHitsTargetElement": lambda *_args: True,
-				"_ocrReadMessageFallback": lambda _element: fallback_calls.append("fallback"),
-				"_restoreFocusToElement": lambda *_args: None,
-				"_shouldDismissCopyReadMenu": lambda _hwnd: False,
-				"UIAHandler": SimpleNamespace(handler=object()),
-			},
-		)
-
-		ns["_copyAndReadMessage"](_Target())
-		assert copy_calls == [""]
-		assert len(scheduled) == 1
-
-		ns["_copyReadRequestId"] += 1
-		scheduled[0]()
-
-		assert copy_calls == ["", "orig"]
-		assert escape_calls == []
-		assert fallback_calls == []
-		assert ns["_copyReadClipboardOwnerId"] == 0
-	finally:
-		if previousKeyboardHandler is None:
-			sys.modules.pop("keyboardHandler", None)
-		else:
-			sys.modules["keyboardHandler"] = previousKeyboardHandler
+	should_restore_assigns = [
+		node
+		for node in ast.walk(abort_if_stale)
+		if isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "shouldRestoreFocus" for target in node.targets)
+	]
+	assert should_restore_assigns
+	assign_names = {
+		node.id for node in ast.walk(should_restore_assigns[0].value) if isinstance(node, ast.Name)
+	}
+	# Focus restore requires both the same request AND an actually-open
+	# copy-read menu; stale requests from other windows leave focus alone.
+	assert "sameRequest" in assign_names
+	assert "_shouldDismissCopyReadMenu" in assign_names
 
 
 def test_copy_read_does_not_restore_focus_when_line_is_not_foreground():
-	copy_calls = []
-	focus_restores = []
-	scheduled = []
-	current_runtime_id = [(1, 2, 3)]
+	"""A copy-read request stops being current as soon as LINE's window loses
+	the foreground, so no stage of the flow (which checks _abortIfStale before
+	acting) can yank focus back from another application."""
+	_copy_read, is_current = _get_copy_read_nested_function("_isCurrentRequest")
 
-	class _Rect:
-		left = 100
-		top = 200
-		right = 400
-		bottom = 260
-
-	class _Target:
-		CurrentBoundingRectangle = _Rect()
-
-		def GetRuntimeId(self):
-			return (1, 2, 3)
-
-	user32 = SimpleNamespace(
-		GetForegroundWindow=lambda: 101,
-		SetForegroundWindow=lambda _hwnd: None,
-		SetCursorPos=lambda _x, _y: None,
-		mouse_event=lambda *_args: None,
+	foreground_compares = [
+		node
+		for node in ast.walk(is_current)
+		if isinstance(node, ast.Compare)
+		and any(
+			isinstance(call, ast.Call)
+			and isinstance(call.func, ast.Attribute)
+			and call.func.attr == "GetForegroundWindow"
+			for call in ast.walk(node)
+		)
+		and any(isinstance(name, ast.Name) and name.id == "hwnd" for name in ast.walk(node))
+	]
+	assert foreground_compares, (
+		"_isCurrentRequest must compare the live foreground window with the hwnd captured at request start"
 	)
-
-	ns = _load_line_symbols(
-		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
-		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
-		namespace={
-			"api": SimpleNamespace(
-				getClipData=lambda: "orig",
-				copyToClip=lambda value: copy_calls.append(value),
-			),
-			"core": SimpleNamespace(
-				callLater=lambda _delay, callback: scheduled.append(callback),
-			),
-			"ctypes": SimpleNamespace(windll=SimpleNamespace(user32=user32)),
-			"time": SimpleNamespace(sleep=lambda _seconds: None),
-			"log": _Log(),
-			"_getElementRuntimeId": lambda _element: (1, 2, 3),
-			"_getFocusedElementRuntimeId": lambda: current_runtime_id[0],
-			"_messageProbePointHitsTargetElement": lambda *_args: True,
-			"_ocrReadMessageFallback": lambda _element: None,
-			"_restoreFocusToElement": lambda *_args: focus_restores.append("restore"),
-			"_shouldDismissCopyReadMenu": lambda _hwnd: False,
-			"UIAHandler": SimpleNamespace(handler=object()),
-		},
-	)
-
-	ns["_copyAndReadMessage"](_Target())
-	assert len(scheduled) == 1
-
-	current_runtime_id[0] = (9, 9, 9)
-	scheduled[0]()
-
-	assert copy_calls == ["", "orig"]
-	assert focus_restores == []
 
 
 def test_copy_read_skips_probe_when_hit_test_finds_different_element():
-	copy_calls = []
-	cursor_moves = []
-	mouse_events = []
-	scheduled = []
+	"""_attemptCopyAtOffset must skip a probe position (advancing to the next
+	offset) when the hit test says the point lands on a different element,
+	without synthesizing any mouse input for that position."""
+	_copy_read, attempt_copy = _get_copy_read_nested_function("_attemptCopyAtOffset")
 
-	class _Rect:
-		left = 100
-		top = 200
-		right = 400
-		bottom = 260
+	skip_ifs = [
+		node
+		for node in ast.walk(attempt_copy)
+		if isinstance(node, ast.If)
+		and isinstance(node.test, ast.UnaryOp)
+		and isinstance(node.test.op, ast.Not)
+		and any(
+			isinstance(call, ast.Call)
+			and isinstance(call.func, ast.Name)
+			and call.func.id == "_messageProbePointHitsTargetElement"
+			for call in ast.walk(node.test)
+		)
+	]
+	assert skip_ifs, "_attemptCopyAtOffset must hit-test the probe point before right-clicking"
 
-	class _Target:
-		CurrentBoundingRectangle = _Rect()
-
-		def GetRuntimeId(self):
-			return (1, 2, 3)
-
-	def _get_window_rect(_hwnd, rect):
-		rect.left = 0
-		rect.top = 0
-		rect.right = 1200
-		rect.bottom = 900
-		return True
-
-	user32 = SimpleNamespace(
-		GetForegroundWindow=lambda: 101,
-		GetWindowRect=_get_window_rect,
-		SetForegroundWindow=lambda _hwnd: None,
-		SetCursorPos=lambda x, y: cursor_moves.append((x, y)),
-		mouse_event=lambda *args: mouse_events.append(args),
+	skip_body = skip_ifs[0].body
+	assert any(
+		isinstance(call, ast.Call)
+		and isinstance(call.func, ast.Name)
+		and call.func.id == "_attemptCopyAtOffset"
+		for stmt in skip_body
+		for call in ast.walk(stmt)
+	), "the miss branch must advance to the next probe offset"
+	assert any(isinstance(stmt, ast.Return) for stmt in skip_body), (
+		"the miss branch must return without falling through to the click"
 	)
-
-	ns = _load_line_symbols(
-		assignment_names={"_copyReadRequestId", "_copyReadClipboardOwnerId"},
-		function_names={"_buildMessageBubbleClickPositions", "_copyAndReadMessage"},
-		namespace={
-			"api": SimpleNamespace(
-				getClipData=lambda: "orig",
-				copyToClip=lambda value: copy_calls.append(value),
-			),
-			"core": SimpleNamespace(
-				callLater=lambda _delay, callback: scheduled.append(callback),
-			),
-			"ctypes": SimpleNamespace(
-				windll=SimpleNamespace(user32=user32),
-				byref=lambda value: value,
-			),
-			"time": SimpleNamespace(sleep=lambda _seconds: None),
-			"log": _Log(),
-			"_getElementRuntimeId": lambda _element: (1, 2, 3),
-			"_getFocusedElementRuntimeId": lambda: (1, 2, 3),
-			"_messageProbePointHitsTargetElement": lambda *_args: False,
-			"_ocrReadMessageFallback": lambda _element: None,
-			"_restoreFocusToElement": lambda *_args: None,
-			"_shouldDismissCopyReadMenu": lambda _hwnd: False,
-			"UIAHandler": SimpleNamespace(handler=object()),
-		},
-	)
-
-	ns["_copyAndReadMessage"](_Target())
-
-	assert copy_calls == [""]
-	assert cursor_moves == []
-	assert mouse_events == []
-	assert len(scheduled) == 1
+	assert not any(
+		isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_sendMouseClick"
+		for stmt in skip_body
+		for call in ast.walk(stmt)
+	), "the miss branch must not synthesize mouse input"
 
 
 def test_copy_read_tries_keyboard_menu_before_mouse_probes():
@@ -2211,12 +2166,19 @@ def test_copy_read_tries_keyboard_menu_before_mouse_probes():
 		if isinstance(node, ast.FunctionDef) and node.name == "_attemptCopyAtOffset"
 	)
 
-	assert any(
-		isinstance(node, ast.Expr)
-		and isinstance(node.value, ast.Call)
-		and isinstance(node.value.func, ast.Name)
-		and node.value.func.id == "_tryKeyboardCopyFallback"
+	# The flow starts with a worker-thread bubble-OCR preamble whose completion
+	# callback (_continueAfterInitialOcr) enters the keyboard-first path;
+	# mouse probes only run from _startMouseCopyProbes on keyboard failure.
+	continue_after_ocr = next(
+		node
 		for node in copy_read.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_continueAfterInitialOcr"
+	)
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_tryKeyboardCopyFallback"
+		for node in ast.walk(continue_after_ocr)
 	), "copy-read should try the native applications key before mouse probes"
 
 	assert any(
@@ -2273,3 +2235,67 @@ def test_message_focus_skips_off_window_elements_before_copy_read():
 
 	assert visible_checks, "message focus should guard against virtualized off-window UIA rects"
 	assert copy_read_calls, "message focus should still use copy-read for visible message items"
+
+
+def test_no_private_gesture_map_mutation():
+	"""Transient bindings must be torn down via removeGestureBinding (public
+	API since NVDA 2014.3), not by mutating the private _gestureMap dict."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	source = module_path.read_text(encoding="utf-8")
+	assert "._gestureMap[" not in source, (
+		"use ScriptableObject.removeGestureBinding instead of mutating the private _gestureMap"
+	)
+	assert "removeGestureBinding" in source
+
+
+def test_no_deprecated_braille_text_region():
+	"""braille.TextRegion is a deprecated moved alias as of NVDA 2026.3; the
+	add-on shows braille via the public braille.handler.message instead."""
+	addon_dir = Path(__file__).resolve().parents[1] / "addon"
+	offenders = [
+		str(path)
+		for path in addon_dir.rglob("*.py")
+		if "braille.TextRegion" in path.read_text(encoding="utf-8")
+	]
+	assert not offenders, f"braille.TextRegion used in: {offenders}"
+
+
+def test_script_categories_use_shared_constant():
+	"""Every @script category must reference SCRIPT_CATEGORY so all gestures
+	stay grouped under one translated category in the Input Gestures dialog."""
+	for relative in (
+		("addon", "appModules", "line.py"),
+		("addon", "globalPlugins", "lineDesktopHelper.py"),
+	):
+		module_path = Path(__file__).resolve().parents[1].joinpath(*relative)
+		module = ast.parse(module_path.read_text(encoding="utf-8"))
+		for node in ast.walk(module):
+			if not isinstance(node, ast.Call):
+				continue
+			for keyword in node.keywords:
+				if keyword.arg != "category":
+					continue
+				assert isinstance(keyword.value, ast.Name) and keyword.value.id == "SCRIPT_CATEGORY", (
+					f"{module_path.name}:{keyword.value.lineno}: category= must use SCRIPT_CATEGORY"
+				)
+
+
+def test_terminate_schedules_pending_ocr_cleanup():
+	"""AppModule.terminate must schedule the pending-OCR cleanup so buffers
+	from recognitions whose callback never fires are released after LINE exits."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	terminate = next(
+		node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == "terminate"
+	)
+	cleanup_calls = [
+		node
+		for node in ast.walk(terminate)
+		if isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Attribute)
+		and node.func.attr == "schedulePendingOcrCleanup"
+	]
+	assert cleanup_calls, "terminate must call _utils.schedulePendingOcrCleanup"
