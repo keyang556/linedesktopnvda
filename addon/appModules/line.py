@@ -2222,6 +2222,8 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"grok-4-20-reasoning",
 	"grok-large",
 	"llama-scout",
+	"mimo-v2.5",
+	"mimo-v2.5-pro",
 	"minimax",
 	"mistral-large",
 	"mistral-small-3.2",
@@ -2237,7 +2239,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gemma": "Gemma 4 26B A4B",
-	"Gemma 4 31B": "gemma-4-31b",
+	"Gemma-4-31B": "gemma 4 31b",
 	"openai-fast": "GPT-5 Nano",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
@@ -2251,6 +2253,8 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"grok-large": "Grok 4.3",
 	"llama-scout": "Meta Llama 4 Scout",
 	"minimax": "MiniMax M3",
+	"mimo-v2.5": "mimo v2.5",
+	"mimo-v2.5-pro": "mimo v2.5 pro",
 	"mistral-large": "Mistral Large 3",
 	"mistral-small-3.2": "Mistral Small 3.2",
 	"mistral": "Mistral Small 4",
