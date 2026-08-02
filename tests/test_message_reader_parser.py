@@ -169,3 +169,105 @@ def test_message_reader_boundary_prompts_use_generic_item_wording():
 	dialog._moveNext()
 
 	assert spoken == ["已經是第一項", "已經是最後一項"]
+
+
+class _FakeKeyEvent:
+	def __init__(self, keyCode, controlDown=False):
+		self._keyCode = keyCode
+		self._controlDown = controlDown
+		self.skipped = False
+
+	def GetKeyCode(self):
+		return self._keyCode
+
+	def ControlDown(self):
+		return self._controlDown
+
+	def Skip(self):
+		self.skipped = True
+
+
+def _make_navigation_dialog(entryCount=25, position=0):
+	dialog = object.__new__(message_reader.MessageReaderDialog)
+	dialog._messages = [{} for _ in range(entryCount)]
+	dialog._pos = position
+	updates = []
+	spoken = []
+	dialog._updateDisplay = lambda: updates.append(dialog._pos)
+	dialog._speakMessage = spoken.append
+	return dialog, updates, spoken
+
+
+def test_message_reader_page_navigation_jumps_ten_entries_and_clamps_to_bounds():
+	dialog, updates, spoken = _make_navigation_dialog()
+
+	dialog._moveByPage(1)
+	dialog._moveByPage(1)
+	dialog._moveByPage(1)
+	dialog._moveByPage(1)
+	dialog._moveByPage(-1)
+	dialog._moveByPage(-1)
+	dialog._moveByPage(-1)
+	dialog._moveByPage(-1)
+
+	assert updates == [10, 20, 24, 14, 4, 0]
+	assert len(spoken) == 2
+
+
+def test_message_reader_home_end_navigation_jumps_to_each_boundary():
+	dialog, updates, spoken = _make_navigation_dialog(position=12)
+
+	dialog._moveToStart()
+	dialog._moveToEnd()
+	dialog._moveToEnd()
+	dialog._moveToStart()
+	dialog._moveToStart()
+
+	assert updates == [0, 24, 0]
+	assert len(spoken) == 2
+
+
+def test_message_reader_quick_navigation_ignores_empty_reader():
+	dialog, updates, spoken = _make_navigation_dialog(entryCount=0, position=-1)
+
+	dialog._moveByPage(1)
+	dialog._moveToStart()
+	dialog._moveToEnd()
+
+	assert updates == []
+	assert spoken == []
+
+
+def test_message_reader_quick_jump_shortcuts_are_handled_by_dialog(monkeypatch):
+	keyCodes = {
+		"WXK_ESCAPE": 1,
+		"WXK_PAGEUP": 2,
+		"WXK_PAGEDOWN": 3,
+		"WXK_HOME": 4,
+		"WXK_END": 5,
+	}
+	for attribute, keyCode in keyCodes.items():
+		monkeypatch.setattr(message_reader.wx, attribute, keyCode, raising=False)
+
+	dialog = object.__new__(message_reader.MessageReaderDialog)
+	calls = []
+	dialog._moveByPage = lambda direction: calls.append(("page", direction))
+	dialog._moveToStart = lambda: calls.append(("start",))
+	dialog._moveToEnd = lambda: calls.append(("end",))
+
+	handledEvents = [
+		_FakeKeyEvent(keyCodes["WXK_PAGEUP"]),
+		_FakeKeyEvent(keyCodes["WXK_PAGEDOWN"]),
+		_FakeKeyEvent(keyCodes["WXK_HOME"], controlDown=True),
+		_FakeKeyEvent(keyCodes["WXK_END"], controlDown=True),
+	]
+	for event in handledEvents:
+		dialog._onCharHook(event)
+
+	assert calls == [("page", -1), ("page", 1), ("start",), ("end",)]
+	assert all(not event.skipped for event in handledEvents)
+
+	unhandledEvent = _FakeKeyEvent(keyCodes["WXK_HOME"])
+	dialog._onCharHook(unhandledEvent)
+
+	assert unhandledEvent.skipped
