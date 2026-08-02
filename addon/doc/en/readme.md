@@ -55,7 +55,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 ## Message Reader, Context Menus, and Temporary Keys
 
 * **Message Reader (`NVDA+Windows+J`)**: The add-on opens the chat room's "More options" menu, chooses "Save chat", parses the exported text, and opens an accessible reader dialog.
-* **Reader Navigation**: In the message reader, use `UpArrow` and `DownArrow` to move between messages and `Escape` to close the window. Date separators are preserved, and the current position is announced.
+* **Reader Navigation**: Use `UpArrow` / `DownArrow` to move one entry, `PageUp` / `PageDown` to jump ten entries, `Ctrl+Home` / `Ctrl+End` to reach the first / last entry, and `Escape` to close the window. Date separators are preserved, and the current position is announced.
 * **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, this opens a virtual context menu for the focused message, making actions such as copy, reply, recall, and "Convert to text" easier to use.
 * **Recall Confirmation Keys**: After you choose recall, the add-on temporarily binds `Y` = Recall, `N` = Cancel, and `P` = Stealth recall (Premium required). If you do nothing for 10 seconds, the add-on cancels the action automatically.
 * **Photo-to-Text Consent Keys**: When LINE shows the first-run "Convert to text" photo upload notice, the add-on temporarily binds `A` = Agree and `D` = Decline. If you do nothing for 10 seconds, the add-on declines automatically.

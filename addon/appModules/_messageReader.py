@@ -5,13 +5,16 @@ import addonHandler
 
 addonHandler.initTranslation()
 
+_PAGE_JUMP_SIZE = 10
+
 
 class MessageReaderDialog(wx.Dialog):
-	"""A dialog for reading LINE chat messages with up/down arrow navigation.
+	"""A dialog for reading LINE chat messages with keyboard navigation.
 
 	Messages are displayed as: name content time
 	Date separators are displayed in their original positions.
-	Up arrow moves to the previous message, down arrow moves to the next.
+	Up/down arrows move one entry, Page Up/Down move ten entries, and
+	Ctrl+Home/Ctrl+End move to the first/last entry.
 	"""
 
 	def __init__(self, messages, title=None, cleanupPath=None):
@@ -111,6 +114,18 @@ class MessageReaderDialog(wx.Dialog):
 		if keyCode == wx.WXK_ESCAPE:
 			self.Close()
 			return
+		if keyCode == wx.WXK_PAGEUP:
+			self._moveByPage(-1)
+			return
+		if keyCode == wx.WXK_PAGEDOWN:
+			self._moveByPage(1)
+			return
+		if evt.ControlDown() and keyCode == wx.WXK_HOME:
+			self._moveToStart()
+			return
+		if evt.ControlDown() and keyCode == wx.WXK_END:
+			self._moveToEnd()
+			return
 		evt.Skip()
 
 	def _movePrevious(self):
@@ -130,6 +145,40 @@ class MessageReaderDialog(wx.Dialog):
 			self._updateDisplay()
 		else:
 			self._speakMessage(_("已經是最後一項"))
+
+	def _moveByPage(self, direction):
+		"""Move by a page of entries, clamping the destination to the reader bounds."""
+		if not self._messages:
+			return
+		target = self._pos + direction * _PAGE_JUMP_SIZE
+		target = max(0, min(target, len(self._messages) - 1))
+		if target == self._pos:
+			if direction < 0:
+				self._movePrevious()
+			else:
+				self._moveNext()
+			return
+		self._pos = target
+		self._updateDisplay()
+
+	def _moveToStart(self):
+		if not self._messages:
+			return
+		if self._pos == 0:
+			self._movePrevious()
+			return
+		self._pos = 0
+		self._updateDisplay()
+
+	def _moveToEnd(self):
+		if not self._messages:
+			return
+		lastPosition = len(self._messages) - 1
+		if self._pos == lastPosition:
+			self._moveNext()
+			return
+		self._pos = lastPosition
+		self._updateDisplay()
 
 	def _onClose(self, evt):
 		global _readerDlg
