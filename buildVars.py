@@ -79,7 +79,8 @@ excludedFiles: list[str] = ["*.pyc"]
 baseLanguage: str = "en"
 
 # Markdown extensions for add-on documentation
-markdownExtensions: list[str] = []
+# The README files use pipe tables for shortcut references.
+markdownExtensions: list[str] = ["markdown.extensions.tables"]
 
 # Custom braille translation tables
 brailleTables: BrailleTables = {}
