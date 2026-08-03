@@ -10,9 +10,7 @@ def test_documentation_build_renders_markdown_tables(tmp_path: Path):
 	source = tmp_path / "readme.md"
 	destination = tmp_path / "readme.html"
 	source.write_text(
-		"| Shortcut | Action |\n"
-		"| --- | --- |\n"
-		"| `NVDA+Windows+J` | Open the message reader |\n",
+		"| Shortcut | Action |\n| --- | --- |\n| `NVDA+Windows+J` | Open the message reader |\n",
 		encoding="utf-8",
 	)
 
