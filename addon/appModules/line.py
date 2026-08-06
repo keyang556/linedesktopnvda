@@ -2256,8 +2256,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
-	"gemma",
-	"gemma-4-31b",
+	"command-a-plus",
 	"openai-fast",
 	"gpt-5.4",
 	"gpt-5.4-mini",
@@ -2267,26 +2266,17 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",
 	"grok",
-	"grok-4-20-reasoning",
 	"grok-large",
-	"llama-scout",
-	"mimo-v2.5",
 	"minimax",
 	"mistral-large",
-	"mistral-small-3.2",
-	"mistral",
 	"kimi",
 	"kimi-code",
+	"kimi-k3",
 	"nova",
-	"qwen-vision-pro",
-	"qwen-vision",
-	"qwen-large",
-	"step-flash",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
-	"gemma": "Gemma 4 26B A4B",
-	"gemma-4-31b": "Gemma 4 31B",
+	"command-a-plus": command a plus
 	"openai-fast": "GPT-5 Nano",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
@@ -2296,21 +2286,13 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gpt-5.6-terra": "GPT-5.6 Terra",
 	"gpt-5.6-luna": "GPT-5.6 Luna",
 	"grok": "Grok 4.20 Non-Reasoning",
-	"grok-4-20-reasoning": "Grok 4.20 Reasoning",
 	"grok-large": "Grok 4.3",
-	"llama-scout": "Meta Llama 4 Scout",
 	"minimax": "MiniMax M3",
-	"mimo-v2.5": "mimo v2.5",
 	"mistral-large": "Mistral Large 3",
-	"mistral-small-3.2": "Mistral Small 3.2",
-	"mistral": "Mistral Small 4",
 	"kimi": "Moonshot Kimi K2.6",
 	"kimi-code": "Moonshot Kimi K2.7 Code",
+	"kimi-k3": "Moonshot Kimi K3",
 	"nova": "Nova 2 Lite",
-	"qwen-vision-pro": "Qwen3 VL 235B A22B Thinking",
-	"qwen-vision": "Qwen3 VL 30B A3B Thinking",
-	"qwen-large": "Qwen3.7 Plus",
-	"step-flash": "StepFun Step 3.7 Flash",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"

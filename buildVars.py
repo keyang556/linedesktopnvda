@@ -30,7 +30,7 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."""),
 	# version
-	addon_version="1.3.0-beta2",
+	addon_version="1.3.0-beta3",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	addon_changelog=_("""Incoming-call shortcuts (NVDA+Windows+A/D/S/F) no longer freeze NVDA: they now run on a worker thread on the real gesture path.
