@@ -2241,6 +2241,8 @@ _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/gemma-4-31b-it",
 	"google/diffusiongemma-26b-a4b-it",
+	"meta/muse-glimmer-30b",
+	"minimaxai/minimax-m3",
 	"mistralai/mistral-large-3-675b-instruct-2512",
 	"mistralai/mistral-medium-3.5-128b",
 	"mistralai/mistral-small-4-119b-2603",
