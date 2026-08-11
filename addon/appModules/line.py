@@ -2248,8 +2248,6 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"mistralai/mistral-small-4-119b-2603",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-	"qwen/qwen3.5-122b-a10b",
-	"qwen/qwen3.5-397b-a17b",
 	"stepfun-ai/step-3.7-flash",
 	"thinkingmachines/inkling",
 )
