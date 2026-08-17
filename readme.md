@@ -25,7 +25,7 @@ Detailed documentation is available in the following languages:
 - 支援 AI 圖片描述，可描述圖片或貼圖訊息並在對話視窗追問 (`NVDA+Windows+I`)。
 - 可在 LINE Desktop 設定面板選擇圖片描述服務、API Key、模型與提示詞。
 - 通話中麥克風與相機狀態播報。
-- 收回訊息與圖片轉文字提示支援臨時單鍵操作 (`Y/N/P`, `A/D`)。
+- 收回訊息與圖片轉文字提示改以標準 NVDA 對話框確認（按鈕快捷鍵仍是 `Y/N/P`、`A/D`）。
 - 使用 OCR 技術輔助讀取介面文字。
 - **注意**：OCR 並非 100% 準確。
 
@@ -39,7 +39,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - AI Image Description for images and stickers, with follow-up questions in a dialog (`NVDA+Windows+I`).
 - LINE Desktop settings for image-description service, API key, model, and prompt.
 - Microphone and camera status announcements during calls.
-- Temporary single-key confirmations for recall and photo-to-text prompts (`Y/N/P`, `A/D`).
+- Standard NVDA confirmation dialogs for recall and photo-to-text prompts (button keys are still `Y/N/P`, `A/D`).
 - OCR-assisted text reading for the Qt6 interface.
 - **Note**: OCR is not perfectly accurate.
 
@@ -53,7 +53,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - 画像やスタンプを説明し、ダイアログで追加質問できる AI 画像説明 (`NVDA+Windows+I`)。
 - LINE Desktop 設定パネルで画像説明サービス、API Key、モデル、プロンプトを設定。
 - 通話中のマイクとカメラの状態読み上げ。
-- 取り消し確認と画像のテキスト化通知に一時キー (`Y/N/P`, `A/D`)。
+- 取り消し確認と画像のテキスト化通知を標準の NVDA ダイアログで確認（ボタンのキーは `Y/N/P`、`A/D` のまま）。
 - OCR 技術によるインターフェース文字の読み上げ補助。
 - **注意**: OCR は完全に正確ではありません。
 
@@ -67,7 +67,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - อธิบายรูปภาพหรือสติกเกอร์ด้วย AI และถามต่อในหน้าต่างโต้ตอบ (`NVDA+Windows+I`)
 - ตั้งค่าบริการอธิบายรูปภาพ API Key โมเดล และพรอมต์ได้ในแผง LINE Desktop
 - แจ้งสถานะไมโครโฟนและกล้องระหว่างการโทร
-- มีคีย์ชั่วคราวสำหรับยืนยันการเรียกคืนและการแจ้งเตือนแปลงเป็นข้อความ (`Y/N/P`, `A/D`)
+- ยืนยันการเรียกคืนและการแจ้งเตือนแปลงเป็นข้อความผ่านกล่องโต้ตอบมาตรฐานของ NVDA (คีย์ปุ่มยังคงเป็น `Y/N/P`, `A/D`)
 - อ่านข้อความด้วย OCR สำหรับอินเทอร์เฟซ Qt6
 - **หมายเหตุ**: OCR ไม่ถูกต้อง 100%
 

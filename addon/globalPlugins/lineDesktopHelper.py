@@ -8,6 +8,7 @@ from scriptHandler import script
 from logHandler import log
 import gui
 from gui import guiHelper
+from gui.message import DefaultButton, DialogType, MessageDialog
 from gui.settingsDialogs import SettingsPanel
 import wx
 import winreg
@@ -96,6 +97,18 @@ def _getLineAppModule():
 		):
 			return app
 	return None
+
+
+def _showSettingsError(parent, message):
+	"""Report a settings-save failure through NVDA's standard message dialog."""
+	MessageDialog(
+		parent,
+		message,
+		# Translators: Title of the settings error dialog
+		_("LINE Desktop - 設定錯誤"),
+		DialogType.ERROR,
+		buttons=(DefaultButton.OK,),
+	).ShowModal()
 
 
 class LineDesktopSettingsPanel(SettingsPanel):
@@ -482,13 +495,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 		wantSet = bool(self._qtCheck.GetValue())
 		if wantSet != _isQtAccessibleSet():
 			if not _setQtAccessible(wantSet):
-				gui.messageBox(
+				_showSettingsError(
+					self,
 					# Translators: Error shown when writing Qt accessibility env var fails
 					_("設定 Qt 無障礙環境變數失敗，請確認系統權限。"),
-					# Translators: Title of the settings error dialog
-					_("LINE Desktop - 設定錯誤"),
-					wx.OK | wx.ICON_ERROR,
-					self,
 				)
 
 		# Capture pending edits for the currently visible provider before saving.
@@ -507,12 +517,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			currentProvider = getUserImageProvider() or _safeDefaultProvider()
 			if activeProvider != currentProvider:
 				if not setUserImageProvider(activeProvider):
-					gui.messageBox(
+					_showSettingsError(
+						self,
 						# Translators: Error shown when saving the provider fails
 						_("儲存圖片描述服務失敗，請重試。"),
-						_("LINE Desktop - 設定錯誤"),
-						wx.OK | wx.ICON_ERROR,
-						self,
 					)
 		except Exception:
 			log.warning(
@@ -563,24 +571,20 @@ class LineDesktopSettingsPanel(SettingsPanel):
 					setter = setUserImageApiKey
 				if pendingKey != currentKey:
 					if not setter(pendingKey):
-						gui.messageBox(
+						_showSettingsError(
+							self,
 							# Translators: Error shown when saving the image API key fails
 							_("儲存圖片描述 API Key 失敗，請重試。"),
-							_("LINE Desktop - 設定錯誤"),
-							wx.OK | wx.ICON_ERROR,
-							self,
 						)
 		except Exception:
 			log.warning(
 				"LINE: cannot load image API key helpers from settings panel",
 				exc_info=True,
 			)
-			gui.messageBox(
+			_showSettingsError(
+				self,
 				# Translators: Error shown when the API key module cannot be loaded
 				_("無法載入 API Key 設定，請確認附加元件完整性。"),
-				_("LINE Desktop - 設定錯誤"),
-				wx.OK | wx.ICON_ERROR,
-				self,
 			)
 
 		# Image description models (one per provider)
@@ -634,12 +638,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 					setter = setUserImageModel
 				if pendingModel != currentModel:
 					if not setter(pendingModel):
-						gui.messageBox(
+						_showSettingsError(
+							self,
 							# Translators: Error shown when saving the image model fails
 							_("儲存圖片描述模型失敗，請重試。"),
-							_("LINE Desktop - 設定錯誤"),
-							wx.OK | wx.ICON_ERROR,
-							self,
 						)
 		except Exception:
 			log.warning(
@@ -659,12 +661,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			currentPrompt = getUserImagePrompt() or _IMAGE_DESCRIPTION_DEFAULT_PROMPT
 			if newPrompt != currentPrompt:
 				if not setUserImagePrompt(newPrompt):
-					gui.messageBox(
+					_showSettingsError(
+						self,
 						# Translators: Error shown when saving the image prompt fails
 						_("儲存圖片描述提示詞失敗，請重試。"),
-						_("LINE Desktop - 設定錯誤"),
-						wx.OK | wx.ICON_ERROR,
-						self,
 					)
 		except Exception:
 			log.warning(
@@ -686,12 +686,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			currentMaxTokens = getUserImageMaxTokens()
 			if newMaxTokens != currentMaxTokens:
 				if not setUserImageMaxTokens(newMaxTokens):
-					gui.messageBox(
+					_showSettingsError(
+						self,
 						# Translators: Error shown when saving the image max-tokens setting fails
 						_("儲存圖片描述最大 Token 失敗，請重試。"),
-						_("LINE Desktop - 設定錯誤"),
-						wx.OK | wx.ICON_ERROR,
-						self,
 					)
 		except Exception:
 			log.warning(

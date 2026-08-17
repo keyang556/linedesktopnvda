@@ -65,37 +65,58 @@ def _load_consent_helpers(extra_namespace):
 	return namespace
 
 
-class _FakeGuiWx:
-	"""Registers gui/wx/globalVars stubs in sys.modules for the lazy imports."""
+class _ReturnCode:
+	YES = 2
+	NO = 8
+
+
+class _FakeGui:
+	"""Registers gui/gui.message/globalVars stubs in sys.modules for the lazy imports."""
 
 	def __init__(self, config_path, answers):
 		self._config_path = config_path
-		self.message_boxes = []
+		self.dialogs = []
 		self._answers = list(answers)
 		self._saved = {}
 
 	def __enter__(self):
-		wx_mod = types.ModuleType("wx")
-		wx_mod.YES_NO = 0x0A
-		wx_mod.ICON_WARNING = 0x100
-		wx_mod.YES = 2
-		wx_mod.NO = 8
+		dialogs = self.dialogs
+		answers = self._answers
+
+		class _MessageDialog:
+			"""Records the dialog it was asked to show and replays a canned answer."""
+
+			def __init__(self, parent, message, title, dialogType=None, *, buttons=None):
+				self.fallbackAction = None
+				dialogs.append((message, title, dialogType, buttons))
+
+			def setFallbackAction(self, id):
+				self.fallbackAction = id
+				return self
+
+			def ShowModal(self):
+				return answers.pop(0)
+
+		message_mod = types.ModuleType("gui.message")
+		message_mod.MessageDialog = _MessageDialog
+		message_mod.ReturnCode = _ReturnCode
+		message_mod.DialogType = types.SimpleNamespace(STANDARD="standard", WARNING="warning")
+		message_mod.DefaultButtonSet = types.SimpleNamespace(YES_NO=("yes", "no"))
 
 		gui_mod = types.ModuleType("gui")
-
-		def _message_box(message, caption, style):
-			self.message_boxes.append((message, caption, style))
-			return self._answers.pop(0)
-
-		gui_mod.messageBox = _message_box
+		gui_mod.mainFrame = object()
+		gui_mod.message = message_mod
 
 		global_vars_mod = types.ModuleType("globalVars")
 		global_vars_mod.appArgs = types.SimpleNamespace(configPath=str(self._config_path))
 
-		for name, mod in (("wx", wx_mod), ("gui", gui_mod), ("globalVars", global_vars_mod)):
+		for name, mod in (
+			("gui", gui_mod),
+			("gui.message", message_mod),
+			("globalVars", global_vars_mod),
+		):
 			self._saved[name] = sys.modules.get(name)
 			sys.modules[name] = mod
-		self.wx = wx_mod
 		return self
 
 	def __exit__(self, *exc_info):
@@ -134,23 +155,23 @@ def _make_namespace(provider="google"):
 
 def test_consent_dialog_accept_persists_and_never_asks_again(tmp_path):
 	ns, _provider = _make_namespace()
-	with _FakeGuiWx(tmp_path, answers=[2, 2]) as fake:  # wx.YES
+	with _FakeGui(tmp_path, answers=[2, 2]) as fake:  # ReturnCode.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 		# Recorded: second call must not show another dialog.
 		assert ns["_hasAiConsent"]() is True
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 
 
 def test_consent_dialog_decline_blocks_and_persists_nothing(tmp_path):
 	ns, _provider = _make_namespace()
-	with _FakeGuiWx(tmp_path, answers=[8, 8]) as fake:  # wx.NO
+	with _FakeGui(tmp_path, answers=[8, 8]) as fake:  # ReturnCode.NO
 		assert ns["_ensureImageDescriptionConsent"]() is False
 		assert ns["_hasAiConsent"]() is False
 		# Declining is not remembered: the next use asks again.
 		assert ns["_ensureImageDescriptionConsent"]() is False
-		assert len(fake.message_boxes) == 2
+		assert len(fake.dialogs) == 2
 
 
 def test_consent_grant_falls_back_to_in_session_cache_when_disk_write_fails(tmp_path):
@@ -160,58 +181,58 @@ def test_consent_grant_falls_back_to_in_session_cache_when_disk_write_fails(tmp_
 	right after the user agreed."""
 	ns, _provider = _make_namespace()
 	unwritable_config_path = tmp_path / "does-not-exist"  # never created
-	with _FakeGuiWx(unwritable_config_path, answers=[2, 2]) as fake:  # wx.YES
+	with _FakeGui(unwritable_config_path, answers=[2, 2]) as fake:  # ReturnCode.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 		assert ns["_hasAiConsent"]() is True
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 
 
 def test_consent_is_asked_even_when_user_supplied_their_own_key(tmp_path):
 	"""Owning the API key does not answer "which company gets my screenshot",
 	so the first use of a provider is disclosed regardless of key source."""
 	ns, _provider = _make_namespace()
-	with _FakeGuiWx(tmp_path, answers=[2]) as fake:  # wx.YES
+	with _FakeGui(tmp_path, answers=[2]) as fake:  # ReturnCode.YES
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 
 
 def test_consent_does_not_carry_over_to_another_provider(tmp_path):
 	"""Consenting to one cloud service must never imply consent for a
 	different company the user was never shown by name."""
 	ns, provider = _make_namespace(provider="google")
-	with _FakeGuiWx(tmp_path, answers=[2, 2]) as fake:  # wx.YES, wx.YES
+	with _FakeGui(tmp_path, answers=[2, 2]) as fake:  # ReturnCode.YES twice
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 1
+		assert len(fake.dialogs) == 1
 
 		provider[0] = "mistral"
 		assert ns["_hasAiConsent"]() is False, "consent must not transfer between providers"
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 2
+		assert len(fake.dialogs) == 2
 		# The second dialog must name the newly selected service.
-		assert "Mistral AI" in fake.message_boxes[1][0]
+		assert "Mistral AI" in fake.dialogs[1][0]
 
 		# Both providers are now independently remembered.
 		assert ns["_hasAiConsent"]("google") is True
 		assert ns["_hasAiConsent"]("mistral") is True
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 2
+		assert len(fake.dialogs) == 2
 
 
 def test_declining_for_new_provider_does_not_revoke_the_previous_one(tmp_path):
 	ns, provider = _make_namespace(provider="google")
-	with _FakeGuiWx(tmp_path, answers=[2, 8]) as fake:  # wx.YES, then wx.NO
+	with _FakeGui(tmp_path, answers=[2, 8]) as fake:  # ReturnCode.YES, then ReturnCode.NO
 		assert ns["_ensureImageDescriptionConsent"]() is True
 
 		provider[0] = "mistral"
 		assert ns["_ensureImageDescriptionConsent"]() is False
-		assert len(fake.message_boxes) == 2
+		assert len(fake.dialogs) == 2
 
 		provider[0] = "google"
 		assert ns["_hasAiConsent"]() is True
 		assert ns["_ensureImageDescriptionConsent"]() is True
-		assert len(fake.message_boxes) == 2
+		assert len(fake.dialogs) == 2
 
 
 def _stub_provider_backends(ns, provider_calls):
@@ -231,7 +252,7 @@ def test_worker_chokepoint_refuses_without_consent(tmp_path):
 	ns, _provider = _make_namespace()
 	_stub_provider_backends(ns, provider_calls)
 
-	with _FakeGuiWx(tmp_path, answers=[]):
+	with _FakeGui(tmp_path, answers=[]):
 		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
 	assert text is None
 	assert error
@@ -243,7 +264,7 @@ def test_worker_chokepoint_dispatches_after_consent(tmp_path):
 	ns, _provider = _make_namespace()
 	_stub_provider_backends(ns, provider_calls)
 
-	with _FakeGuiWx(tmp_path, answers=[]):
+	with _FakeGui(tmp_path, answers=[]):
 		assert ns["_recordAiConsent"]() is True
 		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
 	assert text == "text"
@@ -259,7 +280,7 @@ def test_worker_chokepoint_refuses_after_switching_to_an_unconsented_provider(tm
 	ns, provider = _make_namespace(provider="google")
 	_stub_provider_backends(ns, provider_calls)
 
-	with _FakeGuiWx(tmp_path, answers=[]):
+	with _FakeGui(tmp_path, answers=[]):
 		assert ns["_recordAiConsent"]("google") is True
 		text, error = ns["_callImageDescriptionApi"]([{"parts": []}])
 		assert text == "text"

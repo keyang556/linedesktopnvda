@@ -13,18 +13,16 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: addon\appModules\line.py:602
-msgid "確認要收回嗎？按 Y 收回，按 N 取消"
-msgstr "Confirm recall? Press Y to recall, N to cancel"
+msgid "確認要收回嗎？"
+msgstr "Confirm recall?"
 
 #: addon\appModules\line.py:654
-msgid "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
-msgstr ""
-"Converting to text uploads the photo to LINE servers for processing. Press A to agree, D to decline"
+msgid "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
+msgstr "Converting to text uploads the photo to LINE servers for processing. Do you agree?"
 
 #: addon\appModules\line.py:601
-msgid "確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium"
-msgstr ""
-"Confirm recall? Press Y to recall, N to cancel, P for stealth recall (Premium required)"
+msgid "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
+msgstr "Confirm recall?\nStealth recall does not notify the other person and requires Premium."
 
 #: addon\appModules\line.py:2567
 #: addon\appModules\line.py:2547
@@ -895,3 +893,39 @@ msgstr "Cancelled; no image was sent"
 #: addon\appModules\line.py:3764
 msgid "尚未同意將圖片傳送給第三方 AI 服務"
 msgstr "Consent to send images to the third-party AI service has not been given"
+
+#: addon\appModules\_confirmationDialogs.py:134
+msgid "LINE - 收回訊息"
+msgstr "LINE - Recall message"
+
+#: addon\appModules\_confirmationDialogs.py:104
+msgid "收回(&Y)"
+msgstr "Recall (&Y)"
+
+#: addon\appModules\_confirmationDialogs.py:115
+msgid "無痕收回(&P)"
+msgstr "Stealth recall (&P)"
+
+#: addon\appModules\_confirmationDialogs.py:124
+msgid "取消(&N)"
+msgstr "Cancel (&N)"
+
+#: addon\appModules\_confirmationDialogs.py:166
+msgid "LINE - 同意提供照片"
+msgstr "LINE - Photo upload consent"
+
+#: addon\appModules\_confirmationDialogs.py:173
+msgid "同意(&A)"
+msgstr "Agree (&A)"
+
+#: addon\appModules\_confirmationDialogs.py:181
+msgid "不同意(&D)"
+msgstr "Decline (&D)"
+
+#: addon\appModules\line.py:12562
+msgid "無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"
+msgstr "Cannot open the recall confirmation dialog; please use LINE's own confirmation window"
+
+#: addon\appModules\line.py:13083
+msgid "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
+msgstr "Cannot open the photo consent dialog; please use LINE's own confirmation window"

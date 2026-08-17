@@ -16,7 +16,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
 * **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
 * **AI Image Description**: Describe the focused image or sticker message with a configurable AI service, then ask follow-up questions in an accessible dialog.
-* **Context-Sensitive Confirmation Keys**: Temporarily provides single-key actions for recall and "Convert to text" consent dialogs.
+* **Confirmation Dialogs**: Asks about message recall and the "Convert to text" photo notice in a standard NVDA dialog.
 * **Status Feedback**: Announces tab changes plus microphone/camera state, and plays a short sound after a message is actually sent.
 
 ## Usage Tips and Reminders
@@ -57,8 +57,8 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Message Reader (`NVDA+Windows+J`)**: The add-on opens the chat room's "More options" menu, chooses "Save chat", parses the exported text, and opens an accessible reader dialog.
 * **Reader Navigation**: Use `UpArrow` / `DownArrow` to move one entry, `PageUp` / `PageDown` to jump ten entries, `Ctrl+Home` / `Ctrl+End` to reach the first / last entry, and `Escape` to close the window. Date separators are preserved, and the current position is announced.
 * **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, this opens a virtual context menu for the focused message, making actions such as copy, reply, recall, and "Convert to text" easier to use.
-* **Recall Confirmation Keys**: After you choose recall, the add-on temporarily binds `Y` = Recall, `N` = Cancel, and `P` = Stealth recall (Premium required). If you do nothing for 10 seconds, the add-on cancels the action automatically.
-* **Photo-to-Text Consent Keys**: When LINE shows the first-run "Convert to text" photo upload notice, the add-on temporarily binds `A` = Agree and `D` = Decline. If you do nothing for 10 seconds, the add-on declines automatically.
+* **Recall Confirmation Dialog**: After you choose recall, the add-on opens a standard NVDA dialog with **Recall** (`Y`), **Cancel** (`N`), and, when LINE offers it, **Stealth recall** (`P`, Premium required). Press escape to cancel. The dialog waits for your answer.
+* **Photo-to-Text Consent Dialog**: When LINE shows the first-run "Convert to text" photo upload notice, the add-on opens a standard NVDA dialog with **Agree** (`A`) and **Decline** (`D`). Press escape to decline.
 
 ## AI Image Description
 
@@ -128,15 +128,19 @@ This add-on currently provides the following virtual windows:
 | **NVDA+Windows+I** | Add-on | Describe the current image or sticker message with the configured AI service |
 | **Applications / Shift+F10** | Add-on | Open the virtual context menu for the current message |
 
-### Temporary Confirmation Keys
+### Confirmation Dialog Buttons
 
-| Shortcut | Category | Action |
+These are button accelerators inside the add-on's confirmation dialogs, not global shortcuts; the same letters keep working normally in LINE itself.
+
+| Key | Dialog | Action |
 |---|---|---|
-| **Y** | Add-on (temporary) | Confirm message recall |
-| **N** | Add-on (temporary) | Cancel message recall |
-| **P** | Add-on (temporary) | Stealth recall (Premium required) |
-| **A** | Add-on (temporary) | Agree to LINE's photo upload notice for "Convert to text" |
-| **D** | Add-on (temporary) | Decline LINE's photo upload notice for "Convert to text" |
+| **Y** | Recall confirmation | Confirm message recall |
+| **N** | Recall confirmation | Cancel message recall |
+| **P** | Recall confirmation | Stealth recall (Premium required, shown only when LINE offers it) |
+| **Escape** | Recall confirmation | Cancel message recall |
+| **A** | Photo-to-text consent | Agree to LINE's photo upload notice for "Convert to text" |
+| **D** | Photo-to-text consent | Decline LINE's photo upload notice for "Convert to text" |
+| **Escape** | Photo-to-text consent | Decline LINE's photo upload notice |
 
 ### Basic Shortcuts
 
@@ -243,4 +247,4 @@ This add-on currently provides the following virtual windows:
 ## Supported Versions
 
 * LINE Desktop for Windows (Standard installer or Microsoft Store version).
-* NVDA 2024.1 or higher.
+* NVDA 2025.1 or higher.
