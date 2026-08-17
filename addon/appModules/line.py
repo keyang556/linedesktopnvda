@@ -2222,7 +2222,7 @@ _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-flash-lite-latest"
 # Default Ollama Cloud model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemma4:31b-cloud"
 # Default NVIDIA NIM model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "mistralai/mistral-medium-3.5-128b"
+_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "google/diffusiongemma-26b-a4b-it"
 # Models exposed in the settings panel dropdown. The order here is the order
 # the user sees. Strings are the actual model IDs sent to the API endpoint.
 # VERIFY all IDs against: GET https://generativelanguage.googleapis.com/v1beta/models
@@ -2253,9 +2253,6 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
 	"minimaxai/minimax-m3",
-	"mistralai/mistral-large-3-675b-instruct-2512",
-	"mistralai/mistral-medium-3.5-128b",
-	"mistralai/mistral-small-4-119b-2603",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"stepfun-ai/step-3.7-flash",
