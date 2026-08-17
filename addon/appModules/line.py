@@ -771,11 +771,18 @@ def _isCompactModernRecallDialog(actionLabels=(), isModernDialog=False):
 
 
 def _getRecallConfirmationPrompt(availableActions, isModernDialog=False):
-	"""Return the spoken prompt for the current recall confirmation dialog."""
+	"""Return the message body for the recall confirmation dialog.
+
+	The actions themselves are the dialog's buttons, so this only carries what
+	the buttons cannot: that stealth recall needs a Premium subscription.
+	"""
 	actionSet = set(availableActions or ())
 	if "無痕收回" in actionSet:
-		return _("確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium")
-	return _("確認要收回嗎？按 Y 收回，按 N 取消")
+		# Translators: Body of the recall confirmation dialog when LINE also offers
+		# stealth recall, which requires a Premium subscription.
+		return _("確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。")
+	# Translators: Body of the recall confirmation dialog.
+	return _("確認要收回嗎？")
 
 
 def _normalizePhotoTextConsentDialogLine(text):
@@ -826,8 +833,10 @@ def _isPhotoTextConsentDialogText(text, actionLabels=()):
 
 
 def _getPhotoTextConsentPrompt():
-	"""Return the spoken prompt for LINE's first-run photo consent dialog."""
-	return _("轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意")
+	"""Return the message body for LINE's first-run photo consent dialog."""
+	# Translators: Body of the dialog shown when LINE asks, on first use of
+	# "Convert to text", for permission to upload the photo to its servers.
+	return _("轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？")
 
 
 def _extractPhotoTextConsentActionClickPoints(ocrLines, dialogRect):
@@ -2973,9 +2982,10 @@ def _ensureImageDescriptionConsent():
 	providerLabel = _IMAGE_DESCRIPTION_PROVIDER_LABELS.get(provider, provider)
 	try:
 		import gui
-		import wx
+		from gui.message import DefaultButtonSet, DialogType, MessageDialog, ReturnCode
 
-		result = gui.messageBox(
+		dlg = MessageDialog(
+			gui.mainFrame,
 			# Translators: Message of the consent dialog shown before the
 			# image-description feature uploads a screenshot to a cloud AI
 			# service. {provider} is the name of that service.
@@ -2987,9 +2997,13 @@ def _ensureImageDescriptionConsent():
 			).format(provider=providerLabel),
 			# Translators: Title of the one-time AI image description consent dialog
 			_("LINE 圖片描述 - 隱私確認"),
-			wx.YES_NO | wx.ICON_WARNING,
+			DialogType.WARNING,
+			buttons=DefaultButtonSet.YES_NO,
 		)
-		if result == wx.YES:
+		# YES_NO alone has no fallback, so escape would not close the dialog;
+		# declining is the safe answer to a privacy question.
+		dlg.setFallbackAction(ReturnCode.NO)
+		if dlg.ShowModal() == ReturnCode.YES:
 			_recordAiConsent(provider)
 			return True
 		return False
@@ -12496,45 +12510,56 @@ class AppModule(appModuleHandler.AppModule):
 		}
 
 	def _beginRecallConfirmation(self):
-		"""Prompt for recall confirmation and bind Y/N/P shortcuts.
+		"""Ask for recall confirmation in a standard NVDA message dialog.
 
 		The dialog-state capture does screen OCR (seconds), so it runs on a
-		worker thread; binding and announcing continue on the main thread.
+		worker thread; showing the dialog continues on the main thread.
 		"""
 
 		def _afterState(state):
 			if not state:
 				return
-			prompt = _getRecallConfirmationPrompt(
+			from ._confirmationDialogs import openRecallConfirmationDialog
+
+			if not getattr(self, "_recallPending", False):
+				self._recallConfirmationToken = getattr(self, "_recallConfirmationToken", 0) + 1
+				self._recallPending = True
+			# When a second detection races the first, the dialog is already up;
+			# opening it again just raises and focuses it.
+			openRecallConfirmationDialog(
+				_getRecallConfirmationPrompt(
+					state["actionLabels"],
+					isModernDialog=state["isModernDialog"],
+				),
 				state["actionLabels"],
-				isModernDialog=state["isModernDialog"],
+				self._onRecallConfirmationChoice,
+				onFailed=self._onRecallConfirmationDialogFailed,
 			)
-			if getattr(self, "_recallPending", False):
-				ui.message(prompt)
-				return
-
-			token = getattr(self, "_recallConfirmationToken", 0) + 1
-			self._recallConfirmationToken = token
-			self._recallPending = True
-			ui.message(prompt)
-			self.bindGesture("kb:y", "confirmRecall")
-			self.bindGesture("kb:n", "cancelRecall")
-			self.bindGesture("kb:p", "stealthRecall")
-
-			def _autoCancel():
-				if (
-					getattr(self, "_recallPending", False)
-					and getattr(self, "_recallConfirmationToken", 0) == token
-				):
-					self._endRecallConfirmation("取消")
-
-			core.callLater(10000, _autoCancel)
 
 		_runOnWorkerThread(
 			self._refreshRecallConfirmationState,
 			onDone=_afterState,
 			taskName="recallConfirmationState",
 		)
+
+	def _onRecallConfirmationChoice(self, actionName):
+		"""Act on the button the user chose in the recall confirmation dialog.
+
+		Acting on LINE's own dialog re-OCRs it, so let the screen repaint after
+		our dialog closes; otherwise the screenshot still has it covering LINE.
+		"""
+		core.callLater(150, lambda: self._endRecallConfirmation(actionName))
+
+	def _onRecallConfirmationDialogFailed(self):
+		"""Release the pending recall when its dialog could not be shown.
+
+		LINE's own dialog is left alone; the user can answer it directly. What
+		must not happen is the pending flag staying set, which would make every
+		later recall silently do nothing.
+		"""
+		self._clearRecallConfirmationState()
+		# Translators: Announced when the recall confirmation dialog cannot be opened.
+		ui.message(_("無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"))
 
 	def _isRecallConfirmationDialogVisible(self):
 		"""Return True when the centered LINE recall confirmation dialog is visible."""
@@ -12594,7 +12619,7 @@ class AppModule(appModuleHandler.AppModule):
 			return False
 
 	def _watchForRecallConfirmationDialog(self, retriesLeft=6, delayMs=250):
-		"""Poll briefly for the LINE recall confirmation dialog, then start Y/N/P mode."""
+		"""Poll briefly for the LINE recall confirmation dialog, then ask for confirmation."""
 		watchId = getattr(self, "_recallDialogWatchId", 0) + 1
 		self._recallDialogWatchId = watchId
 
@@ -12638,8 +12663,8 @@ class AppModule(appModuleHandler.AppModule):
 		elif actionName == "轉為文字":
 			self._watchForPhotoTextConsentDialog()
 
-	def _clearRecallConfirmationBindings(self):
-		"""Clear the transient recall-confirmation bindings and cached dialog state."""
+	def _clearRecallConfirmationState(self):
+		"""Clear the pending recall confirmation and its cached dialog state."""
 		self._recallPending = False
 		self._recallActionInProgress = False
 		self._recallDialogActions = set()
@@ -12647,15 +12672,6 @@ class AppModule(appModuleHandler.AppModule):
 		self._recallDialogRect = None
 		self._recallDialogHwnd = None
 		self._recallDialogIsModern = False
-
-		# Remove dynamic confirmation gesture bindings.
-		for key in ("kb:y", "kb:n", "kb:p"):
-			try:
-				self.removeGestureBinding(key)
-			except LookupError:
-				pass
-			except Exception:
-				pass
 
 	def _performRecallConfirmationAction(self, actionName):
 		"""Activate a specific action on the current recall confirmation dialog."""
@@ -12742,7 +12758,7 @@ class AppModule(appModuleHandler.AppModule):
 			def _afterVisible(stillVisible):
 				if getattr(self, "_recallConfirmationToken", 0) != token:
 					return
-				self._clearRecallConfirmationBindings()
+				self._clearRecallConfirmationState()
 				if stillVisible:
 					if actionName == "無痕收回":
 						ui.message(_("無痕收回可能未成功"))
@@ -12772,8 +12788,8 @@ class AppModule(appModuleHandler.AppModule):
 		"""End the recall confirmation by activating the requested dialog action.
 
 		The action performer re-OCRs the dialog, so it runs on a worker
-		thread. A failure must never leave the y/n/p bindings (and the
-		in-progress flag) stuck, or those letters stay swallowed in LINE.
+		thread. A failure must never leave the pending flags stuck, or the next
+		recall attempt is ignored.
 		"""
 		if not getattr(self, "_recallPending", False) or getattr(self, "_recallActionInProgress", False):
 			return
@@ -12781,8 +12797,8 @@ class AppModule(appModuleHandler.AppModule):
 
 		def _afterPerform(performed):
 			if performed is None:
-				# The worker raised; reset everything so keys are released.
-				self._clearRecallConfirmationBindings()
+				# The worker raised; reset everything so recall works again.
+				self._clearRecallConfirmationState()
 				return
 			if not performed:
 				self._recallActionInProgress = False
@@ -12795,27 +12811,6 @@ class AppModule(appModuleHandler.AppModule):
 			onDone=_afterPerform,
 			taskName="recallConfirmationAction",
 		)
-
-	def script_confirmRecall(self, gesture):
-		"""User pressed Y to choose the standard recall action."""
-		if not getattr(self, "_recallPending", False):
-			gesture.send()
-			return
-		self._endRecallConfirmation("收回")
-
-	def script_cancelRecall(self, gesture):
-		"""User pressed N to cancel message recall."""
-		if not getattr(self, "_recallPending", False):
-			gesture.send()
-			return
-		self._endRecallConfirmation("取消")
-
-	def script_stealthRecall(self, gesture):
-		"""User pressed P to choose stealth recall (requires Premium)."""
-		if not getattr(self, "_recallPending", False):
-			gesture.send()
-			return
-		self._endRecallConfirmation("無痕收回")
 
 	def _capturePhotoTextConsentState(self):
 		"""Capture OCR and UIA state for the first-run photo-to-text consent dialog."""
@@ -13047,39 +13042,45 @@ class AppModule(appModuleHandler.AppModule):
 		}
 
 	def _beginPhotoTextConsent(self):
-		"""Prompt for photo upload consent and bind A/D shortcuts.
+		"""Ask for photo upload consent in a standard NVDA message dialog.
 
 		The dialog-state capture does screen OCR (seconds), so it runs on a
-		worker thread; binding and announcing continue on the main thread.
+		worker thread; showing the dialog continues on the main thread.
 		"""
 
 		def _afterState(state):
-			prompt = _getPhotoTextConsentPrompt()
-			if getattr(self, "_photoTextConsentPending", False):
-				ui.message(prompt)
-				return
+			from ._confirmationDialogs import openPhotoTextConsentDialog
 
-			token = getattr(self, "_photoTextConsentToken", 0) + 1
-			self._photoTextConsentToken = token
-			self._photoTextConsentPending = True
-			ui.message(prompt)
-			self.bindGesture("kb:a", "acceptPhotoTextConsent")
-			self.bindGesture("kb:d", "declinePhotoTextConsent")
-
-			def _autoDecline():
-				if (
-					getattr(self, "_photoTextConsentPending", False)
-					and getattr(self, "_photoTextConsentToken", 0) == token
-				):
-					self._endPhotoTextConsent("不同意")
-
-			core.callLater(10000, _autoDecline)
+			if not getattr(self, "_photoTextConsentPending", False):
+				self._photoTextConsentToken = getattr(self, "_photoTextConsentToken", 0) + 1
+				self._photoTextConsentPending = True
+			# When a second detection races the first, the dialog is already up;
+			# opening it again just raises and focuses it.
+			openPhotoTextConsentDialog(
+				_getPhotoTextConsentPrompt(),
+				self._onPhotoTextConsentChoice,
+				onFailed=self._onPhotoTextConsentDialogFailed,
+			)
 
 		_runOnWorkerThread(
 			self._refreshPhotoTextConsentState,
 			onDone=_afterState,
 			taskName="photoConsentState",
 		)
+
+	def _onPhotoTextConsentChoice(self, actionName):
+		"""Act on the button the user chose in the photo consent dialog.
+
+		Acting on LINE's own dialog re-OCRs it, so let the screen repaint after
+		our dialog closes; otherwise the screenshot still has it covering LINE.
+		"""
+		core.callLater(150, lambda: self._endPhotoTextConsent(actionName))
+
+	def _onPhotoTextConsentDialogFailed(self):
+		"""Release the pending consent when its dialog could not be shown."""
+		self._clearPhotoTextConsentState()
+		# Translators: Announced when the photo consent dialog cannot be opened.
+		ui.message(_("無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"))
 
 	def _isPhotoTextConsentDialogVisible(self):
 		"""Return True when LINE's first-run photo consent dialog is visible."""
@@ -13103,7 +13104,7 @@ class AppModule(appModuleHandler.AppModule):
 			return False
 
 	def _watchForPhotoTextConsentDialog(self, retriesLeft=8, delayMs=250):
-		"""Poll briefly for LINE's first-run photo consent dialog, then start A/D mode."""
+		"""Poll briefly for LINE's first-run photo consent dialog, then ask for consent."""
 		watchId = getattr(self, "_photoTextConsentWatchId", 0) + 1
 		self._photoTextConsentWatchId = watchId
 
@@ -13139,22 +13140,14 @@ class AppModule(appModuleHandler.AppModule):
 
 		core.callLater(delayMs, lambda: _poll(retriesLeft))
 
-	def _clearPhotoTextConsentBindings(self):
-		"""Clear the transient photo-consent bindings and cached dialog state."""
+	def _clearPhotoTextConsentState(self):
+		"""Clear the pending photo consent and its cached dialog state."""
 		self._photoTextConsentPending = False
 		self._photoTextConsentActionInProgress = False
 		self._photoTextConsentDialogActions = set()
 		self._photoTextConsentDialogTargets = {}
 		self._photoTextConsentDialogRect = None
 		self._photoTextConsentDialogHwnd = None
-
-		for key in ("kb:a", "kb:d"):
-			try:
-				self.removeGestureBinding(key)
-			except LookupError:
-				pass
-			except Exception:
-				pass
 
 	def _performPhotoTextConsentAction(self, actionName):
 		"""Activate a specific action on the current photo consent dialog."""
@@ -13230,7 +13223,7 @@ class AppModule(appModuleHandler.AppModule):
 			def _afterVisible(stillVisible):
 				if getattr(self, "_photoTextConsentToken", 0) != token:
 					return
-				self._clearPhotoTextConsentBindings()
+				self._clearPhotoTextConsentState()
 				if stillVisible:
 					if actionName == "同意":
 						ui.message(_("同意提供照片可能未成功"))
@@ -13264,9 +13257,9 @@ class AppModule(appModuleHandler.AppModule):
 
 		def _afterPerform(performed):
 			if performed is None:
-				# Never leave the a/d bindings (and the in-progress flag)
-				# stuck, or those letters stay swallowed in LINE.
-				self._clearPhotoTextConsentBindings()
+				# Never leave the pending flags stuck, or the next "Convert to
+				# text" attempt is ignored.
+				self._clearPhotoTextConsentState()
 				return
 			if not performed:
 				self._photoTextConsentActionInProgress = False
@@ -13280,20 +13273,6 @@ class AppModule(appModuleHandler.AppModule):
 			onDone=_afterPerform,
 			taskName="photoConsentAction",
 		)
-
-	def script_acceptPhotoTextConsent(self, gesture):
-		"""User pressed A to agree to LINE's first-run photo upload notice."""
-		if not getattr(self, "_photoTextConsentPending", False):
-			gesture.send()
-			return
-		self._endPhotoTextConsent("同意")
-
-	def script_declinePhotoTextConsent(self, gesture):
-		"""User pressed D to decline LINE's first-run photo upload notice."""
-		if not getattr(self, "_photoTextConsentPending", False):
-			gesture.send()
-			return
-		self._endPhotoTextConsent("不同意")
 
 	@script(
 		gesture="kb:applications",

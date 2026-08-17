@@ -774,25 +774,27 @@ def test_extract_recall_dialog_action_labels_handles_modern_dialog_without_match
 
 
 def test_get_recall_confirmation_prompt_marks_stealth_option_as_premium():
+	"""The dialog's buttons name the actions, so the body only has to carry what
+	a button label cannot: that stealth recall needs Premium."""
 	ns = _load_line_symbols(
 		function_names={"_getRecallConfirmationPrompt"},
 		namespace={"_": lambda text: text},
 	)
 
-	assert ns["_getRecallConfirmationPrompt"]({"收回", "取消"}) == "確認要收回嗎？按 Y 收回，按 N 取消"
+	assert ns["_getRecallConfirmationPrompt"]({"收回", "取消"}) == "確認要收回嗎？"
 	assert (
 		ns["_getRecallConfirmationPrompt"](
 			{"收回", "取消"},
 			isModernDialog=True,
 		)
-		== "確認要收回嗎？按 Y 收回，按 N 取消"
+		== "確認要收回嗎？"
 	)
 	assert (
 		ns["_getRecallConfirmationPrompt"](
 			{"無痕收回", "收回", "取消"},
 			isModernDialog=True,
 		)
-		== "確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium"
+		== "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
 	)
 
 
@@ -845,15 +847,14 @@ def test_is_photo_text_consent_dialog_text_requires_upload_notice_and_buttons():
 	)
 
 
-def test_get_photo_text_consent_prompt_mentions_upload_notice_and_a_d_shortcuts():
+def test_get_photo_text_consent_prompt_mentions_upload_notice():
+	"""The consent dialog must still say where the photo goes before asking."""
 	ns = _load_line_symbols(
 		function_names={"_getPhotoTextConsentPrompt"},
 		namespace={"_": lambda text: text},
 	)
 
-	assert (
-		ns["_getPhotoTextConsentPrompt"]() == "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
-	)
+	assert ns["_getPhotoTextConsentPrompt"]() == "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
 
 
 def test_extract_photo_text_consent_action_click_points_use_button_rows_not_dialog_title():
@@ -1258,69 +1259,42 @@ def test_extract_recall_dialog_action_click_points_uses_ocr_label_centers():
 	}
 
 
-def test_begin_recall_confirmation_binds_y_n_p_shortcuts():
+def _get_app_module_method(name):
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
 		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
-	begin_method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_beginRecallConfirmation"
-	)
-
-	bind_calls = set()
-	for node in ast.walk(begin_method):
-		if not (
-			isinstance(node, ast.Call)
-			and isinstance(node.func, ast.Attribute)
-			and node.func.attr == "bindGesture"
-			and len(node.args) >= 2
-		):
-			continue
-		first_arg, second_arg = node.args[:2]
-		if all(
-			isinstance(arg, ast.Constant) and isinstance(arg.value, str) for arg in (first_arg, second_arg)
-		):
-			bind_calls.add((first_arg.value, second_arg.value))
-
-	assert ("kb:y", "confirmRecall") in bind_calls
-	assert ("kb:n", "cancelRecall") in bind_calls
-	assert ("kb:p", "stealthRecall") in bind_calls
+	return next(node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == name)
 
 
-def test_begin_photo_text_consent_binds_a_d_shortcuts():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	begin_method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_beginPhotoTextConsent"
-	)
+def _called_function_names(tree):
+	return {
+		node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+		for node in ast.walk(tree)
+		if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
+	}
 
-	bind_calls = set()
-	for node in ast.walk(begin_method):
-		if not (
-			isinstance(node, ast.Call)
-			and isinstance(node.func, ast.Attribute)
-			and node.func.attr == "bindGesture"
-			and len(node.args) >= 2
-		):
-			continue
-		first_arg, second_arg = node.args[:2]
-		if all(
-			isinstance(arg, ast.Constant) and isinstance(arg.value, str) for arg in (first_arg, second_arg)
-		):
-			bind_calls.add((first_arg.value, second_arg.value))
 
-	assert ("kb:a", "acceptPhotoTextConsent") in bind_calls
-	assert ("kb:d", "declinePhotoTextConsent") in bind_calls
+def test_begin_recall_confirmation_opens_the_standard_message_dialog():
+	"""Recall is confirmed in a real dialog, not by temporarily stealing Y/N/P
+	from LINE: those bindings swallowed plain letters in the chat and needed a
+	timeout to hand them back."""
+	begin_method = _get_app_module_method("_beginRecallConfirmation")
+	calls = _called_function_names(begin_method)
+
+	assert "openRecallConfirmationDialog" in calls
+	assert "bindGesture" not in calls
+
+
+def test_begin_photo_text_consent_opens_the_standard_message_dialog():
+	"""Same for LINE's first-run photo upload notice, which used to steal A/D."""
+	begin_method = _get_app_module_method("_beginPhotoTextConsent")
+	calls = _called_function_names(begin_method)
+
+	assert "openPhotoTextConsentDialog" in calls
+	assert "bindGesture" not in calls
 
 
 def test_end_recall_confirmation_defers_user_feedback_until_post_click_verification():
@@ -1360,7 +1334,7 @@ def test_end_recall_confirmation_defers_user_feedback_until_post_click_verificat
 		for node in ast.walk(end_method)
 		if isinstance(node, ast.Call)
 		and isinstance(node.func, ast.Attribute)
-		and node.func.attr == "_clearRecallConfirmationBindings"
+		and node.func.attr == "_clearRecallConfirmationState"
 	]
 	failure_ifs = [
 		node
@@ -1377,7 +1351,7 @@ def test_end_recall_confirmation_defers_user_feedback_until_post_click_verificat
 		for call in ast.walk(stmt)
 		if isinstance(call, ast.Call)
 		and isinstance(call.func, ast.Attribute)
-		and call.func.attr == "_clearRecallConfirmationBindings"
+		and call.func.attr == "_clearRecallConfirmationState"
 	]
 	assert len(clear_calls) == len(guarded_clear_calls), (
 		"_endRecallConfirmation may clear the recall bindings only on the worker-failure branch"
@@ -2237,15 +2211,29 @@ def test_message_focus_skips_off_window_elements_before_copy_read():
 	assert copy_read_calls, "message focus should still use copy-read for visible message items"
 
 
-def test_no_private_gesture_map_mutation():
-	"""Transient bindings must be torn down via removeGestureBinding (public
-	API since NVDA 2014.3), not by mutating the private _gestureMap dict."""
+def test_no_transient_letter_gesture_bindings():
+	"""Confirmations are asked in a dialog, so the add-on never binds bare
+	letters at runtime. Such bindings swallowed those letters inside LINE's chat
+	until a timeout released them, and mutating the private _gestureMap to undo
+	them was worse still."""
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
 	assert "._gestureMap[" not in source, (
-		"use ScriptableObject.removeGestureBinding instead of mutating the private _gestureMap"
+		"never mutate the private _gestureMap; confirmations belong in a message dialog"
 	)
-	assert "removeGestureBinding" in source
+	assert "bindGesture" not in source, (
+		"ask in a gui.message.MessageDialog instead of binding transient letter keys"
+	)
+
+
+def test_no_deprecated_message_box():
+	"""gui.messageBox is a deprecated alias as of NVDA 2025.1; every dialog the
+	add-on shows goes through gui.message.MessageDialog instead."""
+	addon_dir = Path(__file__).resolve().parents[1] / "addon"
+	offenders = [
+		str(path) for path in addon_dir.rglob("*.py") if "messageBox" in path.read_text(encoding="utf-8")
+	]
+	assert not offenders, f"gui.messageBox used in: {offenders}"
 
 
 def test_no_deprecated_braille_text_region():

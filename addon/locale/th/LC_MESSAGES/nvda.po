@@ -13,18 +13,16 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 
 #: addon\appModules\line.py:602
-msgid "確認要收回嗎？按 Y 收回，按 N 取消"
-msgstr "ยืนยันการเรียกคืนหรือไม่ กด Y เพื่อเรียกคืน กด N เพื่อยกเลิก"
+msgid "確認要收回嗎？"
+msgstr "ยืนยันการเรียกคืนหรือไม่"
 
 #: addon\appModules\line.py:654
-msgid "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
-msgstr ""
-"การแปลงเป็นข้อความจะอัปโหลดรูปภาพไปยังเซิร์ฟเวอร์ LINE เพื่อประมวลผล กด A เพื่อยอมรับ กด D เพื่อไม่ยอมรับ"
+msgid "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
+msgstr "การแปลงเป็นข้อความจะอัปโหลดรูปภาพไปยังเซิร์ฟเวอร์ LINE เพื่อประมวลผล คุณยอมรับหรือไม่"
 
 #: addon\appModules\line.py:601
-msgid "確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium"
-msgstr ""
-"ยืนยันการเรียกคืนหรือไม่ กด Y เพื่อเรียกคืน กด N เพื่อยกเลิก กด P เพื่อเรียกคืนแบบไร้ร่องรอย ต้องใช้ Premium"
+msgid "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
+msgstr "ยืนยันการเรียกคืนหรือไม่\nการเรียกคืนแบบไร้ร่องรอยจะไม่แจ้งเตือนอีกฝ่าย และต้องใช้ Premium"
 
 #: addon\appModules\line.py:2567
 #: addon\appModules\line.py:2547
@@ -893,3 +891,39 @@ msgstr "ยกเลิกแล้ว ไม่มีการส่งรู�
 #: addon\appModules\line.py:3764
 msgid "尚未同意將圖片傳送給第三方 AI 服務"
 msgstr "ยังไม่ได้ให้ความยินยอมในการส่งรูปภาพไปยังบริการ AI ของบุคคลที่สาม"
+
+#: addon\appModules\_confirmationDialogs.py:134
+msgid "LINE - 收回訊息"
+msgstr "LINE - เรียกคืนข้อความ"
+
+#: addon\appModules\_confirmationDialogs.py:104
+msgid "收回(&Y)"
+msgstr "เรียกคืน (&Y)"
+
+#: addon\appModules\_confirmationDialogs.py:115
+msgid "無痕收回(&P)"
+msgstr "เรียกคืนแบบไร้ร่องรอย (&P)"
+
+#: addon\appModules\_confirmationDialogs.py:124
+msgid "取消(&N)"
+msgstr "ยกเลิก (&N)"
+
+#: addon\appModules\_confirmationDialogs.py:166
+msgid "LINE - 同意提供照片"
+msgstr "LINE - ยินยอมให้ใช้รูปภาพ"
+
+#: addon\appModules\_confirmationDialogs.py:173
+msgid "同意(&A)"
+msgstr "ยอมรับ (&A)"
+
+#: addon\appModules\_confirmationDialogs.py:181
+msgid "不同意(&D)"
+msgstr "ไม่ยอมรับ (&D)"
+
+#: addon\appModules\line.py:12562
+msgid "無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"
+msgstr "ไม่สามารถเปิดกล่องโต้ตอบยืนยันการเรียกคืนได้ กรุณาใช้หน้าต่างยืนยันของ LINE โดยตรง"
+
+#: addon\appModules\line.py:13083
+msgid "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
+msgstr "ไม่สามารถเปิดกล่องโต้ตอบยินยอมรูปภาพได้ กรุณาใช้หน้าต่างยืนยันของ LINE โดยตรง"

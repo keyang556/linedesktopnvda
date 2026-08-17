@@ -30,14 +30,13 @@ addon_info = AddonInfo(
 Provides improved navigation for chat lists, messages, contacts, and message input.
 Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."""),
 	# version
-	addon_version="1.3.0-beta3",
+	addon_version="1.3.0-beta4",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
-	addon_changelog=_("""Incoming-call shortcuts (NVDA+Windows+A/D/S/F) no longer freeze NVDA: they now run on a worker thread on the real gesture path.
-AI image description asks for consent, naming the service, before sending a screenshot to a cloud AI provider for the first time; consent is remembered per service.
-All gestures now appear under a single translated "LINE Desktop" category in the Input Gestures dialog.
-Braille messages follow NVDA's braille message timeout settings.
-NVDA 2024.1 or later is now required."""),
+	addon_changelog=_("""Message recall and the "Convert to text" photo notice now ask in a standard NVDA dialog instead of temporarily binding the Y/N/P and A/D keys.
+Those letters are no longer swallowed inside LINE, and the confirmation no longer times out after ten seconds; Y/N/P and A/D still work as button shortcuts in the dialog.
+All dialogs now use NVDA's message dialog API, replacing the deprecated gui.messageBox.
+NVDA 2025.1 or later is now required."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support
@@ -47,10 +46,11 @@ NVDA 2024.1 or later is now required."""),
 	# Documentation file name
 	addon_docFileName="readme.html",
 	# Minimum NVDA version supported (e.g. "2019.3.0", minor version is optional)
-	# 2024.1 is the floor: the add-on passes speakOnDemand to the script
-	# decorator (added in 2024.1), on top of the controlTypes.Role/State
+	# 2025.1 is the floor: every dialog the add-on shows is built on the
+	# gui.message message dialog API (added in 2025.1), on top of the
+	# speakOnDemand script parameter (2024.1) and the controlTypes.Role/State
 	# enums (2021.2) used throughout.
-	addon_minimumNVDAVersion="2024.1",
+	addon_minimumNVDAVersion="2025.1",
 	# Last NVDA version supported/tested (e.g. "2024.4.0", ideally more recent than minimum version)
 	addon_lastTestedNVDAVersion="2026.2",
 	# Add-on update channel (default is None, denoting stable releases,

@@ -13,16 +13,16 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 
 #: addon\appModules\line.py:602
-msgid "確認要收回嗎？按 Y 收回，按 N 取消"
-msgstr "確認要收回嗎？按 Y 收回，按 N 取消"
+msgid "確認要收回嗎？"
+msgstr "確認要收回嗎？"
 
 #: addon\appModules\line.py:654
-msgid "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
-msgstr "轉為文字會將照片上傳到 LINE 伺服器處理。按 A 同意，按 D 不同意"
+msgid "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
+msgstr "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
 
 #: addon\appModules\line.py:601
-msgid "確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium"
-msgstr "確認要收回嗎？按 Y 收回，按 N 取消，按 P 無痕收回，需要 Premium"
+msgid "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
+msgstr "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
 
 #: addon\appModules\line.py:2567
 #: addon\appModules\line.py:2547
@@ -891,3 +891,39 @@ msgstr "已取消，未傳送圖片"
 #: addon\appModules\line.py:3764
 msgid "尚未同意將圖片傳送給第三方 AI 服務"
 msgstr "尚未同意將圖片傳送給第三方 AI 服務"
+
+#: addon\appModules\_confirmationDialogs.py:134
+msgid "LINE - 收回訊息"
+msgstr "LINE - 收回訊息"
+
+#: addon\appModules\_confirmationDialogs.py:104
+msgid "收回(&Y)"
+msgstr "收回(&Y)"
+
+#: addon\appModules\_confirmationDialogs.py:115
+msgid "無痕收回(&P)"
+msgstr "無痕收回(&P)"
+
+#: addon\appModules\_confirmationDialogs.py:124
+msgid "取消(&N)"
+msgstr "取消(&N)"
+
+#: addon\appModules\_confirmationDialogs.py:166
+msgid "LINE - 同意提供照片"
+msgstr "LINE - 同意提供照片"
+
+#: addon\appModules\_confirmationDialogs.py:173
+msgid "同意(&A)"
+msgstr "同意(&A)"
+
+#: addon\appModules\_confirmationDialogs.py:181
+msgid "不同意(&D)"
+msgstr "不同意(&D)"
+
+#: addon\appModules\line.py:12562
+msgid "無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"
+msgstr "無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"
+
+#: addon\appModules\line.py:13083
+msgid "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
+msgstr "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
