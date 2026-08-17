@@ -1266,9 +1266,7 @@ def _get_app_module_method(name):
 	app_module = next(
 		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
-	return next(
-		node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == name
-	)
+	return next(node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == name)
 
 
 def _called_function_names(tree):
