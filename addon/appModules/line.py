@@ -2264,7 +2264,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"command-a-plus",
-	"openai-fast",
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"openai",
@@ -2279,12 +2278,12 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"kimi",
 	"kimi-code",
 	"kimi-k3",
+	"muse-glimmer",
 	"nova",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"command-a-plus": "command a plus",
-	"openai-fast": "GPT-5 Nano",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
 	"openai": "GPT-5.4 Nano",
@@ -2299,6 +2298,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"kimi": "Moonshot Kimi K2.6",
 	"kimi-code": "Moonshot Kimi K2.7 Code",
 	"kimi-k3": "Moonshot Kimi K3",
+	"muse-glimmer": "Muse Glimmer 30B",
 	"nova": "Nova 2 Lite",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
