@@ -2244,7 +2244,6 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 # whichever they have access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = (
 	"gemma4:31b-cloud",
-	"minimax-m3:cloud",
 )
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
@@ -2253,6 +2252,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
 	"minimaxai/minimax-m3",
+	"moonshotai/kimi-k3",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"stepfun-ai/step-3.7-flash",
