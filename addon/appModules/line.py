@@ -2233,6 +2233,7 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemini-3.5-flash-lite",
 	"gemini-3.6-flash",
 	"gemini-3.7-flash",
+	"gemini-3.8-flash",
 	"gemini-flash-latest",
 	"gemini-flash-lite-latest",
 	"gemini-2.5-flash",
@@ -2264,6 +2265,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"command-a-plus",
+	"deepseek/deepseek-v4-flash-vision-exp",
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"openai",
@@ -2273,6 +2275,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"gpt-5.6-luna",
 	"grok",
 	"grok-large",
+	"grok-4.6",
 	"minimax",
 	"mistral-large",
 	"kimi",
@@ -2280,10 +2283,15 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"kimi-k3",
 	"muse-glimmer",
 	"nova",
+	"z-ai/glm-5.3-flash",
+	"YoannDev90/diffusiongemma-26b-a4b-it:free",
+	"YoannDev90/muse-glimmer-30b:free",
+	"vendouple/laguna-s-2.1:free",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"command-a-plus": "command a plus",
+	"deepseek/deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision Exp",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
 	"openai": "GPT-5.4 Nano",
@@ -2293,6 +2301,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gpt-5.6-luna": "GPT-5.6 Luna",
 	"grok": "Grok 4.20 Non-Reasoning",
 	"grok-large": "Grok 4.3",
+	"grok-4.6": "Grok 4.6",
 	"minimax": "MiniMax M3",
 	"mistral-large": "Mistral Large 3",
 	"kimi": "Moonshot Kimi K2.6",
@@ -2300,6 +2309,10 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"kimi-k3": "Moonshot Kimi K3",
 	"muse-glimmer": "Muse Glimmer 30B",
 	"nova": "Nova 2 Lite",
+		"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash"
+	"YoannDev90/diffusiongemma-26b-a4b-it:free": "DiffusionGemma 26b A4b",
+	"YoannDev90/muse-glimmer-30b:free": "Muse Glimmer 30B",
+	"vendouple/laguna-s-2.1:free": "Laguna s2.1 (Free)",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"
