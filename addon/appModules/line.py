@@ -2284,7 +2284,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"z-ai/glm-5.3-flash",
 	"YoannDev90/diffusiongemma-26b-a4b-it:free",
 	"YoannDev90/muse-glimmer-30b:free",
-	"vendouple/laguna-s-2.1:free",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
@@ -2310,7 +2309,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash",
 	"YoannDev90/diffusiongemma-26b-a4b-it:free": "DiffusionGemma 26b A4b",
 	"YoannDev90/muse-glimmer-30b:free": "Muse Glimmer 30B",
-	"vendouple/laguna-s-2.1:free": "Laguna s2.1 (Free)",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"
