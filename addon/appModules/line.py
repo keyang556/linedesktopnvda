@@ -2309,7 +2309,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"kimi-k3": "Moonshot Kimi K3",
 	"muse-glimmer": "Muse Glimmer 30B",
 	"nova": "Nova 2 Lite",
-		"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash"
+	"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash"
 	"YoannDev90/diffusiongemma-26b-a4b-it:free": "DiffusionGemma 26b A4b",
 	"YoannDev90/muse-glimmer-30b:free": "Muse Glimmer 30B",
 	"vendouple/laguna-s-2.1:free": "Laguna s2.1 (Free)",
