@@ -2264,6 +2264,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"command-a-plus",
 	"deepseek/deepseek-v4-flash-vision-exp",
+	"deepseek/deepseek-v4.1-flash",
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"openai",
@@ -2290,6 +2291,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"command-a-plus": "command a plus",
 	"deepseek/deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision Exp",
+	"deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
 	"openai": "GPT-5.4 Nano",
