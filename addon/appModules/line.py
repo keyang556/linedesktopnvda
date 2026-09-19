@@ -2256,6 +2256,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"stepfun-ai/step-3.7-flash",
 	"thinkingmachines/inkling",
+"z-ai/glm-5.3-flash",
 )
 # Default Pollinations.AI model used when the user has not picked one.
 _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
