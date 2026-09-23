@@ -2285,8 +2285,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"muse-glimmer",
 	"nova",
 	"z-ai/glm-5.3-flash",
-	"YoannDev90/diffusiongemma-26b-a4b-it:free",
-	"YoannDev90/muse-glimmer-30b:free",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
@@ -2312,8 +2310,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"muse-glimmer": "Muse Glimmer 30B",
 	"nova": "Nova 2 Lite",
 	"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash",
-	"YoannDev90/diffusiongemma-26b-a4b-it:free": "DiffusionGemma 26b A4b",
-	"YoannDev90/muse-glimmer-30b:free": "Muse Glimmer 30B",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"
