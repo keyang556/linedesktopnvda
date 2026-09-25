@@ -2247,6 +2247,7 @@ _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = ("gemma4:31b-cloud",)
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
+	"deepseek-ai/deepseek-v4.1-flash",
 	"google/gemma-4-31b-it",
 	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
@@ -2315,6 +2316,9 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 _IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL = "gpt-5.6-terra"
 # Vision-capable OpenAI models exposed in the settings panel.
 _IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS = (
+	"gpt-6-astra",
+	"gpt-6-sol",
+	"gpt-6-luna",
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",
