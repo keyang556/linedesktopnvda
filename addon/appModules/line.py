@@ -2265,8 +2265,8 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"command-a-plus",
-	"deepseek/deepseek-v4-flash-vision-exp",
 	"deepseek/deepseek-v4.1-flash",
+	"openai/gpt-5.3-codex",
 	"gpt-5.4",
 	"gpt-5.4-mini",
 	"openai",
@@ -2283,15 +2283,14 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"kimi",
 	"kimi-code",
 	"kimi-k3",
-	"muse-glimmer",
 	"nova",
 	"z-ai/glm-5.3-flash",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"command-a-plus": "command a plus",
-	"deepseek/deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision Exp",
 	"deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
+	"openai/gpt-5.3-codex": "GPT-5.3 Codex",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
 	"openai": "GPT-5.4 Nano",
@@ -2308,7 +2307,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"kimi": "Moonshot Kimi K2.6",
 	"kimi-code": "Moonshot Kimi K2.7 Code",
 	"kimi-k3": "Moonshot Kimi K3",
-	"muse-glimmer": "Muse Glimmer 30B",
 	"nova": "Nova 2 Lite",
 	"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash",
 }
