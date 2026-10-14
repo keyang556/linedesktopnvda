@@ -2264,8 +2264,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
-	"command-a-plus",
-	"deepseek/deepseek-v4.1-flash",
 	"openai/gpt-5.3-codex",
 	"gpt-5.4",
 	"gpt-5.4-mini",
@@ -2275,6 +2273,8 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",
 	"openai/gpt-6-astra",
+	"openai/gpt-6-sol",
+	"openai/gpt-6-luna",
 	"openai/gpt-6.1-sol",
 	"grok",
 	"grok-large",
@@ -2284,13 +2284,10 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 	"kimi",
 	"kimi-code",
 	"kimi-k3",
-	"nova",
 	"z-ai/glm-5.3-flash",
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
-	"command-a-plus": "command a plus",
-	"deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
 	"openai/gpt-5.3-codex": "GPT-5.3 Codex",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
@@ -2300,6 +2297,8 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"gpt-5.6-terra": "GPT-5.6 Terra",
 	"gpt-5.6-luna": "GPT-5.6 Luna",
 	"openai/gpt-6-astra": "GPT-6 Astra",
+	"openai/gpt-6-sol": "GPT-6 Sol",
+	"openai/gpt-6-luna": "GPT-6 Luna",
 	"openai/gpt-6.1-sol": "GPT-6.1 Sol",
 	"grok": "Grok 4.20 Non-Reasoning",
 	"grok-large": "Grok 4.3",
@@ -2309,7 +2308,6 @@ _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
 	"kimi": "Moonshot Kimi K2.6",
 	"kimi-code": "Moonshot Kimi K2.7 Code",
 	"kimi-k3": "Moonshot Kimi K3",
-	"nova": "Nova 2 Lite",
 	"z-ai/glm-5.3-flash": "Z.ai GLM-5.3 Flash",
 }
 # Default OpenAI model used when the user has not picked one in the settings panel.
