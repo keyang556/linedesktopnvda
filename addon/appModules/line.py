@@ -2251,12 +2251,10 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/gemma-4-31b-it",
 	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
-	"minimaxai/minimax-m3",
-	"moonshotai/kimi-k3",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-	"stepfun-ai/step-3.7-flash",
-	"thinkingmachines/inkling",
+	"nvidia/nemotron-3.5-super-vl-120b-a12b",
+	"stepfun-ai/step-5-preview",
 	"z-ai/glm-5.3-flash",
 )
 # Default Pollinations.AI model used when the user has not picked one.
