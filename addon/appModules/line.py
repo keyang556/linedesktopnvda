@@ -2262,6 +2262,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL = "gpt-5.6-luna"
 # Vision-capable Pollinations.AI models. Strings are the actual model IDs sent
 # to the API; the user-facing labels live in _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS.
 _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
+	"deepseek/deepseek-v4.1-flash",
 	"openai/gpt-5.3-codex",
 	"gpt-5.4",
 	"gpt-5.4-mini",
@@ -2286,6 +2287,7 @@ _IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS = (
 )
 # Display labels for Pollinations.AI models, surfaced in the settings dropdown.
 _IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS = {
+	"deepseek/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
 	"openai/gpt-5.3-codex": "GPT-5.3 Codex",
 	"gpt-5.4": "gpt-5.4",
 	"gpt-5.4-mini": "GPT-5.4 Mini",
