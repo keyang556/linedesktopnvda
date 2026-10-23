@@ -2251,6 +2251,7 @@ _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
 	"google/gemma-4-31b-it",
 	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
+	"minimaxai/minimax-m3.1-flash",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"nvidia/nemotron-3.5-super-vl-120b-a12b",
