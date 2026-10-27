@@ -1,5 +1,10 @@
 const translations = {
     "zh-TW": {
+        "alternative-heading": "推薦其他專案：LINE MR for Windows",
+        "alternative-text": "如果主要需要操作 LINE 介面與閱讀訊息，我們建議先試用 LINE MR。它透過 Qt 無障礙橋接元件，讓 NVDA 直接讀取控制項和訊息文字，減少依賴 OCR 與剪貼簿。",
+        "alternative-note": "LINE MR 需要在 LINE 中安裝橋接 DLL，請先確認相容性。兩個附加元件不建議同時啟用。本專案仍提供聊天紀錄閱讀器與 AI 圖片描述功能。",
+        "alternative-link": "查看 LINE MR for Windows 專案與安裝說明",
+
         "skip-link": "跳至主要內容",
         "lang-label": "選擇語言",
         "site-title": "LINE NVDA 桌面版附加元件",
@@ -26,6 +31,11 @@ const translations = {
         "footer-text": "本開源專案託管於 GitHub (keyang556/linedesktopnvda)。此為社群開發之附加元件，與 LINE 官方無直接關聯。"
     },
     "en": {
+        "alternative-heading": "Recommended alternative: LINE MR for Windows",
+        "alternative-text": "For everyday navigation and reading messages in LINE for Windows, we recommend trying LINE MR first. Its Qt accessibility bridge exposes controls and message text directly to NVDA, reducing reliance on OCR and clipboard workarounds.",
+        "alternative-note": "LINE MR installs a bridge DLL into LINE; please check compatibility before installing. The two add-ons should not be enabled together. This project still offers a chat-history reader and AI image descriptions.",
+        "alternative-link": "Visit LINE MR for Windows and installation instructions",
+
         "skip-link": "Skip to main content",
         "lang-label": "Select Language",
         "site-title": "LINE Desktop NVDA Add-on",
@@ -52,6 +62,11 @@ const translations = {
         "footer-text": "This open-source project is hosted on GitHub (keyang556/linedesktopnvda). It is a community-driven add-on and is not directly affiliated with LINE."
     },
     "ja": {
+        "alternative-heading": "おすすめの代替プロジェクト：LINE MR for Windows",
+        "alternative-text": "Windows 版 LINE の基本操作やメッセージの読み上げには、LINE MR を先に試すことをおすすめします。Qt アクセシビリティブリッジによって NVDA が操作部品とメッセージを直接読み取れるため、OCR やクリップボードへの依存を減らせます。",
+        "alternative-note": "LINE MR は LINE にブリッジ DLL をインストールします。導入前に互換性を確認してください。両アドオンの同時有効化はおすすめしません。本プロジェクトにはチャット履歴リーダーと AI 画像説明もあります。",
+        "alternative-link": "LINE MR for Windows とインストール手順を見る",
+
         "skip-link": "メインコンテンツへスキップ",
         "lang-label": "言語を選択",
         "site-title": "LINE デスクトップ NVDA アドオン",
@@ -78,6 +93,11 @@ const translations = {
         "footer-text": "このオープンソースプロジェクトはGitHub (keyang556/linedesktopnvda) でホストされています。コミュニティ主導のアドオンであり、LINE公式とは直接関係ありません。"
     },
     "th": {
+        "alternative-heading": "โครงการทางเลือกที่แนะนำ: LINE MR for Windows",
+        "alternative-text": "สำหรับการนำทางและอ่านข้อความใน LINE บน Windows เราแนะนำให้ลอง LINE MR ก่อน โดยใช้สะพานเชื่อมการเข้าถึงของ Qt เพื่อให้ NVDA เข้าถึงตัวควบคุมและข้อความได้โดยตรง ลดความจำเป็นในการใช้ OCR และคลิปบอร์ด",
+        "alternative-note": "LINE MR ต้องติดตั้ง DLL สำหรับเชื่อมต่อภายใน LINE โปรดตรวจสอบความเข้ากันได้ก่อนติดตั้ง ไม่แนะนำให้เปิดใช้ส่วนเสริมทั้งสองพร้อมกัน โครงการนี้ยังมีตัวอ่านประวัติแชทและการอธิบายรูปภาพด้วย AI",
+        "alternative-link": "ดูโครงการ LINE MR for Windows และวิธีติดตั้ง",
+
         "skip-link": "ข้ามไปยังเนื้อหาหลัก",
         "lang-label": "เลือกภาษา",
         "site-title": "ส่วนเสริม NVDA สำหรับ LINE Desktop",

@@ -1,5 +1,11 @@
 # LINE Desktop Accessibility Add-on for NVDA
 
+> **Recommended alternative: [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)**
+>
+> For everyday navigation and reading messages in LINE for Windows, we recommend trying LINE MR. Its Qt accessibility bridge exposes LINE controls and message text directly to NVDA, avoiding many OCR and clipboard workarounds used by this add-on.
+>
+> **Before installing:** LINE MR installs a bridge DLL into LINE; check its compatibility requirements. Both add-ons provide an NVDA application module for LINE and should not be enabled at the same time. This add-on still offers a chat-history export reader and AI image descriptions.
+
 ## Overview
 
 This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). It uses OCR (Optical Character Recognition), coordinate-based automation, and optional AI image description to improve chat list navigation, message reading, image understanding, and call handling.

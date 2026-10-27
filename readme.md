@@ -1,5 +1,17 @@
 # LINE Desktop Accessibility Add-on for NVDA
 
+> **Recommended alternative / 推薦其他專案 / おすすめの代替プロジェクト / โครงการทางเลือกที่แนะนำ: [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)**
+>
+> **English:** For everyday navigation and message reading in LINE for Windows, we recommend trying LINE MR first. Its Qt accessibility bridge exposes controls and message text directly to NVDA, reducing reliance on OCR and clipboard workarounds. It requires a bridge DLL in LINE; check compatibility first. The two add-ons should not be enabled together. This add-on also offers chat-history export reading and AI image descriptions.
+>
+> **繁體中文：** 若主要需要操作 LINE 介面和閱讀訊息，建議優先試用 LINE MR。其 Qt 無障礙橋接元件可直接向 NVDA 提供控制項與訊息文字，減少依賴 OCR 與剪貼簿。安裝前請確認 DLL 橋接元件的相容性，且不建議同時啟用兩個附加元件。本專案仍提供聊天紀錄閱讀器與 AI 圖片描述。
+>
+> **日本語：** LINE の基本操作やメッセージの読み上げには、Qt アクセシビリティブリッジで NVDA に情報を直接提供する LINE MR を先に試すことをおすすめします。OCR やクリップボードへの依存を減らせます。DLL の互換性を確認し、両アドオンを同時に有効化しないでください。本アドオンにはチャット履歴リーダーと AI 画像説明もあります。
+>
+> **ไทย:** สำหรับการนำทางและอ่านข้อความใน LINE แนะนำให้ลอง LINE MR ก่อน เพราะใช้สะพานเชื่อมการเข้าถึงของ Qt ให้ NVDA อ่านตัวควบคุมและข้อความได้โดยตรง ลดการพึ่งพา OCR และคลิปบอร์ด โปรดตรวจสอบความเข้ากันได้ของ DLL และอย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน ส่วนเสริมนี้ยังมีตัวอ่านประวัติแชทและการอธิบายรูปภาพด้วย AI
+
+---
+
 This project provides an NVDA screen reader add-on designed to improve the accessibility of the LINE Desktop application on Windows.
 
 ## Documentation / 文件 / ドキュメント
