@@ -1,5 +1,11 @@
 # LINE 電腦版 NVDA 輔助工具
 
+> **推薦其他專案：[LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)**
+>
+> 如果主要需要在 Windows 版 LINE 中操作介面和閱讀訊息，我們建議優先試用 LINE MR。它使用 Qt 無障礙橋接元件，直接向 NVDA 提供控制項及訊息文字，減少本附加元件在許多操作中對 OCR 和剪貼簿的依賴。
+>
+> **安裝前請注意：** LINE MR 需要在 LINE 中安裝橋接 DLL，請先確認相容性。兩個專案都有 LINE 的 NVDA 應用程式模組，不建議同時啟用。本附加元件仍提供聊天紀錄匯出閱讀器與 AI 圖片描述功能。
+
 ## 概述
 
 此附加元件增強了 NVDA 螢幕閱讀器對 Windows 上 LINE 電腦版（Qt6 版本）的支援。它透過 OCR（文字辨識）、座標自動化技術，以及可選的 AI 圖片描述，改善聊天列表導覽、訊息閱讀、圖片理解與通話操作的無障礙體驗。
