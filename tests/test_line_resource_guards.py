@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import re
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -255,48 +254,9 @@ def test_chat_header_icon_point_prefers_client_rect_over_outer_frame():
 	assert ns["_getChatHeaderIconPoint"](101, iconIndex=0) == (1890, 116)
 
 
-def test_notes_window_context_uses_only_fresh_cache():
+def test_should_dismiss_message_menu_requires_same_process_foreground():
 	ns = _load_line_symbols(
-		assignment_names={
-			"_NOTES_WINDOW_KEYWORDS",
-			"_NOTES_OCR_KEYWORDS",
-			"_NOTES_OCR_CACHE_TTL",
-			"_notesWindowDetectionCache",
-		},
-		function_names={"_isNotesWindowContext"},
-		namespace={"log": _Log(), "time": time},
-	)
-	walker = SimpleNamespace(GetParentElement=lambda _element: None)
-	ns["_getForegroundWindowInfo"] = lambda: (101, "line", (0, 0, 1200, 800))
-
-	ns["_notesWindowDetectionCache"] = {
-		"key": (101, "line", (0, 0, 1200, 800)),
-		"expiresAt": time.monotonic() + 5.0,
-		"isNotesWindow": True,
-	}
-	assert ns["_isNotesWindowContext"](object(), walker) == (True, "line")
-
-	ns["_notesWindowDetectionCache"] = {
-		"key": (101, "line", (0, 0, 1200, 800)),
-		"expiresAt": time.monotonic() - 1.0,
-		"isNotesWindow": True,
-	}
-	assert ns["_isNotesWindowContext"](object(), walker, allowOcr=False) == (False, "line")
-
-
-def test_rect_visibility_checks_overlap_with_foreground_window():
-	ns = _load_line_symbols(
-		function_names={"_rectsIntersect", "_isRectVisibleInForegroundWindow"},
-	)
-	ns["_getForegroundWindowInfo"] = lambda: (101, "line", (100, 100, 400, 400))
-
-	assert ns["_isRectVisibleInForegroundWindow"](150, 150, 300, 300) is True
-	assert ns["_isRectVisibleInForegroundWindow"](450, 450, 500, 500) is False
-
-
-def test_should_dismiss_copy_read_menu_requires_same_process_foreground():
-	ns = _load_line_symbols(
-		function_names={"_shouldDismissCopyReadMenu"},
+		function_names={"_shouldDismissMessageMenu"},
 		namespace={
 			"ctypes": SimpleNamespace(
 				windll=SimpleNamespace(
@@ -311,11 +271,11 @@ def test_should_dismiss_copy_read_menu_requires_same_process_foreground():
 		303: 7002,
 	}.get(hwnd, 0)
 
-	assert ns["_shouldDismissCopyReadMenu"](101) is True
+	assert ns["_shouldDismissMessageMenu"](101) is True
 	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 303
-	assert ns["_shouldDismissCopyReadMenu"](101) is False
+	assert ns["_shouldDismissMessageMenu"](101) is False
 	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 0
-	assert ns["_shouldDismissCopyReadMenu"](101) is False
+	assert ns["_shouldDismissMessageMenu"](101) is False
 
 
 def test_message_probe_hit_test_rejects_edit_fields_but_allows_qt_hit_test_drift():
@@ -610,89 +570,6 @@ def test_is_message_bubble_metadata_ocr_line_filters_timestamps_and_read_receipt
 	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀") is True
 	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀 下午 12 ℃ 5") is True
 	assert ns["_isMessageBubbleMetadataOcrLine"]("謝謝 !") is False
-
-
-def test_looks_like_line_date_separator_text_matches_line_style_dates():
-	ns = _load_line_symbols(
-		assignment_names={"_LINE_DATE_SEPARATOR_RE"},
-		function_names={
-			"_normalizeLineDateSeparatorOcrText",
-			"_getSpokenLineDateSeparatorText",
-			"_looksLikeLineDateSeparatorText",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"re": re,
-		},
-	)
-
-	assert ns["_looksLikeLineDateSeparatorText"]("今天") is True
-	assert ns["_looksLikeLineDateSeparatorText"]("昨天") is True
-	assert ns["_looksLikeLineDateSeparatorText"]("阼天") is True
-	assert ns["_looksLikeLineDateSeparatorText"]("4 月 8 日 ( 三 )") is True
-	assert ns["_looksLikeLineDateSeparatorText"]("2026 年 4 月 8 日 ( 三 )") is True
-	assert ns["_looksLikeLineDateSeparatorText"]("今天下午 5 : 28") is False
-	assert ns["_looksLikeLineDateSeparatorText"]("下午 5 : 28") is False
-	assert ns["_looksLikeLineDateSeparatorText"]("4 月 8 日 ( 三 ) 下午 5 : 28") is False
-	assert ns["_getSpokenLineDateSeparatorText"]("阼天") == "昨天"
-	assert ns["_getSpokenLineDateSeparatorText"]("昨天") == "昨天"
-	assert ns["_getSpokenLineDateSeparatorText"]("4 月 8 日 ( 三 )") == "4 月 8 日 ( 三 )"
-
-
-def test_is_centered_line_date_separator_ocr_requires_compact_centered_geometry():
-	ns = _load_line_symbols(
-		assignment_names={"_LINE_DATE_SEPARATOR_RE"},
-		function_names={
-			"_normalizeLineDateSeparatorOcrText",
-			"_looksLikeLineDateSeparatorText",
-			"_isCenteredLineDateSeparatorOcr",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"re": re,
-		},
-	)
-
-	assert (
-		ns["_isCenteredLineDateSeparatorOcr"](
-			"今天",
-			[{"text": "今天", "rect": (803, 164, 847, 186)}],
-			(547, 142, 1102, 211),
-		)
-		is True
-	)
-	assert (
-		ns["_isCenteredLineDateSeparatorOcr"](
-			"阼天",
-			[{"text": "阼天", "rect": (803, 164, 847, 186)}],
-			(547, 142, 1102, 211),
-		)
-		is True
-	)
-	assert (
-		ns["_isCenteredLineDateSeparatorOcr"](
-			"4 月 8 日 ( 三 )",
-			[{"text": "4 月 8 日 ( 三 )", "rect": (782, 164, 867, 186)}],
-			(547, 142, 1102, 211),
-		)
-		is True
-	)
-	assert (
-		ns["_isCenteredLineDateSeparatorOcr"](
-			"4 月 8 日 ( 三 )",
-			[{"text": "4 月 8 日 ( 三 )", "rect": (980, 164, 1065, 186)}],
-			(547, 142, 1102, 211),
-		)
-		is False
-	)
-	assert (
-		ns["_isCenteredLineDateSeparatorOcr"](
-			"OK",
-			[{"text": "OK", "rect": (982, 336, 1038, 359)}],
-			(547, 274, 1102, 397),
-		)
-		is False
-	)
 
 
 def test_build_message_bubble_ocr_click_positions_targets_side_padding_for_right_aligned_content():
@@ -1756,17 +1633,81 @@ def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
 	), "mouse probe path should pass popup validation the app module, window handle, and popup rect"
 
 
-def test_copy_read_and_context_menu_actions_use_popup_label_click_point_resolution():
+def test_message_context_menu_does_not_undo_user_navigation():
+	"""With Tab/arrows left to NVDA, nothing bumps the request id when the user
+	navigates mid-request. The stale-request focus restore must therefore skip
+	itself once a real key was pressed, or it would yank focus back to the old
+	message."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	method = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "script_messageContextMenu"
+	)
+
+	def _reads_key_counter(node):
+		return any(
+			isinstance(sub, ast.Attribute)
+			and sub.attr == "keyCounter"
+			and isinstance(sub.value, ast.Name)
+			and sub.value.id == "keyboardHandler"
+			for sub in ast.walk(node)
+		)
+
+	assert any(
+		isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "startKeyCount" for target in node.targets)
+		and _reads_key_counter(node.value)
+		for node in method.body
+	), "the request should snapshot keyboardHandler.keyCounter when it starts"
+
+	abort_if_stale = next(
+		node
+		for node in method.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_logAndAbortIfStale"
+	)
+	restore_guards = [
+		node
+		for node in ast.walk(abort_if_stale)
+		if isinstance(node, ast.If)
+		and any(
+			isinstance(call, ast.Call)
+			and isinstance(call.func, ast.Name)
+			and call.func.id == "_restoreFocusToElement"
+			for stmt in node.body
+			for call in ast.walk(stmt)
+		)
+	]
+	assert restore_guards, "focus restore should stay behind a guard"
+	user_pressed_assign = next(
+		node
+		for node in abort_if_stale.body
+		if isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "userPressedKey" for target in node.targets)
+	)
+	assert _reads_key_counter(user_pressed_assign.value)
+	assert all(
+		any(
+			isinstance(sub, ast.UnaryOp)
+			and isinstance(sub.op, ast.Not)
+			and isinstance(sub.operand, ast.Name)
+			and sub.operand.id == "userPressedKey"
+			for sub in ast.walk(guard.test)
+		)
+		for guard in restore_guards
+	), "focus must not be restored after the user pressed a key"
+
+
+def test_context_menu_action_uses_popup_label_click_point_resolution():
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
 	app_module = next(
 		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	copy_read = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
 	)
 	context_menu_action = next(
 		node
@@ -1774,37 +1715,106 @@ def test_copy_read_and_context_menu_actions_use_popup_label_click_point_resoluti
 		if isinstance(node, ast.FunctionDef) and node.name == "_contextMenuAction"
 	)
 
-	for function_node in (copy_read, context_menu_action):
-		assert any(
-			isinstance(node, ast.Call)
-			and isinstance(node.func, ast.Name)
-			and node.func.id == "_resolvePopupMenuLabelClickPoint"
-			for node in ast.walk(function_node)
-		), "popup OCR flows should resolve labels through the shared click-point helper"
-		assert any(
-			isinstance(node, ast.Call)
-			and isinstance(node.func, ast.Name)
-			and node.func.id == "_collectPopupMenuRowRects"
-			for node in ast.walk(function_node)
-		), "popup OCR flows should collect row rects before clicking popup menu items"
-
-
-def test_copy_read_uses_spoken_date_separator_text_helper():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	copy_read = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
-	)
-
 	assert any(
 		isinstance(node, ast.Call)
 		and isinstance(node.func, ast.Name)
-		and node.func.id == "_getSpokenLineDateSeparatorText"
-		for node in ast.walk(copy_read)
-	), "copy-read should normalize the spoken text for detected date separator OCR"
+		and node.func.id == "_resolvePopupMenuLabelClickPoint"
+		for node in ast.walk(context_menu_action)
+	), "popup OCR flows should resolve labels through the shared click-point helper"
+	assert any(
+		isinstance(node, ast.Call)
+		and isinstance(node.func, ast.Name)
+		and node.func.id == "_collectPopupMenuRowRects"
+		for node in ast.walk(context_menu_action)
+	), "popup OCR flows should collect row rects before clicking popup menu items"
+
+
+def _load_message_input_classifier(*, name, edit_count=1, rect=(700, 520, 1100, 640)):
+	"""Load _isMessageInputElement against a fake 1200x800 LINE window."""
+	left, top, right, bottom = rect
+
+	class _Element:
+		CurrentName = name
+		CurrentBoundingRectangle = SimpleNamespace(left=left, top=top, right=right, bottom=bottom)
+
+		def GetCurrentPropertyValue(self, _prop):
+			return ""
+
+	class _Parent:
+		def FindAll(self, _scope, _condition):
+			return SimpleNamespace(Length=edit_count)
+
+	class _Client:
+		RawViewWalker = SimpleNamespace(GetParentElement=lambda _element: _Parent())
+
+		def CreatePropertyCondition(self, *_args):
+			return object()
+
+	def _get_window_rect(_hwnd, rect):
+		rect.left, rect.top, rect.right, rect.bottom = 0, 0, 1200, 800
+
+	ns = _load_line_symbols(
+		function_names={"_getEditPlaceholder", "_isMessageInputElement"},
+		namespace={
+			"UIAHandler": SimpleNamespace(TreeScope_Children=1),
+			"ctypes": SimpleNamespace(
+				windll=SimpleNamespace(
+					user32=SimpleNamespace(
+						GetForegroundWindow=lambda: 101,
+						GetWindowRect=_get_window_rect,
+					),
+				),
+				wintypes=SimpleNamespace(RECT=lambda: SimpleNamespace(left=0, top=0, right=0, bottom=0)),
+				byref=lambda value: value,
+			),
+			"log": _Log(),
+		},
+	)
+	handler = SimpleNamespace(clientObject=_Client())
+	return lambda: ns["_isMessageInputElement"](_Element(), handler)
+
+
+def test_message_input_classifier_trusts_native_line_names():
+	"""LINE 26.6.0.4004+ names its edit fields, so the name decides first."""
+	assert _load_message_input_classifier(name="輸入訊息")() is True
+	assert _load_message_input_classifier(name="メッセージを入力", rect=(100, 60, 400, 90))() is True
+	assert _load_message_input_classifier(name="搜尋聊天和訊息", rect=(100, 60, 400, 90))() is False
+
+
+def test_message_input_classifier_lets_search_hint_win_over_message_hint():
+	"""An English search box may be named "Search chats and messages"; Enter
+	there must not play the send sound even though the name mentions messages
+	and the field could sit low in a short window."""
+	assert (
+		_load_message_input_classifier(name="Search chats and messages", rect=(700, 600, 1100, 640))()
+		is False
+	)
+
+
+def test_message_input_classifier_falls_back_to_position_and_skips_login_fields():
+	assert _load_message_input_classifier(name="")() is True
+	assert _load_message_input_classifier(name="", rect=(100, 60, 400, 90))() is False
+	assert _load_message_input_classifier(name="輸入訊息", edit_count=2)() is False
+
+
+def test_navigation_keys_are_left_to_native_uia_focus():
+	"""LINE 26.6.0.4004 fires real UIA focus events, so NVDA announces Tab and
+	arrow navigation itself. Re-binding those keys would bring back the old
+	focus-polling path (double speech, synthetic Tabs in the chat list)."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	gesture_map = next(
+		node.value
+		for node in app_module.body
+		if isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "__gestures" for target in node.targets)
+	)
+	bound_keys = {key.value.lower() for key in gesture_map.keys}
+	for key in ("kb:tab", "kb:shift+tab", "kb:uparrow", "kb:downarrow", "kb:leftarrow", "kb:rightarrow"):
+		assert key not in bound_keys, f"{key} must stay with NVDA's native focus handling"
 
 
 def test_popup_validation_and_native_gesture_helpers_exist_for_message_context_menu():
@@ -1840,375 +1850,6 @@ def test_popup_validation_and_native_gesture_helpers_exist_for_message_context_m
 		and node.func.attr == "fromName"
 		for node in ast.walk(send_helper)
 	), "native gesture helper should synthesize keys by name"
-
-
-def test_detect_edit_field_label_message_hint_skips_notes_detection():
-	class _Rect:
-		left = 700
-		top = 520
-		bottom = 640
-
-	class _Element:
-		CurrentName = "輸入訊息"
-		CurrentBoundingRectangle = _Rect()
-
-		def GetCurrentPropertyValue(self, _prop):
-			return ""
-
-	class _EditElements:
-		Length = 1
-
-	class _Parent:
-		def FindAll(self, _scope, _condition):
-			return _EditElements()
-
-	class _Walker:
-		def GetParentElement(self, _element):
-			return _Parent()
-
-	class _Client:
-		RawViewWalker = _Walker()
-
-		def CreatePropertyCondition(self, *_args):
-			return object()
-
-	ns = _load_line_symbols(
-		function_names={"_getEditPlaceholder", "_detectEditFieldLabel"},
-		namespace={
-			"_": lambda text: text,
-			"UIAHandler": SimpleNamespace(TreeScope_Children=1),
-			"ctypes": SimpleNamespace(
-				windll=SimpleNamespace(
-					user32=SimpleNamespace(
-						GetForegroundWindow=lambda: 101,
-						GetWindowRect=lambda _hwnd, rect: None,
-					),
-				),
-				wintypes=SimpleNamespace(RECT=lambda: SimpleNamespace(left=0, top=0, right=1200, bottom=800)),
-				byref=lambda value: value,
-			),
-			"log": _Log(),
-		},
-	)
-	ns["_isNotesWindowContext"] = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-		AssertionError("notes detection should not run for message fast-path"),
-	)
-
-	handler = SimpleNamespace(clientObject=_Client())
-	assert ns["_detectEditFieldLabel"](_Element(), handler) == "Message input"
-
-
-def test_detect_edit_field_label_query_text_skips_notes_ocr():
-	seen_allow_ocr = []
-
-	class _Rect:
-		left = 120
-		top = 130
-		bottom = 180
-
-	class _Element:
-		CurrentName = ""
-		CurrentBoundingRectangle = _Rect()
-
-		def GetCurrentPropertyValue(self, prop_id):
-			if prop_id == 30045:
-				return "黃淑"
-			return ""
-
-	class _EditElements:
-		Length = 1
-
-	class _Parent:
-		def FindAll(self, _scope, _condition):
-			return _EditElements()
-
-	class _Walker:
-		def GetParentElement(self, _element):
-			return _Parent()
-
-	class _Client:
-		RawViewWalker = _Walker()
-
-		def CreatePropertyCondition(self, *_args):
-			return object()
-
-	ns = _load_line_symbols(
-		function_names={"_getEditPlaceholder", "_detectEditFieldLabel"},
-		namespace={
-			"_": lambda text: text,
-			"UIAHandler": SimpleNamespace(TreeScope_Children=1),
-			"ctypes": SimpleNamespace(
-				windll=SimpleNamespace(
-					user32=SimpleNamespace(
-						GetForegroundWindow=lambda: 101,
-						GetWindowRect=lambda _hwnd, rect: None,
-					),
-				),
-				wintypes=SimpleNamespace(RECT=lambda: SimpleNamespace(left=0, top=0, right=1200, bottom=800)),
-				byref=lambda value: value,
-			),
-			"log": _Log(),
-		},
-	)
-
-	def _fake_notes_context(*_args, **kwargs):
-		seen_allow_ocr.append(kwargs["allowOcr"])
-		return False, "line"
-
-	ns["_isNotesWindowContext"] = _fake_notes_context
-
-	handler = SimpleNamespace(clientObject=_Client())
-	assert ns["_detectEditFieldLabel"](_Element(), handler) == "Search chat rooms"
-	assert seen_allow_ocr == [False]
-
-
-def test_schedule_query_invalidates_active_copy_read():
-	scheduled = []
-	focus_calls = []
-
-	ns = _load_line_symbols(
-		assignment_names={"_copyReadRequestId", "_focusQueryRequestId", "_messageContextMenuRequestId"},
-		function_names={
-			"_invalidateActiveCopyRead",
-			"_invalidateActiveMessageContextMenu",
-			"_scheduleQueryAndSpeakUIAFocus",
-		},
-		namespace={
-			"core": SimpleNamespace(callLater=lambda _delay, callback: scheduled.append(callback)),
-		},
-	)
-	ns["_queryAndSpeakUIAFocus"] = lambda: focus_calls.append("focus")
-	ns["_copyReadRequestId"] = 7
-	ns["_messageContextMenuRequestId"] = 11
-	ns["_focusQueryRequestId"] = 0
-
-	ns["_scheduleQueryAndSpeakUIAFocus"](50)
-
-	assert ns["_copyReadRequestId"] == 8
-	assert ns["_messageContextMenuRequestId"] == 12
-	assert ns["_focusQueryRequestId"] == 1
-	assert len(scheduled) == 1
-
-	scheduled[0]()
-	assert focus_calls == ["focus"]
-
-
-def _get_copy_read_nested_function(name):
-	"""Return (``_copyAndReadMessage`` AST, its nested function ``name``)."""
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	copy_read = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
-	)
-	nested = next(node for node in copy_read.body if isinstance(node, ast.FunctionDef) and node.name == name)
-	return copy_read, nested
-
-
-def test_copy_read_stale_request_restores_clipboard_without_dismissing_other_windows():
-	"""_abortIfStale must restore the clipboard only when asked, and must not
-	blanket-dismiss menus or yank focus for a request that is no longer
-	current (e.g. the user has moved on to another window)."""
-	_copy_read, abort_if_stale = _get_copy_read_nested_function("_abortIfStale")
-
-	def guard_tests_for(name):
-		return [
-			node.test
-			for node in ast.walk(abort_if_stale)
-			if isinstance(node, ast.If)
-			and any(
-				isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == name
-				for stmt in node.body
-				for call in ast.walk(stmt)
-			)
-		]
-
-	assert any(
-		isinstance(test, ast.Name) and test.id == "restoreClipboard"
-		for test in guard_tests_for("_restoreClipboard")
-	), "_abortIfStale must restore the clipboard only under the restoreClipboard flag"
-	assert any(
-		isinstance(test, ast.Name) and test.id == "dismissMenu" for test in guard_tests_for("_dismissMenu")
-	), "_abortIfStale must dismiss menus only under the dismissMenu flag"
-	assert any(
-		isinstance(test, ast.Name) and test.id == "shouldRestoreFocus"
-		for test in guard_tests_for("_restoreFocusToElement")
-	), "_abortIfStale must gate focus restore on shouldRestoreFocus"
-
-	should_restore_assigns = [
-		node
-		for node in ast.walk(abort_if_stale)
-		if isinstance(node, ast.Assign)
-		and any(isinstance(target, ast.Name) and target.id == "shouldRestoreFocus" for target in node.targets)
-	]
-	assert should_restore_assigns
-	assign_names = {
-		node.id for node in ast.walk(should_restore_assigns[0].value) if isinstance(node, ast.Name)
-	}
-	# Focus restore requires both the same request AND an actually-open
-	# copy-read menu; stale requests from other windows leave focus alone.
-	assert "sameRequest" in assign_names
-	assert "_shouldDismissCopyReadMenu" in assign_names
-
-
-def test_copy_read_does_not_restore_focus_when_line_is_not_foreground():
-	"""A copy-read request stops being current as soon as LINE's window loses
-	the foreground, so no stage of the flow (which checks _abortIfStale before
-	acting) can yank focus back from another application."""
-	_copy_read, is_current = _get_copy_read_nested_function("_isCurrentRequest")
-
-	foreground_compares = [
-		node
-		for node in ast.walk(is_current)
-		if isinstance(node, ast.Compare)
-		and any(
-			isinstance(call, ast.Call)
-			and isinstance(call.func, ast.Attribute)
-			and call.func.attr == "GetForegroundWindow"
-			for call in ast.walk(node)
-		)
-		and any(isinstance(name, ast.Name) and name.id == "hwnd" for name in ast.walk(node))
-	]
-	assert foreground_compares, (
-		"_isCurrentRequest must compare the live foreground window with the hwnd captured at request start"
-	)
-
-
-def test_copy_read_skips_probe_when_hit_test_finds_different_element():
-	"""_attemptCopyAtOffset must skip a probe position (advancing to the next
-	offset) when the hit test says the point lands on a different element,
-	without synthesizing any mouse input for that position."""
-	_copy_read, attempt_copy = _get_copy_read_nested_function("_attemptCopyAtOffset")
-
-	skip_ifs = [
-		node
-		for node in ast.walk(attempt_copy)
-		if isinstance(node, ast.If)
-		and isinstance(node.test, ast.UnaryOp)
-		and isinstance(node.test.op, ast.Not)
-		and any(
-			isinstance(call, ast.Call)
-			and isinstance(call.func, ast.Name)
-			and call.func.id == "_messageProbePointHitsTargetElement"
-			for call in ast.walk(node.test)
-		)
-	]
-	assert skip_ifs, "_attemptCopyAtOffset must hit-test the probe point before right-clicking"
-
-	skip_body = skip_ifs[0].body
-	assert any(
-		isinstance(call, ast.Call)
-		and isinstance(call.func, ast.Name)
-		and call.func.id == "_attemptCopyAtOffset"
-		for stmt in skip_body
-		for call in ast.walk(stmt)
-	), "the miss branch must advance to the next probe offset"
-	assert any(isinstance(stmt, ast.Return) for stmt in skip_body), (
-		"the miss branch must return without falling through to the click"
-	)
-	assert not any(
-		isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "_sendMouseClick"
-		for stmt in skip_body
-		for call in ast.walk(stmt)
-	), "the miss branch must not synthesize mouse input"
-
-
-def test_copy_read_tries_keyboard_menu_before_mouse_probes():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	copy_read = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_copyAndReadMessage"
-	)
-	keyboard_fallback = next(
-		node
-		for node in copy_read.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_tryKeyboardCopyFallback"
-	)
-	start_mouse_probes = next(
-		node
-		for node in copy_read.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_startMouseCopyProbes"
-	)
-	attempt_copy = next(
-		node
-		for node in copy_read.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_attemptCopyAtOffset"
-	)
-
-	# The flow starts with a worker-thread bubble-OCR preamble whose completion
-	# callback (_continueAfterInitialOcr) enters the keyboard-first path;
-	# mouse probes only run from _startMouseCopyProbes on keyboard failure.
-	continue_after_ocr = next(
-		node
-		for node in copy_read.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_continueAfterInitialOcr"
-	)
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_tryKeyboardCopyFallback"
-		for node in ast.walk(continue_after_ocr)
-	), "copy-read should try the native applications key before mouse probes"
-
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_sendGestureWithAddonSuppressed"
-		and node.args
-		and isinstance(node.args[0], ast.Constant)
-		and node.args[0].value == "applications"
-		for node in ast.walk(keyboard_fallback)
-	), "copy-read keyboard-first path should send the native applications key"
-	assert any(
-		isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_findCopyMenuItem"
-		for node in ast.walk(keyboard_fallback)
-	), "copy-read keyboard-first path should reuse copy menu detection"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_attemptCopyAtOffset"
-		for node in ast.walk(start_mouse_probes)
-	), "copy-read keyboard failure should hand off to mouse probe fallback"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_tryKeyboardCopyFallback"
-		for node in ast.walk(attempt_copy)
-	), "copy-read should fall back to OCR after mouse probes exhaust the already-tried keyboard path"
-
-
-def test_message_focus_skips_off_window_elements_before_copy_read():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	query_focus = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_queryAndSpeakUIAFocus"
-	)
-
-	visible_checks = [
-		node
-		for node in ast.walk(query_focus)
-		if isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_isElementVisibleInForegroundWindow"
-	]
-	copy_read_calls = [
-		node
-		for node in ast.walk(query_focus)
-		if isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_copyAndReadMessage"
-	]
-
-	assert visible_checks, "message focus should guard against virtualized off-window UIA rects"
-	assert copy_read_calls, "message focus should still use copy-read for visible message items"
 
 
 def test_no_transient_letter_gesture_bindings():

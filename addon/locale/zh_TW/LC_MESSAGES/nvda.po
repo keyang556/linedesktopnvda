@@ -824,13 +824,11 @@ msgstr "LINE 電腦版無障礙增強"
 
 #: buildVars.py:24
 msgid ""
-"Enhances NVDA accessibility support for LINE Desktop on Windows.\n"
-"Provides improved navigation for chat lists, messages, contacts, and message input.\n"
-"Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."
+"Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.\n"
+"Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."
 msgstr ""
-"增強 NVDA 對 Windows 上 LINE 電腦版的無障礙支援。\n"
-"提供對聊天列表、訊息、聯絡人與訊息輸入的改進導覽體驗。\n"
-"支援通話、來電處理、OCR 輔助閱讀、訊息匯出閱讀，以及可追問的 AI 圖片描述。"
+"增強 NVDA 對 Windows 上 LINE 電腦版的無障礙支援。建議使用 LINE 26.6.0.4004 以上版本：NVDA 可直接讀取聊天清單與訊息。\n"
+"提供通話、來電處理、訊息操作與確認對話框、訊息匯出閱讀，以及可追問的 AI 圖片描述。"
 
 #: buildVars.py:31
 msgid ""

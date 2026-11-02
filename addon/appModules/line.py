@@ -247,26 +247,11 @@ def _classifyLineWindow(hwnd=None):
 	return windowType
 
 
-def _isChatWindowMode(hwnd=None):
-	"""Return True if the current LINE window is a standalone ChatWindow.
-
-	In ChatWindow mode, there is no sidebar — all list items are message items.
-	"""
-	return _classifyLineWindow(hwnd) == "chat"
-
-
 # Sound file to play after a message is successfully sent
 _SEND_SOUND_PATH = os.path.join(
 	os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 	"sounds",
 	"sent.wav",
-)
-
-# Sound file to play when copy falls back to OCR (result may not be 100% accurate)
-_OCR_SOUND_PATH = os.path.join(
-	os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-	"sounds",
-	"ocr.wav",
 )
 
 
@@ -329,146 +314,6 @@ def _removeCJKSpaces(text):
 	if not text:
 		return text
 	return _CJK_SPACE_RE.sub("", text)
-
-
-_CALL_OCR_LOG_NOISE_MARKERS = (
-	"INFO -",
-	"DEBUG -",
-	"WARNING -",
-	"ERROR -",
-	"Traceback",
-	'File "',
-	"ConfigManager",
-	"Loading config",
-	"Config loaded",
-	"Confiq loaded",
-	"AppData\\Roaming",
-	"\\Users\\",
-	".pyc",
-	"__main__",
-	"addonHandler.",
-	"external:",
-)
-
-_CALL_CHAT_CLOCK_RE = re.compile(
-	r"^(?:(?:[上下][午牛年干])|午|am|pm)[0-9IiLlOo]{1,2}:\d{2}$",
-	re.IGNORECASE,
-)
-_CALL_DURATION_RE = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
-_CALL_DURATION_NOISE_LINES = {
-	"全選",
-	"已",
-	"已讀",
-	"已謴",
-}
-
-
-def _looksLikeOcrLogNoise(text):
-	"""Return True for OCR snippets that are clearly logs, not LINE call records."""
-	if not text:
-		return False
-
-	normalized = _removeCJKSpaces(str(text).strip())
-	if not normalized:
-		return False
-
-	lower = normalized.lower()
-	if any(marker.lower() in lower for marker in _CALL_OCR_LOG_NOISE_MARKERS):
-		return True
-	if re.search(r"[A-Za-z]:\\", normalized):
-		return True
-	return bool(re.search(r"^(?:INFO|DEBUG|WARNING|ERROR)\s*[-:]", normalized, re.MULTILINE))
-
-
-def _normalizeCallOcrLine(rawLine):
-	line = _removeCJKSpaces(str(rawLine).strip())
-	line = re.sub(
-		r"(?<=\d)\s*[:：•\.。．·･]+\s*(?=\d)",
-		":",
-		line,
-	)
-	line = re.sub(r"\s+", "", line)
-	return re.sub(r":{2,}", ":", line)
-
-
-def _isChatClockTimeLine(line):
-	return bool(_CALL_CHAT_CLOCK_RE.fullmatch(line or ""))
-
-
-def _isCallDurationFallbackNoiseLine(line):
-	if not line:
-		return True
-	if line in _CALL_DURATION_NOISE_LINES:
-		return True
-	if line.startswith("已") and len(line) <= 3:
-		return True
-	return bool(re.fullmatch(r"[\d:：•\.。．·･\W_]+", line))
-
-
-def _extractCallDuration(text):
-	"""Extract a normalized call duration from OCR text, ignoring clock timestamps."""
-	if not text:
-		return None
-
-	normalized = _removeCJKSpaces(str(text).strip())
-	if _looksLikeOcrLogNoise(normalized):
-		return None
-	lines = []
-	for rawLine in normalized.splitlines():
-		line = _normalizeCallOcrLine(rawLine)
-		if not line:
-			continue
-		lines.append(line)
-
-	match = None
-	for line in lines:
-		if _isChatClockTimeLine(line):
-			continue
-		if _CALL_DURATION_RE.fullmatch(line):
-			match = _CALL_DURATION_RE.fullmatch(line)
-			break
-	else:
-		remainingLines = [line for line in lines if not _isChatClockTimeLine(line)]
-		if any(not _isCallDurationFallbackNoiseLine(line) for line in remainingLines):
-			return None
-		collapsed = "".join(remainingLines)
-		match = re.search(r"(?<!\d)(\d{1,2}(?::\d{2}){1,2})(?!\d)", collapsed)
-	if not match:
-		return None
-
-	parts = match.group(0).split(":")
-	if len(parts) == 2:
-		return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
-	if len(parts) == 3:
-		return f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(parts[2]):02d}"
-	return None
-
-
-def _getCallAnnouncementFromOcr(text):
-	"""Return the spoken announcement for a call record OCR snippet."""
-	if not text:
-		return None
-
-	normalized = _removeCJKSpaces(str(text).strip())
-	if _looksLikeOcrLogNoise(normalized):
-		return None
-	if re.search(r"取消(?:的)?通話", normalized):
-		return "取消的通話"
-	if "取消" in normalized and re.search(
-		r"(?:(?:[上下]午)|午|am|pm)?\s*\d{1,2}\s*:\s*\d{2}",
-		normalized,
-		re.IGNORECASE,
-	):
-		return "取消的通話"
-	if "無應答" in normalized:
-		return "無應答"
-	if "未接來電" in normalized:
-		return "未接來電"
-
-	duration = _extractCallDuration(normalized)
-	if duration:
-		return f"通話時間：{duration}"
-	return None
 
 
 _VOICE_CALL_CONFIRMATION_START_LABELS = (
@@ -639,65 +484,6 @@ def _selectVoiceCallConfirmationActionTarget(ocrActionTargets, action):
 		if target:
 			return target
 	return {}
-
-
-_IMAGE_ATTACHMENT_MENU_KEYWORDS = (
-	"轉為文字",
-	"掃描行動條碼",
-	"新增至相簿",
-	"設為聊天室背景",
-)
-
-_STICKER_MESSAGE_MENU_KEYWORDS = (
-	"貼圖小舖",
-	"貼圖小鋪",
-)
-
-
-def _looksLikeImageAttachmentMenu(text):
-	"""Return True when menu text matches LINE image/photo attachment actions."""
-	if not text:
-		return False
-
-	normalized = _removeCJKSpaces(str(text).strip())
-	if "另存新檔" not in normalized:
-		return False
-
-	return any(keyword in normalized for keyword in _IMAGE_ATTACHMENT_MENU_KEYWORDS)
-
-
-def _looksLikeStickerMessageMenu(text):
-	"""Return True when menu text matches LINE sticker-message actions."""
-	if not text:
-		return False
-
-	normalized = _removeCJKSpaces(str(text).strip()).replace(" ", "")
-	return any(keyword in normalized for keyword in _STICKER_MESSAGE_MENU_KEYWORDS)
-
-
-def _extractDownloadDeadlineAnnouncement(text):
-	"""Extract a spoken download-deadline hint from OCR text."""
-	if not text:
-		return None
-
-	lines = [
-		_removeCJKSpaces(str(rawLine).strip())
-		for rawLine in str(text).splitlines()
-		if rawLine and str(rawLine).strip()
-	]
-	actionKeywords = ("儲存", "另存新檔", "分享", "Keep")
-	for index, line in enumerate(lines):
-		if "下載期限" not in line:
-			continue
-		suffix = line.split("下載期限", 1)[1].lstrip("：: ").strip(" |")
-		if suffix:
-			return f"下載期限：{suffix}"
-		if index + 1 < len(lines):
-			nextLine = lines[index + 1].lstrip("：: ").strip(" |")
-			if nextLine and not any(keyword in nextLine for keyword in actionKeywords):
-				return f"下載期限：{nextLine}"
-		return "下載期限未明"
-	return None
 
 
 def _normalizeRecallDialogLine(text):
@@ -1590,7 +1376,7 @@ def _buildMessageBubbleClickPositions(
 	# Keep the historic six probes first so currently working messages
 	# behave the same, then add narrower left-edge fallbacks for short
 	# received bubbles whose clickable padding sits further left. Keep
-	# the synthetic "center" probe last so copy-read can stop after the
+	# the synthetic "center" probe last so message actions can stop after the
 	# dedicated edge/padding probes are exhausted.
 	clickPositions = [
 		(elLeft + elWidth // 6, clampedCenter, "1/6-left"),
@@ -1677,113 +1463,6 @@ def _isMessageBubbleMetadataOcrLine(text):
 	if re.fullmatch(rf"(?:已讀|未讀){timePattern}", stripped, re.IGNORECASE):
 		return True
 	return False
-
-
-_LINE_DATE_SEPARATOR_RE = re.compile(
-	r"^(?:"
-	r"(?:今天|昨天)"
-	r"|"
-	r"(?:(?:19|20)\d{2}(?:[./-]|年))?"
-	r"\d{1,2}(?:[./-]|月)"
-	r"\d{1,2}(?:日)?"
-	r"(?:(?:\([一二三四五六日天]\))|(?:星期[一二三四五六日天])|(?:週[一二三四五六日天]))?"
-	r")$",
-)
-
-
-def _normalizeLineDateSeparatorOcrText(text):
-	"""Normalize OCR text for LINE's centered date separator rows."""
-	normalized = _removeCJKSpaces((text or "").strip())
-	if not normalized:
-		return ""
-	normalized = normalized.replace("（", "(").replace("）", ")").replace("／", "/").replace("．", ".")
-	normalized = re.sub(r"\s+", "", normalized)
-	# OCR can misread the standalone date chip "昨天" as visually similar text.
-	if normalized == "阼天":
-		return "昨天"
-	return normalized
-
-
-def _looksLikeLineDateSeparatorText(text):
-	"""Return True when OCR text matches LINE's standalone date separator."""
-	normalized = _normalizeLineDateSeparatorOcrText(text)
-	if not normalized:
-		return False
-	return bool(_LINE_DATE_SEPARATOR_RE.fullmatch(normalized))
-
-
-def _getSpokenLineDateSeparatorText(text):
-	"""Return the user-facing text for a recognized LINE date separator chip."""
-	rawText = (text or "").strip()
-	if not rawText:
-		return ""
-
-	normalized = _normalizeLineDateSeparatorOcrText(rawText)
-	if normalized in {"今天", "昨天"}:
-		return normalized
-	return rawText
-
-
-def _isCenteredLineDateSeparatorOcr(text, ocrLines, rect):
-	"""Return True only for compact centered date chips, not normal bubbles."""
-	if not _looksLikeLineDateSeparatorText(text):
-		return False
-	if not ocrLines or not rect:
-		return False
-	try:
-		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
-	except Exception:
-		return False
-	if elRight <= elLeft or elBottom <= elTop:
-		return False
-
-	contentRects = []
-	normalizedLines = []
-	for line in ocrLines:
-		if not isinstance(line, dict):
-			continue
-		lineText = _normalizeLineDateSeparatorOcrText(line.get("text", ""))
-		if not lineText:
-			continue
-		lineRect = line.get("rect")
-		if not lineRect:
-			return False
-		try:
-			lineLeft, lineTop, lineRight, lineBottom = [int(value) for value in lineRect]
-		except Exception:
-			return False
-		lineLeft = max(elLeft, lineLeft)
-		lineTop = max(elTop, lineTop)
-		lineRight = min(elRight, lineRight)
-		lineBottom = min(elBottom, lineBottom)
-		if lineRight <= lineLeft or lineBottom <= lineTop:
-			return False
-		normalizedLines.append(lineText)
-		contentRects.append((lineLeft, lineTop, lineRight, lineBottom))
-
-	if not contentRects:
-		return False
-	if "".join(normalizedLines) != _normalizeLineDateSeparatorOcrText(text):
-		return False
-
-	contentLeft = min(lineRect[0] for lineRect in contentRects)
-	contentTop = min(lineRect[1] for lineRect in contentRects)
-	contentRight = max(lineRect[2] for lineRect in contentRects)
-	contentBottom = max(lineRect[3] for lineRect in contentRects)
-	rowWidth = max(1, elRight - elLeft)
-	rowHeight = max(1, elBottom - elTop)
-	contentWidth = max(1, contentRight - contentLeft)
-	contentHeight = max(1, contentBottom - contentTop)
-	rowCenterX = (elLeft + elRight) / 2.0
-	contentCenterX = (contentLeft + contentRight) / 2.0
-	centerTolerance = max(24, int(rowWidth * 0.12))
-	if abs(contentCenterX - rowCenterX) > centerTolerance:
-		return False
-	if contentWidth > int(rowWidth * 0.45):
-		return False
-	if contentHeight > max(40, int(rowHeight * 0.75)):
-		return False
-	return True
 
 
 def _buildMessageBubbleOcrClickPositions(ocrLines, rect, winTop, winBottom):
@@ -1921,7 +1600,7 @@ def _messageProbePointHitsTargetElement(handler, targetElement, x, y, targetRunt
 		point = ctypes.wintypes.POINT(int(x), int(y))
 		hitElement = client.ElementFromPoint(point)
 	except Exception:
-		log.debug("LINE: copy-read probe hit-test failed", exc_info=True)
+		log.debug("LINE: message probe hit-test failed", exc_info=True)
 		return True
 	if hitElement is None:
 		return True
@@ -1952,13 +1631,13 @@ def _messageProbePointHitsTargetElement(handler, targetElement, x, y, targetRunt
 
 
 def _restoreFocusToElement(element, expectedRuntimeId=None):
-	"""Best-effort focus restore after an unsafe copy-read probe."""
+	"""Best-effort focus restore after an unsafe message probe."""
 	try:
 		if expectedRuntimeId is not None and _getElementRuntimeId(element) != expectedRuntimeId:
 			return
 		element.SetFocus()
 	except Exception:
-		log.debug("LINE: copy-read focus restore failed", exc_info=True)
+		log.debug("LINE: message probe focus restore failed", exc_info=True)
 
 
 def _queueUiMessage(text):
@@ -2110,43 +1789,9 @@ def _runOnWorkerThread(work, onDone=None, taskName="task"):
 	threading.Thread(target=_worker, daemon=True, name=f"lineAddon-{taskName}").start()
 
 
-# Global variable to track the last focused object
-# This is needed because api.getFocusObject() sometimes returns the main Window
-# even when we handled a gainFocus event for a ListItem.
-lastFocusedObject = None
-
-# Track the last UIA element we announced, to avoid re-announcing the same thing
-_lastAnnouncedUIAElement = None
-_lastAnnouncedUIAName = None
-_lastOCRElement = None
-# Track the raw UIA focused element (e.g. the edit field) separately from
-# the announced element (which could be a list item found via selection detection).
-# This allows us to detect stuck-focus even after announcing a list item.
-_lastRawFocusedElement = None
-
 # Tracks the newest async request for opening the message context menu so
 # stale callLater callbacks do not speak after the user has moved on.
 _messageContextMenuRequestId = 0
-# Tracks the newest async request for copy-first message reading.
-_copyReadRequestId = 0
-# Owns clipboard restore for the active copy-read request.
-_copyReadClipboardOwnerId = 0
-# Debounces delayed focus queries after navigation gestures.
-_focusQueryRequestId = 0
-# Debounces the chat-list up/down arrow Tab×2 chain so rapid key repeats do not
-# stack overlapping chains that send stray Tabs and bounce the focus around.
-_chatListArrowRequestId = 0
-
-# Chat list navigation state.
-# When True, up/down arrows will be handled as chat list navigation
-# even if UIA focus has moved away (e.g. to message input).
-_chatListMode = False
-# Cached reference to the search field UIA element, used to find
-# the chat list even when focus is elsewhere.
-_chatListSearchField = None
-# Cached chat room name, set when navigating the chat list.
-# Used by NVDA+Windows+T to instantly read the name without OCR.
-_currentChatRoomName = None
 
 # Flag to suppress addon while a file dialog is open
 _suppressAddon = False
@@ -3617,28 +3262,6 @@ def setUserImageMaxTokens(value):
 		return False
 
 
-_NOTES_WINDOW_KEYWORDS = ("記事本", "note", "keep", "ノート", "บันทึก", "노트")
-_NOTES_OCR_KEYWORDS = (
-	"記事本",
-	"相簿",
-	"已儲存",
-	"note",
-	"album",
-	"saved",
-	"keep",
-	"ノート",
-	"アルバム",
-	"保存済み",
-	"บันทึก",
-	"노트",
-)
-_NOTES_OCR_CACHE_TTL = 3.0
-_notesWindowDetectionCache = {
-	"key": None,
-	"expiresAt": 0.0,
-	"isNotesWindow": False,
-}
-
 # Recursion guard to prevent infinite _get_name → _getDeepText → _get_name loops.
 # Uses UIA runtime IDs (stable across Python wrapper recreation) instead of id(self).
 # Stored thread-locally so concurrent name computation on different threads cannot
@@ -4634,89 +4257,6 @@ def _getChatHeaderIconPoint(hwnd, iconIndex=0):
 	return iconInfo[0]
 
 
-# Physical-pixel cap for the right edge of LINE's left sidebar (icons column +
-# chat list panel). Empirically, LINE renders the sidebar at a fixed physical
-# pixel width regardless of DPI scaling (a Qt quirk on Windows): observed at
-# both 96 DPI and 144 DPI maximized the sidebar still ends near X=547. We cap
-# conservatively at 540 (observed edge ≈ 547, 7 px safety margin) so we do NOT
-# multiply by DPI scale — that double-counts and lets the cap drift back into
-# the message area when the window is maximized at high DPI.
-_LINE_SIDEBAR_RIGHT_BASE = 540
-
-
-def _getSidebarRightBoundary(wndRect, _hwnd=None, percentage=0.45):
-	"""Return the screen-space X separating LINE's sidebar from the message area.
-
-	LINE keeps the sidebar at a fixed physical-pixel width regardless of window
-	size or DPI, so a pure ``wndWidth * percentage`` threshold lands deep in the
-	message area when the window is maximized. We cap the percentage at the
-	empirical sidebar edge so the same code path works for standard windows,
-	maximized windows, and high-DPI configurations.
-
-	``_hwnd`` is reserved for future per-monitor DPI queries and is not used yet.
-	"""
-	try:
-		wndLeft = int(wndRect.left)
-		wndWidth = int(wndRect.right - wndRect.left)
-	except Exception:
-		return None
-	if wndWidth <= 0:
-		return None
-	return wndLeft + min(int(wndWidth * percentage), _LINE_SIDEBAR_RIGHT_BASE)
-
-
-def _scheduleQueryAndSpeakUIAFocus(delay=100):
-	"""Schedule a focus query, dropping stale callbacks when navigation repeats quickly."""
-	global _focusQueryRequestId
-	_invalidateActiveCopyRead()
-	_invalidateActiveMessageContextMenu()
-	_focusQueryRequestId += 1
-	requestId = _focusQueryRequestId
-
-	def _run():
-		if requestId != _focusQueryRequestId:
-			return
-		_queryAndSpeakUIAFocus()
-
-	core.callLater(delay, _run)
-
-
-def _invalidateActiveCopyRead():
-	"""Expire any in-flight copy-read chain before new focus work begins."""
-	global _copyReadRequestId
-	_copyReadRequestId += 1
-
-
-def _invalidateActiveMessageContextMenu():
-	"""Expire any in-flight message context-menu chain before new focus work begins."""
-	global _messageContextMenuRequestId
-	_messageContextMenuRequestId += 1
-
-
-def _getForegroundWindowInfo():
-	"""Return foreground hwnd, lowercased title, and screen rect."""
-	try:
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			return None, "", None
-		buf = ctypes.create_unicode_buffer(512)
-		ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		return (
-			hwnd,
-			(buf.value or "").lower(),
-			(
-				int(rect.left),
-				int(rect.top),
-				int(rect.right),
-				int(rect.bottom),
-			),
-		)
-	except Exception:
-		return None, "", None
-
-
 def _getWindowProcessId(hwnd):
 	"""Return the owning process ID for a window handle."""
 	try:
@@ -4729,7 +4269,7 @@ def _getWindowProcessId(hwnd):
 		return 0
 
 
-def _shouldDismissCopyReadMenu(targetHwnd):
+def _shouldDismissMessageMenu(targetHwnd):
 	"""Return True only while the active popup still belongs to LINE."""
 	try:
 		currentHwnd = ctypes.windll.user32.GetForegroundWindow()
@@ -4749,29 +4289,6 @@ def _rectsIntersect(rectA, rectB):
 	if not rectA or not rectB:
 		return False
 	return not (rectA[2] <= rectB[0] or rectA[0] >= rectB[2] or rectA[3] <= rectB[1] or rectA[1] >= rectB[3])
-
-
-def _isRectVisibleInForegroundWindow(left, top, right, bottom):
-	"""Return True when a screen rect overlaps the current foreground window."""
-	_fgHwnd, _fgTitle, fgRect = _getForegroundWindowInfo()
-	if not fgRect:
-		return True
-	return _rectsIntersect((left, top, right, bottom), fgRect)
-
-
-def _isElementVisibleInForegroundWindow(element):
-	"""Return False when UIA gives a virtualized/off-window element rect."""
-	try:
-		rect = element.CurrentBoundingRectangle
-		left = int(rect.left)
-		top = int(rect.top)
-		right = int(rect.right)
-		bottom = int(rect.bottom)
-	except Exception:
-		return True
-	if right <= left or bottom <= top:
-		return False
-	return _isRectVisibleInForegroundWindow(left, top, right, bottom)
 
 
 def _getEditPlaceholder(element):
@@ -4919,136 +4436,6 @@ def _popupLooksLikeMessageContextMenu(appMod, hwnd, popupRect):
 			exc_info=True,
 		)
 	return False
-
-
-def _isNotesWindowContext(element, walker, allowOcr=True):
-	"""Detect whether the foreground LINE window is currently showing a notes panel."""
-	global _notesWindowDetectionCache
-	hwnd, windowTitle, windowRect = _getForegroundWindowInfo()
-	isNotesWindow = any(kw in windowTitle for kw in _NOTES_WINDOW_KEYWORDS)
-
-	if not isNotesWindow:
-		try:
-			ancestor = element
-			for _depth in range(5):
-				ancestor = walker.GetParentElement(ancestor)
-				if not ancestor:
-					break
-				try:
-					ancestorName = ancestor.CurrentName
-					if ancestorName and isinstance(ancestorName, str):
-						ancestorNameLower = ancestorName.strip().lower()
-						if any(kw in ancestorNameLower for kw in _NOTES_WINDOW_KEYWORDS):
-							isNotesWindow = True
-							log.info(
-								f"LINE: Detected notes window via UIA ancestor name: {ancestorName!r}",
-							)
-							break
-				except Exception:
-					continue
-		except Exception:
-			log.debug("LINE: UIA ancestor notes detection failed", exc_info=True)
-
-	cacheKey = None
-	if hwnd and windowRect:
-		cacheKey = (int(hwnd), windowTitle, windowRect)
-		cache = _notesWindowDetectionCache
-		if not isNotesWindow and cache["key"] == cacheKey and cache["expiresAt"] > time.monotonic():
-			return cache["isNotesWindow"], windowTitle
-
-	if isNotesWindow or not allowOcr or not cacheKey or not windowRect:
-		return isNotesWindow, windowTitle
-
-	left, top, right, bottom = windowRect
-	winWidth = right - left
-	winHeight = bottom - top
-	try:
-		if winWidth > 0 and winHeight > 0:
-			log.debug(
-				f"LINE: Attempting OCR notes detection, window size: {winWidth}x{winHeight}",
-			)
-			ocrWidth = winWidth
-			ocrHeight = int(winHeight * 0.20)
-			ocrLeft = left
-			ocrTop = top
-			log.debug(
-				f"LINE: OCR region: left={ocrLeft}, top={ocrTop}, width={ocrWidth}, height={ocrHeight}",
-			)
-
-			import screenBitmap
-			from contentRecog import uwpOcr
-			import threading
-
-			langs = uwpOcr.getLanguages()
-			if langs:
-				ocrLang = None
-				for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-					if candidate in langs:
-						ocrLang = candidate
-						break
-				if not ocrLang:
-					for lang in langs:
-						if lang.startswith("zh"):
-							ocrLang = lang
-							break
-				if not ocrLang:
-					ocrLang = langs[0]
-				log.debug(f"LINE: Using OCR language: {ocrLang}")
-
-				sb = screenBitmap.ScreenBitmap(ocrWidth, ocrHeight)
-				pixels = sb.captureImage(ocrLeft, ocrTop, ocrWidth, ocrHeight)
-				recognizer = uwpOcr.UwpOcr(language=ocrLang)
-				resultHolder = [None]
-				event = threading.Event()
-
-				class _ImgInfo:
-					def __init__(self, w, h):
-						self.recogWidth = w
-						self.recogHeight = h
-						self.resizeFactor = 1
-
-					def convertXToScreen(self, x):
-						return ocrLeft + x
-
-					def convertYToScreen(self, y):
-						return ocrTop + y
-
-					def convertWidthToScreen(self, w):
-						return w
-
-					def convertHeightToScreen(self, h):
-						return h
-
-				def _onOcr(result):
-					resultHolder[0] = result
-					event.set()
-
-				recognizer.recognize(pixels, _ImgInfo(ocrWidth, ocrHeight), _onOcr)
-				event.wait(timeout=2.0)
-				result = resultHolder[0]
-				if result and not isinstance(result, Exception):
-					ocrText = getattr(result, "text", "") or ""
-					ocrText = _removeCJKSpaces(ocrText.strip())
-					log.debug(f"LINE: OCR result text: {ocrText!r}")
-					isNotesWindow = any(kw in ocrText.lower() for kw in _NOTES_OCR_KEYWORDS)
-					if isNotesWindow:
-						log.info(f"LINE: Detected notes window via OCR: {ocrText!r}")
-					else:
-						log.debug("LINE: No notes keywords found in OCR text")
-				else:
-					log.debug(f"LINE: OCR returned no result or error: {result}")
-			else:
-				log.debug("LINE: No OCR languages available")
-	except Exception:
-		log.debug("LINE: notes window OCR detection failed", exc_info=True)
-	finally:
-		_notesWindowDetectionCache = {
-			"key": cacheKey,
-			"expiresAt": time.monotonic() + _NOTES_OCR_CACHE_TTL,
-			"isNotesWindow": isNotesWindow,
-		}
-
-	return isNotesWindow, windowTitle
 
 
 def _getTextViaUIAFindAll(obj, maxElements=30):
@@ -5320,734 +4707,20 @@ def _extractTextFromUIAElement(element):
 	return texts
 
 
-def _ocrReadElementText(rawElement, appModuleRef=None, preferCallAnnouncement=False):
-	"""Perform OCR on a raw UIA element's bounding rect and speak the result.
+def _isMessageInputElement(element, handler):
+	"""Return True when a raw UIA edit element is LINE's chat message input.
 
-	This is used as a fallback when all UIA text extraction strategies
-	return empty. LINE's Qt6 renders text via GPU, so OCR is the only
-	way to read it.
-
-	The OCR is asynchronous — result is spoken via wx.CallAfter on main thread.
+	The login window has two sibling edit fields (email + password), so those
+	never count. LINE 26.6.0.4004+ names its edit fields, so the name decides
+	first; a search hint wins over a message hint because the sidebar search
+	box can be named like "Search chats and messages". Unnamed fields fall back
+	to position: the message input sits right of the sidebar or near the bottom.
 	"""
-	# Skip OCR if addon is suppressed (e.g. file dialog is open)
-	if _suppressAddon:
-		log.debug("LINE OCR: suppressed (addon paused)")
-		return
-	try:
-		rect = rawElement.CurrentBoundingRectangle
-		left = int(rect.left)
-		top = int(rect.top)
-		width = int(rect.right - rect.left)
-		height = int(rect.bottom - rect.top)
-		right = int(rect.right)
-		bottom = int(rect.bottom)
-
-		if width <= 0 or height <= 0:
-			return
-		if not _isRectVisibleInForegroundWindow(left, top, right, bottom):
-			log.debug(
-				f"LINE OCR skipped for off-window element at ({left},{top}) {width}x{height}",
-			)
-			return
-
-		import screenBitmap
-
-		sb = screenBitmap.ScreenBitmap(width, height)
-		pixels = sb.captureImage(left, top, width, height)
-
-		from contentRecog import uwpOcr
-
-		langs = uwpOcr.getLanguages()
-		if not langs:
-			return
-
-		# Pick language: prefer Traditional Chinese
-		ocrLang = None
-		for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-			if candidate in langs:
-				ocrLang = candidate
-				break
-		if not ocrLang:
-			for lang in langs:
-				if lang.startswith("zh"):
-					ocrLang = lang
-					break
-		if not ocrLang:
-			ocrLang = langs[0]
-
-		recognizer = uwpOcr.UwpOcr(language=ocrLang)
-		resizeFactor = recognizer.getResizeFactor(width, height)
-		# 確保至少 2x 放大，提高小字辨識精度
-		if resizeFactor < 2:
-			resizeFactor = 2
-
-		class _ImgInfo:
-			def __init__(self, w, h, factor, sLeft, sTop):
-				self.recogWidth = w * factor
-				self.recogHeight = h * factor
-				self.resizeFactor = factor
-				self._screenLeft = sLeft
-				self._screenTop = sTop
-
-			def convertXToScreen(self, x):
-				return self._screenLeft + int(x / self.resizeFactor)
-
-			def convertYToScreen(self, y):
-				return self._screenTop + int(y / self.resizeFactor)
-
-			def convertWidthToScreen(self, width):
-				return int(width / self.resizeFactor)
-
-			def convertHeightToScreen(self, height):
-				return int(height / self.resizeFactor)
-
-		imgInfo = _ImgInfo(width, height, resizeFactor, left, top)
-
-		if resizeFactor > 1:
-			sb2 = screenBitmap.ScreenBitmap(
-				width * resizeFactor,
-				height * resizeFactor,
-			)
-			ocrPixels = sb2.captureImage(
-				left,
-				top,
-				width,
-				height,
-			)
-		else:
-			ocrPixels = pixels
-
-		# Store references to prevent garbage collection during async OCR
-		_ocrReadElementText._recognizer = recognizer
-		_ocrReadElementText._pixels = ocrPixels
-		_ocrReadElementText._imgInfo = imgInfo
-
-		def _onOcrResult(result):
-			"""Handle OCR result on background thread, dispatch to main."""
-			import wx
-
-			def _handleOnMain():
-				try:
-					if isinstance(result, Exception):
-						log.debug(f"LINE OCR error: {result}")
-						return
-					# LinesWordsResult has .text with the full recognized string
-					ocrText = getattr(result, "text", "") or ""
-					ocrText = _removeCJKSpaces(ocrText.strip())
-					if ocrText:
-						announcement = None
-						if preferCallAnnouncement:
-							announcement = _getCallAnnouncementFromOcr(ocrText)
-						log.info(f"LINE OCR nav result: {ocrText!r}")
-						if not preferCallAnnouncement:
-							_storeChatNameFromText(ocrText)
-						speech.cancelSpeech()
-						ui.message(announcement or ocrText)
-					else:
-						log.debug("LINE OCR: no text found in element")
-				except Exception as e:
-					log.debug(f"LINE OCR result handler error: {e}")
-				finally:
-					_ocrReadElementText._recognizer = None
-					_ocrReadElementText._pixels = None
-					_ocrReadElementText._imgInfo = None
-
-			wx.CallAfter(_handleOnMain)
-
-		try:
-			recognizer.recognize(ocrPixels, imgInfo, _onOcrResult)
-			log.debug(f"LINE OCR started for element at ({left},{top}) {width}x{height}")
-		except Exception as e:
-			log.debug(f"LINE OCR recognize error: {e}")
-			_ocrReadElementText._recognizer = None
-			_ocrReadElementText._pixels = None
-			_ocrReadElementText._imgInfo = None
-	except Exception:
-		log.debug("_ocrReadElementText failed", exc_info=True)
-
-
-def _findSelectedItemInList(handler, focusedElement):
-	"""Walk up from focusedElement to find a parent List, then find the selected item.
-
-	LINE's Qt6 keeps UIA focus on the edit field even when arrows move
-	selection in a list. We walk up to find the List, then use
-	SelectionItem property or walk children to find the selected ListItem.
-	Returns the selected item's UIA element, or None.
-	"""
-	try:
-		walker = handler.clientObject.RawViewWalker
-		parent = walker.GetParentElement(focusedElement)
-		depth = 0
-		while parent and depth < 10:
-			try:
-				ct = parent.CurrentControlType
-				if ct == 50008:  # UIA List
-					# Found a List - walk children to find selected item
-					# Use LegacyIAccessibleState (propId=30094 is description,
-					# 30100 is LegacyIAccessibleState)
-					try:
-						condition = handler.clientObject.CreatePropertyCondition(
-							30003,
-							50007,  # ControlType == ListItem
-						)
-						items = parent.FindAll(UIAHandler.TreeScope_Children, condition)
-						if items:
-							for i in range(items.Length):
-								item = items.GetElement(i)
-								try:
-									# LegacyIAccessibleState: 0x2 = SELECTED
-									state = item.GetCurrentPropertyValue(30100)
-									if isinstance(state, int) and (state & 0x2):
-										log.info(f"LINE: found selected list item via state={state}")
-										return item
-								except Exception:
-									pass
-					except Exception:
-						pass
-
-					# Also try SelectionItemPattern.IsSelected (propId=30079)
-					try:
-						condition = handler.clientObject.CreatePropertyCondition(
-							30003,
-							50007,  # ControlType == ListItem
-						)
-						items = parent.FindAll(UIAHandler.TreeScope_Children, condition)
-						if items:
-							for i in range(items.Length):
-								item = items.GetElement(i)
-								try:
-									isSelected = item.GetCurrentPropertyValue(30079)
-									if isSelected:
-										log.info(
-											"LINE: found selected list item via SelectionItemPattern.IsSelected",
-										)
-										return item
-								except Exception:
-									pass
-					except Exception:
-						pass
-
-					# Fallback: try HasKeyboardFocus on each ListItem
-					try:
-						condition = handler.clientObject.CreatePropertyCondition(
-							30003,
-							50007,  # ControlType == ListItem
-						)
-						items = parent.FindAll(UIAHandler.TreeScope_Children, condition)
-						if items:
-							for i in range(items.Length):
-								item = items.GetElement(i)
-								try:
-									if item.CurrentHasKeyboardFocus:
-										log.info("LINE: found selected list item via HasKeyboardFocus")
-										return item
-								except Exception:
-									pass
-					except Exception:
-						pass
-
-					# Fallback: check LegacyIAccessibleState for FOCUSED (0x4)
-					try:
-						condition = handler.clientObject.CreatePropertyCondition(
-							30003,
-							50007,  # ControlType == ListItem
-						)
-						items = parent.FindAll(UIAHandler.TreeScope_Children, condition)
-						if items:
-							for i in range(items.Length):
-								item = items.GetElement(i)
-								try:
-									state = item.GetCurrentPropertyValue(30100)
-									# 0x4 = STATE_SYSTEM_FOCUSED
-									if isinstance(state, int) and (state & 0x4):
-										log.info(f"LINE: found selected list item via FOCUSED state={state}")
-										return item
-								except Exception:
-									pass
-					except Exception:
-						pass
-
-					# Store the parent list for OCR fallback
-					_findSelectedItemInList._lastListElement = parent
-					break
-			except Exception:
-				pass
-			try:
-				parent = walker.GetParentElement(parent)
-			except Exception:
-				break
-			depth += 1
-	except Exception:
-		pass
-	return None
-
-
-# Track the index of the last navigated chat list item.
-# This is used when UIA cannot detect which item is selected — we
-# fall back to positional tracking.
-_chatListCurrentIndex = -1
-
-
-def _findListElement(handler, startElement):
-	"""Walk up from startElement to find a parent List element.
-
-	Returns (listElement, walker) or (None, None).
-	"""
-	try:
-		walker = handler.clientObject.RawViewWalker
-		parent = walker.GetParentElement(startElement)
-		depth = 0
-		while parent and depth < 10:
-			try:
-				ct = parent.CurrentControlType
-				if ct == 50008:  # UIA List
-					return parent, walker
-			except Exception:
-				pass
-			try:
-				parent = walker.GetParentElement(parent)
-			except Exception:
-				break
-			depth += 1
-	except Exception:
-		pass
-	return None, None
-
-
-def _getListItems(handler, listElement):
-	"""Get all ListItem children of a List element.
-
-	Returns a UIA element array, or None.
-	"""
-	try:
-		condition = handler.clientObject.CreatePropertyCondition(
-			30003,
-			50007,  # ControlType == ListItem
-		)
-		items = listElement.FindAll(UIAHandler.TreeScope_Children, condition)
-		return items
-	except Exception:
-		return None
-
-
-def _findCurrentItemIndex(items):
-	"""Find the currently selected/focused item index in a list.
-
-	Tries multiple UIA strategies. Returns the index (0-based), or -1.
-	"""
-	if not items:
-		return -1
-	count = items.Length
-	for i in range(count):
-		try:
-			item = items.GetElement(i)
-			# Check SELECTED state (0x2)
-			state = item.GetCurrentPropertyValue(30100)
-			if isinstance(state, int) and (state & 0x2):
-				return i
-		except Exception:
-			pass
-	for i in range(count):
-		try:
-			item = items.GetElement(i)
-			if item.GetCurrentPropertyValue(30079):  # SelectionItemPattern.IsSelected
-				return i
-		except Exception:
-			pass
-	for i in range(count):
-		try:
-			item = items.GetElement(i)
-			if item.CurrentHasKeyboardFocus:
-				return i
-		except Exception:
-			pass
-	for i in range(count):
-		try:
-			item = items.GetElement(i)
-			state = item.GetCurrentPropertyValue(30100)
-			if isinstance(state, int) and (state & 0x4):  # FOCUSED
-				return i
-		except Exception:
-			pass
-	return -1
-
-
-def _clickElement(element):
-	"""Click the center of a UIA element's bounding rectangle."""
-	try:
-		rect = element.CurrentBoundingRectangle
-		cx = int((rect.left + rect.right) / 2)
-		cy = int((rect.top + rect.bottom) / 2)
-		if cx <= 0 or cy <= 0:
-			return False
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if hwnd:
-			ctypes.windll.user32.SetForegroundWindow(hwnd)
-		_sendMouseClick(cx, cy)
-		return True
-	except Exception:
-		log.debug("_clickElement failed", exc_info=True)
-		return False
-
-
-def _announceElement(element):
-	"""Extract text from a UIA element and speak it.
-
-	Also attempts to extract the chat room name and store it.
-	Returns the announcement text (or None if OCR fallback used).
-	"""
-	global _currentChatRoomName
-	textParts = _extractTextFromUIAElement(element)
-	if textParts:
-		announcement = " ".join(textParts)
-		speech.cancelSpeech()
-		ui.message(announcement)
-		# Try to extract chat name from the text
-		_storeChatNameFromText(announcement)
-		return announcement
-	else:
-		# Try OCR as fallback
-		speech.cancelSpeech()
-		_ocrAndStoreChatName(element)
-		return None
-
-
-def _storeChatNameFromText(text):
-	"""Extract and store the chat room name from OCR/UIA text.
-
-	The first line of the text typically contains the chat name,
-	possibly followed by unread count like '( 5 )'.
-	"""
-	global _currentChatRoomName
-	if not text:
-		return
-	import re
-
-	# Take the first line
-	lines = text.strip().split("\n")
-	if lines:
-		firstLine = lines[0].strip()
-		# Remove trailing unread count like ( 123 )
-		firstLine = re.sub(r"\s*\(\s*\d+\s*\)\s*$", "", firstLine)
-		# Remove leading time patterns like '上午 11:08' or '下午 3:52'
-		firstLine = re.sub(r"^[上下]午\s*\d+\s*[:：]\s*\d+\s*", "", firstLine)
-		firstLine = firstLine.strip()
-		if firstLine:
-			previousRoom = _currentChatRoomName
-			_currentChatRoomName = firstLine
-			log.info(f"LINE: stored chat room name: {_currentChatRoomName}")
-			if previousRoom != firstLine:
-				try:
-					from . import _chatCache
-
-					_chatCache.onChatRoomChanged(firstLine)
-				except Exception:
-					log.debug("LINE: chat cache room-change hook failed", exc_info=True)
-
-
-def _ocrAndStoreChatName(element):
-	"""OCR an element and store the chat room name from the result."""
-	global _currentChatRoomName
-	try:
-		rect = element.CurrentBoundingRectangle
-		left = int(rect.left)
-		top = int(rect.top)
-		width = int(rect.right - rect.left)
-		height = int(rect.bottom - rect.top)
-		if width <= 0 or height <= 0 or left < -width or top < -height:
-			ui.message(_("List item"))
-			return
-
-		log.debug(f"LINE OCR+name started for element at ({left},{top}) {width}x{height}")
-
-		# Use the same OCR mechanism as _ocrReadElementText
-		try:
-			import screenBitmap
-			from contentRecog import uwpOcr
-
-			langs = uwpOcr.getLanguages()
-			if not langs:
-				ui.message(_("List item"))
-				return
-
-			# Pick language: prefer Traditional Chinese
-			ocrLang = None
-			for candidate in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-				if candidate in langs:
-					ocrLang = candidate
-					break
-			if not ocrLang:
-				for lang in langs:
-					if lang.startswith("zh"):
-						ocrLang = lang
-						break
-			if not ocrLang:
-				ocrLang = langs[0]
-
-			recognizer = uwpOcr.UwpOcr(language=ocrLang)
-			resizeFactor = recognizer.getResizeFactor(width, height)
-			# Use higher resize factor for small elements to improve OCR accuracy
-			minFactor = 2
-			if width < 100 or height < 100:
-				minFactor = max(3, int(200 / max(min(width, height), 1)))
-			if resizeFactor < minFactor:
-				resizeFactor = minFactor
-
-			class _ImgInfo:
-				def __init__(self, w, h, factor, sLeft, sTop):
-					self.recogWidth = w * factor
-					self.recogHeight = h * factor
-					self.resizeFactor = factor
-					self._screenLeft = sLeft
-					self._screenTop = sTop
-
-				def convertXToScreen(self, x):
-					return self._screenLeft + int(x / self.resizeFactor)
-
-				def convertYToScreen(self, y):
-					return self._screenTop + int(y / self.resizeFactor)
-
-				def convertWidthToScreen(self, w):
-					return int(w / self.resizeFactor)
-
-				def convertHeightToScreen(self, h):
-					return int(h / self.resizeFactor)
-
-			imgInfo = _ImgInfo(width, height, resizeFactor, left, top)
-
-			if resizeFactor > 1:
-				sb = screenBitmap.ScreenBitmap(
-					width * resizeFactor,
-					height * resizeFactor,
-				)
-				ocrPixels = sb.captureImage(left, top, width, height)
-			else:
-				sb = screenBitmap.ScreenBitmap(width, height)
-				ocrPixels = sb.captureImage(left, top, width, height)
-
-			# Store references to prevent garbage collection during async OCR
-			_ocrAndStoreChatName._recognizer = recognizer
-			_ocrAndStoreChatName._pixels = ocrPixels
-			_ocrAndStoreChatName._imgInfo = imgInfo
-
-			def _onOcrResult(result):
-				import wx
-
-				def _handleOnMain():
-					global _currentChatRoomName
-					try:
-						if isinstance(result, Exception):
-							log.debug(f"LINE OCR+name error: {result}")
-							ui.message(_("List item"))
-							return
-						ocrText = getattr(result, "text", "") or ""
-						ocrText = _removeCJKSpaces(ocrText.strip())
-						if ocrText:
-							log.info(f"LINE OCR+name result: {ocrText!r}")
-							speech.cancelSpeech()
-							ui.message(ocrText)
-							_storeChatNameFromText(ocrText)
-						else:
-							log.debug("LINE OCR+name: no text found")
-							ui.message(_("List item"))
-					except Exception as e:
-						log.debug(f"LINE OCR+name result handler error: {e}")
-					finally:
-						_ocrAndStoreChatName._recognizer = None
-						_ocrAndStoreChatName._pixels = None
-						_ocrAndStoreChatName._imgInfo = None
-
-				wx.CallAfter(_handleOnMain)
-
-			recognizer.recognize(ocrPixels, imgInfo, _onOcrResult)
-		except Exception:
-			log.debug("OCR fallback failed", exc_info=True)
-			ui.message(_("List item"))
-	except Exception:
-		log.debug("_ocrAndStoreChatName failed", exc_info=True)
-		ui.message(_("List item"))
-
-
-def _isInChatListContext(handler):
-	"""Check if the current UIA focus is near a chat list.
-
-	Returns (True, listElement, items, currentIndex) if we're in a
-	chat list context, or (False, None, None, -1) otherwise.
-	Also caches the search field element for later use.
-	"""
-	global _chatListCurrentIndex, _chatListSearchField
-	try:
-		rawElement = handler.clientObject.GetFocusedElement()
-		if rawElement is None:
-			return False, None, None, -1
-
-		# Check if focus is directly on a list item
-		try:
-			ct = rawElement.CurrentControlType
-		except Exception:
-			ct = 0
-
-		if ct == 50007:  # ListItem - focus is on a list item already
-			listEl, walker = _findListElement(handler, rawElement)
-			if listEl:
-				# In standalone ChatWindow mode there is no sidebar —
-				# all lists are message lists, not chat lists.
-				if _isChatWindowMode():
-					return False, None, None, -1
-				# Check if this list is in the left sidebar (chat list area)
-				# vs the right side (message list area)
-				try:
-					hwnd = ctypes.windll.user32.GetForegroundWindow()
-					if hwnd:
-						wndRect = ctypes.wintypes.RECT()
-						ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-						sidebarRight = _getSidebarRightBoundary(wndRect, hwnd)
-						if sidebarRight is not None:
-							listRect = listEl.CurrentBoundingRectangle
-							if listRect.left >= sidebarRight:
-								# List is on the right side — message list, not chat list
-								return False, None, None, -1
-				except Exception:
-					log.debug("Sidebar position check failed", exc_info=True)
-				items = _getListItems(handler, listEl)
-				if items and items.Length > 0:
-					idx = _findCurrentItemIndex(items)
-					if idx < 0:
-						idx = _chatListCurrentIndex
-					return True, listEl, items, idx
-
-		# Check if focus is on the search edit field (near a list)
-		if ct == 50004:  # Edit control
-			label = _detectEditFieldLabel(rawElement, handler, allowNotesOcr=False)
-			# If focus is on message input, we're NOT in chat list context
-			# Translators: Label for the LINE message input field
-			if label == _("Message input"):
-				return False, None, None, -1
-			# Translators: Label for the search chat rooms field in LINE
-			if label == _("Search chat rooms"):
-				# Cache the search field for later
-				_chatListSearchField = rawElement
-				listEl, walker = _findListElement(handler, rawElement)
-				if listEl:
-					items = _getListItems(handler, listEl)
-					if items and items.Length > 0:
-						idx = _findCurrentItemIndex(items)
-						if idx < 0:
-							idx = _chatListCurrentIndex
-						return True, listEl, items, idx
-	except Exception:
-		log.debug("_isInChatListContext failed", exc_info=True)
-	return False, None, None, -1
-
-
-def _findChatListFromCache(handler):
-	"""Find the chat list using the cached search field element.
-
-	Used when _chatListMode is True but focus has moved elsewhere.
-	Returns (listElement, items) or (None, None).
-	"""
-	global _chatListSearchField
-	if _chatListSearchField is None:
-		return None, None
-	try:
-		listEl, walker = _findListElement(handler, _chatListSearchField)
-		if listEl:
-			items = _getListItems(handler, listEl)
-			if items and items.Length > 0:
-				return listEl, items
-	except Exception:
-		log.debug("_findChatListFromCache failed", exc_info=True)
-		_chatListSearchField = None
-	return None, None
-
-
-def _findChatListFromWindow(handler):
-	"""Find the chat list by walking the UIA tree from the LINE window root.
-
-	Fallback when _findChatListFromCache fails (stale COM ref).
-	Finds List elements and picks the one in the left sidebar area.
-	In standalone ChatWindow mode there is no sidebar, so returns (None, None).
-	Returns (listElement, items) or (None, None).
-	"""
-	global _chatListSearchField
-	try:
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			return None, None
-
-		# Standalone ChatWindow has no sidebar — no chat list to find
-		if _isChatWindowMode(hwnd):
-			return None, None
-
-		# Get window rect to identify sidebar area
-		wndRect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-		sidebarRight = _getSidebarRightBoundary(wndRect, hwnd)
-		if sidebarRight is None:
-			return None, None
-
-		# Get root UIA element for the window
-		rootEl = handler.clientObject.ElementFromHandle(hwnd)
-		if not rootEl:
-			return None, None
-
-		# Find all List elements
-		listCondition = handler.clientObject.CreatePropertyCondition(
-			30003,
-			50008,  # ControlType == List
-		)
-		lists = rootEl.FindAll(UIAHandler.TreeScope_Descendants, listCondition)
-		if not lists:
-			return None, None
-
-		# Pick the list in the sidebar (left side of window)
-		for i in range(lists.Length):
-			try:
-				listEl = lists.GetElement(i)
-				rect = listEl.CurrentBoundingRectangle
-				# List must be in the left sidebar area
-				if rect.left < sidebarRight and rect.right <= sidebarRight + 50:
-					items = _getListItems(handler, listEl)
-					if items and items.Length > 0:
-						log.info(f"LINE: found chat list from window root, {items.Length} items")
-						# Try to cache the search field for next time
-						_tryCacheSearchField(handler, listEl)
-						return listEl, items
-			except Exception:
-				continue
-	except Exception:
-		log.debug("_findChatListFromWindow failed", exc_info=True)
-	return None, None
-
-
-def _tryCacheSearchField(handler, listElement):
-	"""Try to find and cache the search field near a list element."""
-	global _chatListSearchField
-	try:
-		walker = handler.clientObject.RawViewWalker
-		parent = walker.GetParentElement(listElement)
-		if not parent:
-			return
-		# Look for an Edit control sibling
-		editCondition = handler.clientObject.CreatePropertyCondition(
-			30003,
-			50004,  # ControlType == Edit
-		)
-		edits = parent.FindAll(UIAHandler.TreeScope_Children, editCondition)
-		if edits and edits.Length > 0:
-			_chatListSearchField = edits.GetElement(0)
-			log.debug("LINE: cached search field from list parent")
-	except Exception:
-		pass
-
-
-def _detectEditFieldLabel(element, handler, allowNotesOcr=True):
-	"""Detect the type of a raw UIA edit element and return an appropriate label."""
 	try:
 		walker = handler.clientObject.RawViewWalker
 		parentEl = walker.GetParentElement(element)
 		if not parentEl:
-			return ""
+			return False
 
 		editCondition = handler.clientObject.CreatePropertyCondition(
 			30003,
@@ -6057,1268 +4730,31 @@ def _detectEditFieldLabel(element, handler, allowNotesOcr=True):
 			UIAHandler.TreeScope_Children,
 			editCondition,
 		)
-		editCount = editElements.Length if editElements else 0
-
-		if editCount >= 2:
-			try:
-				myRect = element.CurrentBoundingRectangle
-				myTop = myRect.top
-			except Exception:
-				return _("Login field")
-
-			editTops = []
-			for i in range(editCount):
-				try:
-					siblingRect = editElements.GetElement(i).CurrentBoundingRectangle
-					editTops.append(siblingRect.top)
-				except Exception:
-					continue
-
-			if len(editTops) >= 2:
-				if myTop <= min(editTops):
-					return _("Email")
-				return _("Password")
-			return _("Login field")
+		if editElements and editElements.Length >= 2:
+			return False
 
 		placeholder = _getEditPlaceholder(element)
 		searchKeywords = ("搜尋", "search", "検索", "ค้นหา", "찾기")
 		messageKeywords = ("輸入訊息", "message", "メッセージ", "ข้อความ", "입력")
-		hasSearchHint = bool(
-			placeholder and any(kw in placeholder for kw in searchKeywords),
-		)
-		hasMessageHint = bool(
-			placeholder and any(kw in placeholder for kw in messageKeywords),
-		)
-
-		windowTitle = ""
-		isNotesWindow = False
-		positionSuggestsSearch = False
-		positionSuggestsMessage = False
-		try:
-			myRect = element.CurrentBoundingRectangle
-			myLeft = myRect.left
-			myTop = myRect.top
-			myBottom = myRect.bottom
-
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			wndRect = ctypes.wintypes.RECT()
-			ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-			wndWidth = wndRect.right - wndRect.left
-			wndHeight = wndRect.bottom - wndRect.top
-
-			if wndWidth > 0 and wndHeight > 0:
-				relativeX = (myLeft - wndRect.left) / wndWidth
-				relativeY = (myTop - wndRect.top) / wndHeight
-				relativeBottom = (myBottom - wndRect.top) / wndHeight
-				positionSuggestsSearch = relativeX < 0.5 and relativeY < 0.3
-				positionSuggestsMessage = relativeX >= 0.5 or relativeBottom > 0.7
-		except Exception:
-			log.debug("_detectEditFieldLabel position detection failed", exc_info=True)
-
-		if hasMessageHint or (positionSuggestsMessage and not hasSearchHint):
-			return _("Message input")
-
-		needsSearchLabel = hasSearchHint or positionSuggestsSearch
-		if needsSearchLabel:
-			hasQueryLikeText = bool(
-				placeholder and not hasSearchHint and not hasMessageHint,
-			)
-			needsNotesOcr = allowNotesOcr and not hasQueryLikeText
-			isNotesWindow, windowTitle = _isNotesWindowContext(
-				element,
-				walker,
-				allowOcr=needsNotesOcr,
-			)
-			log.debug(
-				f"LINE edit field classification: placeholder={placeholder!r}, "
-				f"windowTitle={windowTitle!r}, isNotesWindow={isNotesWindow}, "
-				f"searchHint={hasSearchHint}, messageHint={hasMessageHint}, "
-				f"queryLikeText={hasQueryLikeText}, "
-				f"notesOcrEnabled={needsNotesOcr}, "
-				f"positionSuggestsSearch={positionSuggestsSearch}, "
-				f"positionSuggestsMessage={positionSuggestsMessage}",
-			)
-			if isNotesWindow:
-				return _("Search notes content")
-			return _("Search chat rooms")
-
-		if positionSuggestsMessage:
-			return _("Message input")
-
-		return ""
-	except Exception:
-		log.debug("_detectEditFieldLabel failed", exc_info=True)
-		return ""
-
-
-def _queryAndSpeakUIAFocus():
-	"""Query UIA for the currently focused element and speak it.
-
-	Called after passing a navigation gesture through to LINE,
-	because LINE's Qt6 does NOT fire UIA focus change events.
-	We poll the UIA focused element directly and extract text
-	using only safe, read-only COM property access.
-
-	NOTE: We do NOT create NVDA UIA objects or call
-	NormalizeElementBuildCache — those cause cross-process COM
-	calls that crash LINE's Qt6 process.
-	"""
-	if _suppressAddon:
-		return
-	global _lastAnnouncedUIAElement, _lastAnnouncedUIAName, _lastRawFocusedElement
-	try:
-		handler = UIAHandler.handler
-		if handler is None:
-			return
-		rawElement = handler.clientObject.GetFocusedElement()
-		if rawElement is None:
-			return
-
-		# Build a unique identifier to avoid re-announcing
-		try:
-			runtimeId = rawElement.GetRuntimeId()
-			elementId = str(runtimeId) if runtimeId else None
-		except Exception:
-			elementId = None
-
-		targetElement = rawElement
-
-		# Detect if UIA focus is stuck on the same element (e.g. edit field)
-		# by comparing with _lastRawFocusedElement (not _lastAnnouncedUIAElement,
-		# which may have been updated to a selected list item's ID).
-		rawFocusStuck = elementId and elementId == _lastRawFocusedElement
-		_lastRawFocusedElement = elementId
-
-		if rawFocusStuck:
-			# UIA focus hasn't moved - the edit field still has focus.
-			# Try to find the selected item in a nearby list.
-			selectedItem = _findSelectedItemInList(handler, rawElement)
-			if selectedItem:
-				targetElement = selectedItem
-				try:
-					runtimeId = selectedItem.GetRuntimeId()
-					elementId = str(runtimeId) if runtimeId else None
-				except Exception:
-					elementId = None
-				# Check if this is the same item we already announced
-				if elementId and elementId == _lastAnnouncedUIAElement:
-					return
-			else:
-				# Could not find selected item via UIA properties.
-				# Try OCR on the list area as a fallback.
-				listEl = getattr(_findSelectedItemInList, "_lastListElement", None)
-				if listEl:
-					log.info("LINE: selected item not found via UIA, trying OCR on list")
-					_findSelectedItemInList._lastListElement = None
-					_lastAnnouncedUIAElement = None
-					_ocrReadElementText(listEl)
-					return
-				return
-		else:
-			# UIA focus has moved to a new element.
-			# Check if this is the same item we already announced
-			if elementId and elementId == _lastAnnouncedUIAElement:
-				return
-
-		_lastAnnouncedUIAElement = elementId
-
-		# Get control type for role name
-		try:
-			ct = targetElement.CurrentControlType
-		except Exception:
-			ct = 0
-
-		# For ListItem elements, check if it's in the message area
-		# (right side of window) vs chat list sidebar (left side).
-		# Only use copy-first for message list items.
-		if ct == 50007:  # ListItem
-			isMessageItem = False
-			# In standalone ChatWindow mode, all list items are message items
-			if _isChatWindowMode():
-				isMessageItem = True
-			else:
-				try:
-					elRect = targetElement.CurrentBoundingRectangle
-					elLeft = int(elRect.left)
-					# Get the LINE window rect
-					lineHwnd = ctypes.windll.user32.GetForegroundWindow()
-					import ctypes.wintypes as _wt
-
-					wr = _wt.RECT()
-					ctypes.windll.user32.GetWindowRect(
-						lineHwnd,
-						ctypes.byref(wr),
-					)
-					# Message list items sit to the right of LINE's sidebar
-					# (icons + chat list). The boundary uses a fixed pixel cap
-					# so the test still works when the window is maximized.
-					# >= is intentional: an element whose left edge lands exactly
-					# on the boundary belongs to the message area, not the sidebar.
-					boundary = _getSidebarRightBoundary(wr, lineHwnd, percentage=0.35)
-					if boundary is not None and elLeft >= boundary:
-						isMessageItem = True
-				except Exception:
-					pass
-			if isMessageItem:
-				if not _isElementVisibleInForegroundWindow(targetElement):
-					log.debug(
-						f"LINE UIA focus: skipping off-window message ListItem runtimeId={elementId}",
-					)
-					return
-				log.info(
-					f"LINE UIA focus: ct={ct} (message ListItem), "
-					f"runtimeId={elementId}, using copy-first read",
-				)
-				_copyAndReadMessage(targetElement)
-				return
-			# Not a message item — fall through to standard handling
-
-		# For non-ListItem elements, use standard UIA text extraction
-		textParts = _extractTextFromUIAElement(targetElement)
-
-		# For edit fields, try to detect field labels (login / search / message input)
-		if ct == 50004:  # Edit control
-			label = _detectEditFieldLabel(targetElement, handler)
-			if label:
-				# Filter out generic app name from text parts
-				textParts = [t for t in textParts if t.strip() not in ("LINE", "line")]
-				textParts.insert(0, label)
-
-		controlTypeNames = {
-			50000: "按鈕",
-			50004: "編輯",
-			50005: "超連結",
-			50007: "清單項目",
-			50008: "清單",
-			50011: "項目",
-			50016: "索引標籤項目",
-			50018: "文字",
-			50025: "群組",
-			50033: "窗格",
-		}
-		roleName = controlTypeNames.get(ct, "")
-
-		log.info(
-			f"LINE UIA focus: ct={ct}, texts={textParts}, runtimeId={elementId}",
-		)
-
-		if textParts:
-			announcement = " ".join(textParts)
-			if roleName:
-				announcement = f"{announcement} {roleName}"
-			_lastAnnouncedUIAName = announcement
-			speech.cancelSpeech()
-			ui.message(announcement)
-		elif roleName:
-			_lastAnnouncedUIAName = roleName
-			speech.cancelSpeech()
-			ui.message(roleName)
-			# For non-message ListItems (chat sidebar), fall back to OCR
-			# when UIA text is empty
-			if ct == 50007:  # ListItem
-				global _lastOCRElement
-				try:
-					rid = str(targetElement.GetRuntimeId())
-				except Exception:
-					rid = None
-				if not rid or rid != _lastOCRElement:
-					_lastOCRElement = rid
-					_ocrReadElementText(targetElement)
-		else:
-			return
-
-	except Exception:
-		log.debugWarning("_queryAndSpeakUIAFocus failed", exc_info=True)
-
-
-def _getClipboardSequenceNumber():
-	"""Return the Windows clipboard sequence number (0 when unavailable)."""
-	try:
-		return ctypes.windll.user32.GetClipboardSequenceNumber()
-	except Exception:
-		return 0
-
-
-def _copyAndReadMessage(targetElement):
-	"""Read a message by right-clicking → Copy → reading clipboard content.
-
-	This is the preferred method for reading messages because it returns
-	the exact text that LINE stores, unlike OCR which may be inaccurate.
-
-	Falls back to OCR (with ocr.wav sound alert) if copy fails.
-	Restores the original clipboard content after reading.
-	"""
-	global _copyReadRequestId, _copyReadClipboardOwnerId
-	try:
-		rect = targetElement.CurrentBoundingRectangle
-		cx = int((rect.left + rect.right) / 2)
-		cy = int((rect.top + rect.bottom) / 2)
-		if cx <= 0 or cy <= 0:
-			log.debug("LINE: _copyAndReadMessage: invalid element position")
-			_ocrReadMessageFallback(targetElement)
-			return
-	except Exception as e:
-		log.debug(f"LINE: _copyAndReadMessage: failed to get rect: {e}")
-		_ocrReadMessageFallback(targetElement)
-		return
-
-	hwnd = ctypes.windll.user32.GetForegroundWindow()
-	_copyReadRequestId += 1
-	requestId = _copyReadRequestId
-	targetRuntimeId = _getElementRuntimeId(targetElement)
-
-	# Save the current clipboard text (only text can be snapshotted) and
-	# record the clipboard sequence number so the Copy click can be detected
-	# by the number changing. The clipboard is deliberately NOT cleared up
-	# front: when it holds non-text data (files, images), clearing would
-	# destroy content that cannot be restored.
-	origClip = None
-	try:
-		origClip = api.getClipData()
-	except Exception:
-		pass
-	_copyReadClipboardOwnerId = requestId
-	clipSeqStart = _getClipboardSequenceNumber()
-
-	# Get LINE window rect to clamp click positions
-	try:
-		import ctypes.wintypes as wintypes
-
-		winRect = wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(
-			hwnd,
-			ctypes.byref(winRect),
-		)
-		winTop = int(winRect.top)
-		winBottom = int(winRect.bottom)
-	except Exception:
-		winTop = 0
-		winBottom = 9999
-
-	elLeft = int(rect.left)
-	elRight = int(rect.right)
-	elTop = int(rect.top)
-	elBottom = int(rect.bottom)
-	baseClickPositions = _buildMessageBubbleClickPositions(
-		(elLeft, elTop, elRight, elBottom),
-		winTop,
-		winBottom,
-		includeVerticalOffsets=True,
-	)
-	clickState = {"positions": baseClickPositions}
-	selectAllCount = [0]  # mutable counter for ≤2-item menus
-	keyboardFallbackTried = [False]
-	messageOcrCache = {
-		"done": False,
-		"text": "",
-		"lines": [],
-		"isDateSeparator": False,
-		"callAnnouncement": None,
-	}
-
-	def _isCurrentRequest():
-		if requestId != _copyReadRequestId:
+		if placeholder and any(kw in placeholder for kw in searchKeywords):
 			return False
-		try:
-			if ctypes.windll.user32.GetForegroundWindow() != hwnd:
-				return False
-		except Exception:
-			pass
-		if targetRuntimeId is None:
+		if placeholder and any(kw in placeholder for kw in messageKeywords):
 			return True
-		currentRuntimeId = _getFocusedElementRuntimeId()
-		return currentRuntimeId is None or currentRuntimeId == targetRuntimeId
 
-	def _abortIfStale(stage, restoreClipboard=False, dismissMenu=False):
-		if _isCurrentRequest():
+		myRect = element.CurrentBoundingRectangle
+		hwnd = ctypes.windll.user32.GetForegroundWindow()
+		wndRect = ctypes.wintypes.RECT()
+		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
+		wndWidth = wndRect.right - wndRect.left
+		wndHeight = wndRect.bottom - wndRect.top
+		if wndWidth <= 0 or wndHeight <= 0:
 			return False
-		sameRequest = requestId == _copyReadRequestId
-		shouldRestoreFocus = sameRequest and _shouldDismissCopyReadMenu(hwnd)
-		log.debug(
-			f"LINE: abandoning stale copy-read during {stage}; "
-			f"requestId={requestId}, currentRequestId={_copyReadRequestId}, "
-			f"targetRuntimeId={targetRuntimeId}, "
-			f"currentRuntimeId={_getFocusedElementRuntimeId()}",
-		)
-		if dismissMenu:
-			_dismissMenu()
-		if restoreClipboard:
-			_restoreClipboard(origClip)
-		if shouldRestoreFocus:
-			_restoreFocusToElement(targetElement, targetRuntimeId)
-		return True
-
-	def _getPositionLabel(posIdx):
-		try:
-			if posIdx < 0:
-				return "keyboard-fallback"
-			return clickState["positions"][posIdx][2]
-		except Exception:
-			return "keyboard-fallback"
-
-	def _getMessageOcrText():
-		"""OCR the message bubble to detect file/voice message hints."""
-		if _abortIfStale("message OCR", restoreClipboard=True):
-			return ""
-		if messageOcrCache["done"]:
-			return messageOcrCache["text"]
-		messageOcrCache["done"] = True
-		try:
-			msgRect = targetElement.CurrentBoundingRectangle
-			msgW = int(msgRect.right - msgRect.left)
-			msgH = int(msgRect.bottom - msgRect.top)
-			if msgW <= 0 or msgH <= 0:
-				messageOcrCache["text"] = ""
-				return ""
-			import screenBitmap
-			from contentRecog import uwpOcr
-			import threading
-
-			mLeft = int(msgRect.left)
-			mTop = int(msgRect.top)
-			sb = screenBitmap.ScreenBitmap(msgW, msgH)
-			pixels = sb.captureImage(mLeft, mTop, msgW, msgH)
-
-			langs = uwpOcr.getLanguages()
-			ocrLang = pickOcrLanguage(langs)
-			if not ocrLang:
-				messageOcrCache["text"] = ""
-				return ""
-
-			recognizer = uwpOcr.UwpOcr(language=ocrLang)
-			resizeFactor = recognizer.getResizeFactor(msgW, msgH)
-			if resizeFactor <= 0:
-				resizeFactor = 1
-			if resizeFactor < 2:
-				resizeFactor = 2
-
-			if resizeFactor > 1:
-				sb2 = screenBitmap.ScreenBitmap(
-					msgW * resizeFactor,
-					msgH * resizeFactor,
-				)
-				ocrPixels = sb2.captureImage(mLeft, mTop, msgW, msgH)
-			else:
-				ocrPixels = pixels
-
-			class _ImgInfo:
-				def __init__(self, w, h, factor, sL, sT):
-					self.recogWidth = w * factor
-					self.recogHeight = h * factor
-					self.resizeFactor = factor
-					self._screenLeft = sL
-					self._screenTop = sT
-
-				def convertXToScreen(self, x):
-					return self._screenLeft + int(x / self.resizeFactor)
-
-				def convertYToScreen(self, y):
-					return self._screenTop + int(y / self.resizeFactor)
-
-				def convertWidthToScreen(self, w):
-					return int(w / self.resizeFactor)
-
-				def convertHeightToScreen(self, h):
-					return int(h / self.resizeFactor)
-
-			imgInfo = _ImgInfo(msgW, msgH, resizeFactor, mLeft, mTop)
-
-			resultHolder = [None]
-			event = threading.Event()
-
-			def _onOcr(result):
-				resultHolder[0] = result
-				event.set()
-
-			recognizer.recognize(ocrPixels, imgInfo, _onOcr)
-			event.wait(timeout=2.5)
-
-			msgText = ""
-			ocrLines = []
-			result = resultHolder[0]
-			if result and not isinstance(result, Exception):
-				msgText = getattr(result, "text", "") or ""
-				msgText = _removeCJKSpaces(msgText.strip())
-				ocrLines = _extractOcrLines(result)
-
-			messageOcrCache["text"] = msgText
-			messageOcrCache["lines"] = ocrLines
-			messageOcrCache["isDateSeparator"] = _isCenteredLineDateSeparatorOcr(
-				msgText,
-				ocrLines,
-				(elLeft, elTop, elRight, elBottom),
-			)
-			messageOcrCache["callAnnouncement"] = _getCallAnnouncementFromOcr(
-				msgText,
-			)
-			if messageOcrCache["isDateSeparator"]:
-				spokenDateText = _getSpokenLineDateSeparatorText(msgText)
-				log.info(
-					f"LINE: copy-read detected centered date separator via OCR: "
-					f"{msgText!r} -> {spokenDateText!r}",
-				)
-				return spokenDateText
-			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
-				ocrLines,
-				(elLeft, elTop, elRight, elBottom),
-				winTop,
-				winBottom,
-			)
-			if ocrClickPositions:
-				log.debug(
-					f"LINE: copy-read OCR-derived bubble probes: "
-					f"{[label for _x, _y, label in ocrClickPositions]}",
-				)
-				clickState["positions"] = _mergeClickPositions(
-					ocrClickPositions,
-					baseClickPositions,
-				)
-			elif ocrLines:
-				log.debug(
-					f"LINE: copy-read OCR lines yielded no bubble probes: "
-					f"{[(line.get('text', ''), bool(line.get('rect'))) for line in ocrLines]}",
-				)
-			log.debug(f"LINE: copy-read message OCR: {msgText!r}")
-			return msgText
-		except Exception as e:
-			log.debug(
-				f"LINE: copy-read message OCR failed: {e}",
-				exc_info=True,
-			)
-			messageOcrCache["text"] = ""
-			return ""
-
-	def _startMouseCopyProbes(reason, dismissMenu=False):
-		if _abortIfStale(
-			f"mouseCopyProbeFallback:{reason}",
-			restoreClipboard=True,
-			dismissMenu=dismissMenu,
-		):
-			return
-		if dismissMenu:
-			_dismissMenu()
-		log.info(
-			f"LINE: copy-read keyboard menu failed ({reason}); trying mouse probes",
-		)
-		core.callLater(300, lambda: _attemptCopyAtOffset(0))
-
-	def _tryKeyboardCopyFallback():
-		if keyboardFallbackTried[0]:
-			log.info("LINE: copy-read keyboard fallback exhausted, falling back to OCR")
-			_restoreClipboard(origClip)
-			_ocrReadMessageFallback(targetElement)
-			return
-		if _abortIfStale(
-			"keyboardCopyFallback",
-			restoreClipboard=True,
-			dismissMenu=True,
-		):
-			return
-		keyboardFallbackTried[0] = True
-		log.info(
-			"LINE: copy-read trying keyboard context menu before mouse probes",
-		)
-		try:
-			_sendGestureWithAddonSuppressed("applications")
-		except Exception as e:
-			log.debug(
-				f"LINE: copy-read keyboard fallback applications send failed: {e}",
-				exc_info=True,
-			)
-			_startMouseCopyProbes("applications send failed")
-			return
-
-		core.callLater(
-			500,
-			lambda: _findCopyMenuItem(-1, retriesLeft=4),
-		)
-
-	def _attemptCopyAtOffset(posIdx=0):
-		"""Right-click at clickPositions[posIdx] and try to copy."""
-		if _abortIfStale("attemptCopyAtOffset", restoreClipboard=True):
-			return
-		positions = clickState["positions"]
-		if posIdx >= len(positions):
-			# All mouse positions exhausted; keyboard menu can still target the row.
-			_tryKeyboardCopyFallback()
-			return
-
-		clickX, clickY, posLabel = positions[posIdx]
-		log.info(
-			f"LINE: copy-read right-clicking at ({clickX}, {clickY}) [{posLabel}]",
-		)
-		if _abortIfStale("right click", restoreClipboard=True):
-			return
-
-		if not _messageProbePointHitsTargetElement(
-			UIAHandler.handler,
-			targetElement,
-			clickX,
-			clickY,
-			targetRuntimeId,
-		):
-			log.info(
-				f"LINE: copy-read skipping probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
-			)
-			core.callLater(50, lambda: _attemptCopyAtOffset(posIdx + 1))
-			return
-
-		# Perform right-click
-		if hwnd:
-			ctypes.windll.user32.SetForegroundWindow(hwnd)
-		_sendMouseClick(int(clickX), int(clickY), "right")
-
-		# Wait for context menu, then find Copy
-		core.callLater(300, lambda: _findCopyMenuItem(posIdx, retriesLeft=4))
-
-	def _findCopyMenuItem(posIdx, retriesLeft=4):
-		"""Find the context menu and click Copy."""
-		if _abortIfStale("findCopyMenuItem", restoreClipboard=True, dismissMenu=True):
-			return
-		try:
-			uiaHandler = UIAHandler.handler
-			if not uiaHandler:
-				_restoreClipboard(origClip)
-				_ocrReadMessageFallback(targetElement)
-				return
-
-			import ctypes.wintypes as wintypes
-
-			# Find popup window
-			pid = wintypes.DWORD()
-			tid = ctypes.windll.user32.GetWindowThreadProcessId(
-				hwnd,
-				ctypes.byref(pid),
-			)
-			popupCandidates = []
-
-			WNDENUMPROC = ctypes.WINFUNCTYPE(
-				ctypes.c_bool,
-				wintypes.HWND,
-				wintypes.LPARAM,
-			)
-
-			def _enumCb(enumHwnd, lParam):
-				if enumHwnd != hwnd and ctypes.windll.user32.IsWindowVisible(enumHwnd):
-					wRect = wintypes.RECT()
-					ctypes.windll.user32.GetWindowRect(
-						enumHwnd,
-						ctypes.byref(wRect),
-					)
-					w = wRect.right - wRect.left
-					h = wRect.bottom - wRect.top
-					if w >= 50 and h >= 30:
-						popupCandidates.append(enumHwnd)
-				return True
-
-			ctypes.windll.user32.EnumThreadWindows(
-				tid,
-				WNDENUMPROC(_enumCb),
-				0,
-			)
-
-			popupHwnd = None
-			if popupCandidates:
-				popupHwnd = popupCandidates[0]
-			else:
-				if 0 <= posIdx < len(clickState["positions"]):
-					clickX, clickY, _positionLabel = clickState["positions"][posIdx]
-					for dy in [0, -40, -80, 40, 80]:
-						pt = wintypes.POINT(clickX, clickY + dy)
-						candHwnd = ctypes.windll.user32.WindowFromPoint(pt)
-						if candHwnd and candHwnd != hwnd:
-							popupHwnd = candHwnd
-							break
-
-			if not popupHwnd:
-				if retriesLeft > 0:
-					core.callLater(
-						200,
-						lambda: _findCopyMenuItem(posIdx, retriesLeft - 1),
-					)
-					return
-				# No popup found, try next position
-				if posIdx < 0:
-					_startMouseCopyProbes("keyboard popup not found")
-					return
-				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
-				return
-
-			element = uiaHandler.clientObject.ElementFromHandle(popupHwnd)
-			if not element:
-				if retriesLeft > 0:
-					core.callLater(
-						200,
-						lambda: _findCopyMenuItem(posIdx, retriesLeft - 1),
-					)
-					return
-				if posIdx < 0:
-					_startMouseCopyProbes("keyboard popup element unavailable", dismissMenu=True)
-					return
-				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
-				return
-
-			# Validate popup is a real context menu
-			try:
-				pCt = element.CurrentControlType
-				eRect = element.CurrentBoundingRectangle
-				eW = int(eRect.right - eRect.left)
-				eH = int(eRect.bottom - eRect.top)
-				if pCt == 50033 or eW < 50 or eH < 30:
-					if posIdx < 0:
-						_startMouseCopyProbes("keyboard popup was not a context menu", dismissMenu=True)
-						return
-					core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
-					return
-			except Exception:
-				pass
-
-			walker = uiaHandler.clientObject.RawViewWalker
-
-			# Collect menu items
-			menuItems = []
-
-			def _collectItems(parent, depth=0):
-				child = walker.GetFirstChildElement(parent)
-				idx = 0
-				while child and idx < 30:
-					try:
-						cRect = child.CurrentBoundingRectangle
-						cH = int(cRect.bottom - cRect.top)
-						cW = int(cRect.right - cRect.left)
-						if cW > 0 and cH > 0:
-							if 20 <= cH <= 80 and cW >= cH * 2:
-								# Get text from children
-								itemText = ""
-								tc = walker.GetFirstChildElement(child)
-								ci = 0
-								while tc and ci < 10:
-									try:
-										n = tc.CurrentName
-										if n and n.strip():
-											itemText = n.strip()
-											break
-									except Exception:
-										pass
-									try:
-										tc = walker.GetNextSiblingElement(tc)
-									except Exception:
-										break
-									ci += 1
-								menuItems.append((child, itemText))
-							elif cH > 80 and depth < 5:
-								_collectItems(child, depth + 1)
-							elif cH >= 20:
-								menuItems.append((child, ""))
-					except Exception:
-						pass
-					try:
-						child = walker.GetNextSiblingElement(child)
-					except Exception:
-						break
-					idx += 1
-
-			_collectItems(element)
-			log.debug(
-				f"LINE: copy-read found {len(menuItems)} menu items: {[t for _, t in menuItems]}",
-			)
-
-			if not menuItems:
-				if retriesLeft > 0:
-					core.callLater(
-						200,
-						lambda: _findCopyMenuItem(posIdx, retriesLeft - 1),
-					)
-					return
-				if posIdx < 0:
-					_startMouseCopyProbes("keyboard popup had no menu items", dismissMenu=True)
-					return
-
-			# Find "複製" item by UIA text
-			copyItem = None
-			copyClickPoint = None
-			for item, text in menuItems:
-				if text and "複製" in text:
-					copyItem = item
-					log.info(f"LINE: copy-read matched '複製' by UIA: {text!r}")
-					break
-
-			# Strategy 2: OCR the popup when UIA text is all empty
-			popupOcrText = ""
-			popupOcrMatchedLabels = []
-			if not copyItem and menuItems and len(menuItems) >= 3:
-				log.debug("LINE: copy-read no UIA text, trying popup OCR")
-				try:
-					popupRect = element.CurrentBoundingRectangle
-					popupW = int(popupRect.right - popupRect.left)
-					popupH = int(popupRect.bottom - popupRect.top)
-					if popupW > 0 and popupH > 0:
-						popupRectTuple = (
-							int(popupRect.left),
-							int(popupRect.top),
-							int(popupRect.right),
-							int(popupRect.bottom),
-						)
-						popupRowRects = _collectPopupMenuRowRects(
-							popupHwnd,
-							popupRectTuple,
-						)
-						import screenBitmap
-						from contentRecog import uwpOcr
-						import threading
-
-						pLeft = int(popupRect.left)
-						pTop = int(popupRect.top)
-						sb = screenBitmap.ScreenBitmap(popupW, popupH)
-						pixels = sb.captureImage(pLeft, pTop, popupW, popupH)
-
-						langs = uwpOcr.getLanguages()
-						ocrLang = None
-						for cand in ["zh-Hant-TW", "zh-TW", "zh-Hant"]:
-							if cand in langs:
-								ocrLang = cand
-								break
-						if not ocrLang:
-							for lang in langs:
-								if lang.startswith("zh"):
-									ocrLang = lang
-									break
-						if not ocrLang and langs:
-							ocrLang = langs[0]
-
-						if ocrLang:
-							recognizer = uwpOcr.UwpOcr(language=ocrLang)
-							resizeFactor = recognizer.getResizeFactor(popupW, popupH)
-
-							if resizeFactor > 1:
-								sb2 = screenBitmap.ScreenBitmap(
-									popupW * resizeFactor,
-									popupH * resizeFactor,
-								)
-								ocrPixels = sb2.captureImage(
-									pLeft,
-									pTop,
-									popupW,
-									popupH,
-								)
-							else:
-								ocrPixels = pixels
-
-							class _ImgInfo:
-								def __init__(self, w, h, factor, sL, sT):
-									self.recogWidth = w * factor
-									self.recogHeight = h * factor
-									self.resizeFactor = factor
-									self._screenLeft = sL
-									self._screenTop = sT
-
-								def convertXToScreen(self, x):
-									return self._screenLeft + int(x / self.resizeFactor)
-
-								def convertYToScreen(self, y):
-									return self._screenTop + int(y / self.resizeFactor)
-
-								def convertWidthToScreen(self, w):
-									return int(w / self.resizeFactor)
-
-								def convertHeightToScreen(self, h):
-									return int(h / self.resizeFactor)
-
-							imgInfo = _ImgInfo(popupW, popupH, resizeFactor, pLeft, pTop)
-
-							resultHolder = [None]
-							event = threading.Event()
-
-							def _onOcr(result):
-								resultHolder[0] = result
-								event.set()
-
-							recognizer.recognize(ocrPixels, imgInfo, _onOcr)
-							event.wait(timeout=3.0)
-
-							ocrText = ""
-							popupOcrLines = []
-							result = resultHolder[0]
-							if result and not isinstance(result, Exception):
-								ocrText = getattr(result, "text", "") or ""
-								ocrText = _removeCJKSpaces(ocrText.strip())
-								popupOcrLines = _extractOcrLines(result)
-
-							popupOcrText = ocrText
-							popupLines, popupLineMatches, popupOcrMatchedLabels = (
-								_extractMatchedMessageContextMenuLabels(ocrText)
-							)
-							log.debug(f"LINE: copy-read popup OCR: {ocrText!r}")
-							copyTarget = _resolvePopupMenuLabelClickPoint(
-								"複製",
-								popupOcrLines,
-								popupRectTuple,
-								popupRowRects=popupRowRects,
-							)
-							if copyTarget:
-								copyClickPoint = copyTarget["clickPoint"]
-								log.info(
-									f"LINE: copy-read matched '複製' via popup OCR rows, "
-									f"item {copyTarget['index'] + 1}/{copyTarget['count']}",
-								)
-							elif "複製" in popupOcrMatchedLabels:
-								targetMatchIdx = popupOcrMatchedLabels.index("複製")
-								nItems = len(menuItems)
-								itemIdx = min(targetMatchIdx, nItems - 1)
-								copyItem = menuItems[itemIdx][0]
-								log.info(
-									f"LINE: copy-read matched '複製' via popup OCR order, "
-									f"matched item {itemIdx + 1}/{nItems}",
-								)
-							elif ocrText:
-								log.debug(
-									f"LINE: copy-read popup OCR did not resemble a message "
-									f"context menu: {popupLines}",
-								)
-				except Exception as e:
-					log.debug(
-						f"LINE: copy-read popup OCR failed: {e}",
-						exc_info=True,
-					)
-
-			# Detect file / voice messages when Copy is unavailable
-			if not copyItem and not copyClickPoint and menuItems and len(menuItems) >= 3:
-				popupOcrLooksLikeMenu = bool(popupOcrMatchedLabels)
-				menuTextBlob = "\n".join(text for _item, text in menuItems if text)
-				if popupOcrLooksLikeMenu and popupOcrText:
-					menuTextBlob = "\n".join(part for part in (menuTextBlob, popupOcrText) if part)
-
-				def _menuHasText(keyword):
-					for _item, text in menuItems:
-						if text and keyword in text:
-							return True
-					if popupOcrLooksLikeMenu and popupOcrText and keyword in popupOcrText:
-						return True
-					return False
-
-				if _looksLikeStickerMessageMenu(menuTextBlob):
-					log.info("LINE: copy-read detected sticker message")
-					ui.message(_("貼圖，請按 NVDA+Windows+I 描述"))
-					_dismissMenu()
-					_restoreClipboard(origClip)
-					return
-
-				menuHasSaveAs = _menuHasText("另存新檔")
-				menuHasSave = _menuHasText("儲存")
-				if menuHasSaveAs and menuHasSave:
-					if _looksLikeImageAttachmentMenu(menuTextBlob):
-						log.info("LINE: copy-read detected image message")
-						ui.message(_("圖片，請按 NVDA+Windows+K 下載。"))
-						_dismissMenu()
-						_restoreClipboard(origClip)
-						return
-					msgOcrText = _getMessageOcrText()
-					if msgOcrText:
-						msgHasSaveAs = "另存新檔" in msgOcrText
-						msgHasSave = "儲存" in msgOcrText
-						if msgHasSaveAs and msgHasSave:
-							downloadDeadline = _extractDownloadDeadlineAnnouncement(
-								msgOcrText,
-							)
-							if downloadDeadline:
-								log.info("LINE: copy-read detected file message")
-								ui.message(
-									_("檔案，{deadline}。請按 NVDA+Windows+K 下載。").format(
-										deadline=downloadDeadline,
-									),
-								)
-								_dismissMenu()
-								_restoreClipboard(origClip)
-								return
-							voiceDuration = _extractCallDuration(msgOcrText)
-							if voiceDuration:
-								log.info("LINE: copy-read detected voice message")
-								ui.message(
-									"語音訊息，請按 NVDA+Windows+P 播放，按 NVDA+Windows+K 下載。",
-								)
-								_dismissMenu()
-								_restoreClipboard(origClip)
-								return
-							log.info("LINE: copy-read detected image message from OCR")
-							ui.message(_("圖片，請按 NVDA+Windows+K 下載。"))
-							_dismissMenu()
-							_restoreClipboard(origClip)
-							return
-
-			# If still no match, check if we got the wrong menu
-			if not copyItem and not copyClickPoint:
-				if posIdx < 0:
-					_startMouseCopyProbes("keyboard menu lacked Copy", dismissMenu=True)
-					return
-				isSelectAll = len(menuItems) <= 2
-				if isSelectAll and messageOcrCache["callAnnouncement"]:
-					log.info(
-						f"LINE: copy-read detected call record early: "
-						f"{messageOcrCache['callAnnouncement']!r} "
-						f"after small menu at "
-						f"[{_getPositionLabel(posIdx)}]",
-					)
-					_dismissMenu()
-					_restoreClipboard(origClip)
-					speech.cancelSpeech()
-					ui.message(messageOcrCache["callAnnouncement"])
-					return
-				if isSelectAll:
-					selectAllCount[0] += 1
-				if (
-					isSelectAll
-					and selectAllCount[0] >= 6
-					and _hasExhaustedMessageBubbleFallbackProbes(
-						posIdx,
-						clickState["positions"],
-					)
-				):
-					# After the extra-left probes have also failed,
-					# treat repeated ≤2-item menus as a likely call
-					# record or otherwise non-copyable message.
-					_dismissMenu()
-					msgOcrText = _getMessageOcrText()
-					callAnnouncement = messageOcrCache["callAnnouncement"] or _getCallAnnouncementFromOcr(
-						msgOcrText,
-					)
-					messageOcrCache["callAnnouncement"] = callAnnouncement
-					if callAnnouncement:
-						log.info(
-							f"LINE: copy-read detected call "
-							f"record: {callAnnouncement!r} "
-							f"from OCR: {msgOcrText!r}",
-						)
-						_restoreClipboard(origClip)
-						ui.message(callAnnouncement)
-						return
-					log.info(
-						f"LINE: copy-read wrong menu "
-						f"(≤2 items) seen "
-						f"{selectAllCount[0]} times, last "
-						f"at [{_getPositionLabel(posIdx)}]"
-						f", skipping to OCR",
-					)
-					core.callLater(
-						300,
-						lambda: _attemptCopyAtOffset(len(clickState["positions"])),
-					)
-					return
-				if len(menuItems) >= 3:
-					# Got a correct context menu (≥3 items)
-					# but 複製 isn't in it.
-					# Check if this is a self-sent message:
-					# right-clicking on the bubble edge (not
-					# the text) gives a menu with 收回 but
-					# no 複製. Try other positions first.
-					ocrHasRecall = popupOcrLooksLikeMenu and popupOcrText and "收回" in popupOcrText
-					if ocrHasRecall:
-						log.info(
-							f"LINE: copy-read self-sent "
-							f"message edge hit "
-							f"({len(menuItems)} items, "
-							f"has 收回 but no 複製) at "
-							f"[{_getPositionLabel(posIdx)}]"
-							f", trying next position",
-						)
-						_dismissMenu()
-						core.callLater(
-							300,
-							lambda: _attemptCopyAtOffset(
-								posIdx + 1,
-							),
-						)
-						return
-					# No 收回 either — this message type
-					# doesn't support copy (sticker/image).
-					# Bail immediately to content OCR.
-					log.info(
-						f"LINE: copy-read correct menu "
-						f"({len(menuItems)} items) but no "
-						f"'複製' at [{_getPositionLabel(posIdx)}]"
-						f", skipping to OCR",
-					)
-					_dismissMenu()
-					core.callLater(
-						300,
-						lambda: _attemptCopyAtOffset(len(clickState["positions"])),
-					)
-					return
-				# Wrong menu or OCR couldn't find 複製, try next position
-				log.info(
-					f"LINE: copy-read '複製' not found at [{_getPositionLabel(posIdx)}]",
-				)
-				_dismissMenu()
-				core.callLater(300, lambda: _attemptCopyAtOffset(posIdx + 1))
-				return
-
-			# Click the Copy item
-			if _abortIfStale("clickCopyItem", restoreClipboard=True, dismissMenu=True):
-				return
-			if copyClickPoint:
-				itemCx, itemCy = copyClickPoint
-			else:
-				iRect = copyItem.CurrentBoundingRectangle
-				itemCx = int((iRect.left + iRect.right) / 2)
-				itemCy = int((iRect.top + iRect.bottom) / 2)
-			log.info(f"LINE: copy-read clicking '複製' at ({itemCx}, {itemCy})")
-			_sendMouseClick(itemCx, itemCy)
-
-			# Wait for clipboard to update, then read
-			core.callLater(200, _readClipboardAndSpeak)
-
-		except Exception as e:
-			log.debug(f"LINE: copy-read menu detection failed: {e}", exc_info=True)
-			if posIdx < 0:
-				_startMouseCopyProbes("keyboard menu detection failed", dismissMenu=True)
-				return
-			_dismissMenu()
-			_restoreClipboard(origClip)
-			_ocrReadMessageFallback(targetElement)
-
-	def _readClipboardAndSpeak():
-		"""Read clipboard content and speak it."""
-		if _abortIfStale("readClipboard", restoreClipboard=True):
-			return
-		clipText = ""
-		if _getClipboardSequenceNumber() != clipSeqStart:
-			# Only a changed sequence number proves the Copy click worked;
-			# otherwise the clipboard still holds the user's own content.
-			try:
-				clipText = api.getClipData()
-			except Exception:
-				clipText = ""
-
-		if clipText and clipText.strip():
-			log.info(f"LINE: copy-read success: {clipText!r}")
-			speech.cancelSpeech()
-			ui.message(clipText.strip())
-			_restoreClipboard(origClip)
-		else:
-			log.info("LINE: copy-read clipboard empty, falling back to OCR")
-			_restoreClipboard(origClip)
-			_ocrReadMessageFallback(targetElement)
-
-	def _dismissMenu():
-		"""Send Escape only while LINE still owns the active popup/menu."""
-		if not _shouldDismissCopyReadMenu(hwnd):
-			return
-		try:
-			from keyboardHandler import KeyboardInputGesture
-
-			KeyboardInputGesture.fromName("escape").send()
-		except Exception:
-			pass
-
-	def _restoreClipboard(original):
-		"""Restore the original clipboard text if the copy flow replaced it."""
-		global _copyReadClipboardOwnerId
-		try:
-			if _copyReadClipboardOwnerId != requestId:
-				return
-			if _getClipboardSequenceNumber() == clipSeqStart:
-				# The clipboard was never touched; leave it alone (it may hold
-				# non-text data that could not be snapshotted).
-				return
-			if original is not None:
-				api.copyToClip(original)
-		except Exception:
-			pass
-		finally:
-			if _copyReadClipboardOwnerId == requestId:
-				_copyReadClipboardOwnerId = 0
-
-	def _lookupChatCacheAnnouncement(initialOcrText):
-		"""Return the cached announcement for the OCR snippet, or None."""
-		try:
-			from . import _chatCache
-
-			cacheActive = _chatCache.isActive()
-			log.debug(
-				f"LINE: chat cache check: active={cacheActive}"
-				f" room={_chatCache.getChatRoomName()!r}"
-				f" entries={_chatCache.getMessageCount()}"
-				f" ocr={initialOcrText!r}",
-			)
-			if not cacheActive:
-				return None
-			cachedText, _cacheIdx = _chatCache.lookupMessage(initialOcrText)
-			if not cachedText:
-				log.debug(
-					f"LINE: chat cache lookup returned no match for OCR {initialOcrText!r}",
-				)
-				return None
-			replyInfo = _chatCache.getLastReplyInfo()
-			if replyInfo:
-				# Announce as "Sender 回覆 OriginalSender Content Time"
-				# in one utterance so the reply context and the time
-				# can't be split across two announcements (the
-				# follow-up timestamp element would otherwise repeat
-				# the message with the time on its own).
-				parts = [
-					replyInfo["replySender"],
-					"回覆",
-					replyInfo["originalName"],
-					replyInfo["replyContent"],
-				]
-				if replyInfo.get("replyTime"):
-					parts.append(replyInfo["replyTime"])
-				return " ".join(parts)
-			return cachedText
-		except Exception:
-			log.debug("LINE: chat cache lookup failed", exc_info=True)
-			return None
-
-	def _initialOcrWork():
-		"""Worker-thread part: bubble OCR + chat-cache lookup (both can block)."""
-		initialOcrText = _getMessageOcrText()
-		isDateSeparator = bool(messageOcrCache["isDateSeparator"] and initialOcrText)
-		announceText = None
-		if initialOcrText and not isDateSeparator:
-			announceText = _lookupChatCacheAnnouncement(initialOcrText)
-		return (initialOcrText, isDateSeparator, announceText)
-
-	def _continueAfterInitialOcr(result):
-		initialOcrText, isDateSeparator, announceText = result or ("", False, None)
-		if _abortIfStale("initialOcr", restoreClipboard=True):
-			return
-		if isDateSeparator:
-			_restoreClipboard(origClip)
-			speech.cancelSpeech()
-			ui.message(initialOcrText.strip())
-			return
-		# Background chat cache: if NVDA+Windows+U cached this room's text,
-		# the focused bubble was already looked up on the worker thread;
-		# announcing it skips the right-click copy-read flow entirely.
-		if announceText:
-			log.info(
-				f"LINE: copy-read served from chat cache: {announceText!r}",
-			)
-			_restoreClipboard(origClip)
-			speech.cancelSpeech()
-			ui.message(announceText)
-			return
-		_tryKeyboardCopyFallback()
-
-	# Start the copy-read process. The initial bubble OCR waits up to 2.5 s
-	# and the chat-cache lookup is CPU-heavy, so both run off the main thread.
-	_runOnWorkerThread(
-		_initialOcrWork,
-		onDone=_continueAfterInitialOcr,
-		taskName="copyReadInitialOcr",
-	)
-
-
-def _ocrReadMessageFallback(targetElement):
-	"""Fall back to OCR for reading a message, with ocr.wav sound alert.
-
-	Plays ocr.wav to indicate the result may not be 100% accurate,
-	then reads the element text via OCR.
-	"""
-	try:
-		nvwave.playWaveFile(_OCR_SOUND_PATH, asynchronous=True)
+		relativeX = (myRect.left - wndRect.left) / wndWidth
+		relativeBottom = (myRect.bottom - wndRect.top) / wndHeight
+		return relativeX >= 0.5 or relativeBottom > 0.7
 	except Exception:
-		log.debugWarning("Failed to play OCR sound", exc_info=True)
-	_ocrReadElementText(targetElement, preferCallAnnouncement=True)
+		log.debug("_isMessageInputElement failed", exc_info=True)
+		return False
 
 
 class LineChatListItem(UIA):
@@ -7368,46 +4804,6 @@ class LineChatListItem(UIA):
 
 	def event_gainFocus(self):
 		super().event_gainFocus()
-
-
-class LineChatMessage(UIA):
-	"""Overlay class for individual chat messages."""
-
-	def _get_name(self):
-		state = _getNameRecursionState()
-		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
-			return super().name or ""
-		guardKey = None
-		try:
-			if hasattr(self, "UIAElement") and self.UIAElement:
-				rid = self.UIAElement.GetRuntimeId()
-				guardKey = ("LineChatMessage", str(rid))
-		except Exception:
-			guardKey = ("LineChatMessage", id(self))
-		if guardKey and guardKey in state.guard:
-			return super().name or ""
-		if guardKey:
-			state.guard.add(guardKey)
-		state.depth += 1
-		try:
-			name = super().name
-			if name and name.strip():
-				return name
-			texts = _getDeepText(self, maxDepth=3)
-			if texts:
-				return ": ".join(texts)
-			displayText = _getTextFromDisplay(self)
-			if displayText:
-				return displayText
-			return ""
-		finally:
-			state.depth -= 1
-			if guardKey:
-				state.guard.discard(guardKey)
-
-	def _get_description(self):
-		desc = super().description
-		return desc or ""
 
 
 class LineMessageInput(UIA):
@@ -7552,57 +4948,6 @@ class LineLoginEditField(UIA):
 		return ""
 
 
-class LineContactItem(UIA):
-	"""Overlay class for contact list items."""
-
-	def _get_name(self):
-		state = _getNameRecursionState()
-		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
-			return super().name or ""
-		guardKey = None
-		try:
-			if hasattr(self, "UIAElement") and self.UIAElement:
-				rid = self.UIAElement.GetRuntimeId()
-				guardKey = ("LineContactItem", str(rid))
-		except Exception:
-			guardKey = ("LineContactItem", id(self))
-		if guardKey and guardKey in state.guard:
-			return super().name or ""
-		if guardKey:
-			state.guard.add(guardKey)
-		state.depth += 1
-		try:
-			name = super().name
-			if name and name.strip():
-				return name
-			texts = _getDeepText(self, maxDepth=3)
-			if texts:
-				return " - ".join(texts)
-			displayText = _getTextFromDisplay(self)
-			if displayText:
-				return displayText
-			return ""
-		finally:
-			state.depth -= 1
-			if guardKey:
-				state.guard.discard(guardKey)
-
-
-class LineGenericList(UIA):
-	"""Overlay class for list containers in LINE."""
-
-	def _get_positionInfo(self):
-		try:
-			info = super().positionInfo
-		except Exception:
-			log.debugWarning(
-				"Error in LineGenericList._get_positionInfo",
-				exc_info=True,
-			)
-			info = {}
-		return info
-
-
 class LineToolbarButton(UIA):
 	"""Overlay class for toolbar/sidebar buttons that lack labels."""
 
@@ -7679,28 +5024,11 @@ class AppModule(appModuleHandler.AppModule):
 		themselves, so clearing them is safe even when another LINE process
 		(e.g. LineCall) is still running.
 		"""
-		global lastFocusedObject, _lastAnnouncedUIAElement, _lastAnnouncedUIAName
-		global _lastOCRElement, _lastRawFocusedElement
-		global _messageContextMenuRequestId, _copyReadRequestId, _copyReadClipboardOwnerId
-		global _focusQueryRequestId
-		global _chatListMode, _chatListSearchField, _chatListCurrentIndex, _currentChatRoomName
-		global _suppressAddon
+		global _messageContextMenuRequestId, _suppressAddon
 		try:
-			lastFocusedObject = None
-			_lastAnnouncedUIAElement = None
-			_lastAnnouncedUIAName = None
-			_lastOCRElement = None
-			_lastRawFocusedElement = None
-			# Bump the request ids so still-scheduled callLater chains notice
+			# Bump the request id so still-scheduled callLater chains notice
 			# they are stale and bail out instead of touching dead objects.
 			_messageContextMenuRequestId += 1
-			_copyReadRequestId += 1
-			_copyReadClipboardOwnerId = 0
-			_focusQueryRequestId += 1
-			_chatListMode = False
-			_chatListSearchField = None
-			_chatListCurrentIndex = -1
-			_currentChatRoomName = None
 			_suppressAddon = False
 			# Invalidate any in-flight file-dialog watcher so its worker thread
 			# stops at the next poll instead of outliving this AppModule (it
@@ -7712,19 +5040,10 @@ class AppModule(appModuleHandler.AppModule):
 			_resetNameRecursionState = _getNameRecursionState()
 			_resetNameRecursionState.guard.clear()
 			_resetNameRecursionState.depth = 0
-			_notesWindowDetectionCache["key"] = None
-			_notesWindowDetectionCache["expiresAt"] = 0.0
-			_notesWindowDetectionCache["isNotesWindow"] = False
 			VirtualWindow.currentWindow = None
 			self._inCallOcrRecognizer = None
 			self._inCallOcrPixels = None
 			self._inCallOcrImgInfo = None
-			try:
-				from . import _chatCache
-
-				_chatCache.clearCache()
-			except Exception:
-				pass
 			try:
 				from . import _utils
 
@@ -7836,28 +5155,6 @@ class AppModule(appModuleHandler.AppModule):
 			elif controlTypes.State.FOCUSABLE in obj.states:
 				clsList.insert(0, LineMessageInput)
 
-		# --- Individual messages in chat view ---
-		elif role in (
-			controlTypes.Role.GROUPING,
-			controlTypes.Role.SECTION,
-			controlTypes.Role.PARAGRAPH,
-			controlTypes.Role.STATICTEXT,
-		):
-			if automationId and any(
-				kw in automationId.lower()
-				for kw in (
-					"message",
-					"bubble",
-					"chat_content",
-					"msg",
-				)
-			):
-				clsList.insert(0, LineChatMessage)
-
-		# --- List containers ---
-		elif role == controlTypes.Role.LIST:
-			clsList.insert(0, LineGenericList)
-
 		# --- Toolbar/sidebar buttons without labels ---
 		elif role == controlTypes.Role.BUTTON:
 			try:
@@ -7963,22 +5260,7 @@ class AppModule(appModuleHandler.AppModule):
 		pass
 
 	def event_gainFocus(self, obj, nextHandler):
-		"""Handle focus changes with enhanced text extraction."""
-		global lastFocusedObject
-
-		try:
-			# Update lastFocusedObject only if it's a specific element, not the generic window
-			# This prevents the "focus bounce" (ListItem -> Window) from hiding the ListItem
-			role = obj.role
-			if role not in (
-				controlTypes.Role.WINDOW,
-				controlTypes.Role.APPLICATION,
-				controlTypes.Role.PANE,
-			):
-				lastFocusedObject = obj
-		except Exception:
-			pass
-
+		"""Let open virtual windows react to focus leaving them."""
 		try:
 			VirtualWindow.onFocusChanged(obj)
 		except Exception:
@@ -10236,35 +7518,10 @@ class AppModule(appModuleHandler.AppModule):
 	# ── Read chat room name ────────────────────────────────────────────
 
 	def _readChatRoomName(self):
-		"""Read the current chat room name.
-
-		Priority order:
-		  1. Cache file name [LINE]姓名.txt (after NVDA+Windows+U) — extract the
-		     name segment between the [LINE] prefix and the .txt suffix.
-		  2. Header-area OCR — fallback when no cache exists.
-		"""
+		"""Read the current chat room name by OCR of the chat header area."""
 		import ctypes
 		import ctypes.wintypes
 
-		# 1. Background cache file name (NVDA+Windows+U was used for this room)
-		try:
-			from . import _chatCache
-
-			if _chatCache.isActive():
-				tempPath = _chatCache.getTempPath()
-				if tempPath:
-					base = os.path.basename(tempPath)
-					stem, ext = os.path.splitext(base)
-					if ext.lower() == ".txt" and stem.startswith("[LINE]"):
-						nameFromFile = stem[len("[LINE]") :].strip()
-						if nameFromFile:
-							log.info(f"LINE: using chat name from cache file {nameFromFile!r}")
-							ui.message(nameFromFile)
-							return
-		except Exception:
-			log.debug("LINE: chat cache file-name lookup failed", exc_info=True)
-
-		# 2. Header-area OCR (fallback)
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
 		if not hwnd:
 			ui.message(_("找不到 LINE 視窗"))
@@ -10533,7 +7790,6 @@ class AppModule(appModuleHandler.AppModule):
 				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 				return
 			self._messageReaderPending = True
-			self._messageReaderBackgroundCache = False
 			core.callLater(500, self._activateMoreOptionsMenu)
 			# Poll until virtual window is ready, then auto-click 儲存聊天
 			core.callLater(1500, self._messageReaderAutoClickSaveChat)
@@ -10541,32 +7797,6 @@ class AppModule(appModuleHandler.AppModule):
 			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
 			self._messageReaderPending = False
 			ui.message(_("訊息閱讀器功能錯誤"))
-
-	def script_cacheChatToBackground(self, gesture):
-		"""Save chat to a temp file and cache it for background message lookup.
-
-		Behaves like the message reader save flow, but skips the reader dialog
-		so focus stays in the chat room. Subsequent message-list navigation
-		looks up the focused bubble in the cached text via OCR matching
-		instead of running the copy-read flow.
-		"""
-		if getattr(self, "_messageReaderPending", False):
-			ui.message(_("訊息閱讀器正在執行中，請稍候"))
-			return
-		ui.message(_("正在儲存聊天到背景…"))
-		try:
-			if not self._clickMoreOptionsButton():
-				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
-				return
-			self._messageReaderPending = True
-			self._messageReaderBackgroundCache = True
-			core.callLater(500, self._activateMoreOptionsMenu)
-			core.callLater(1500, self._messageReaderAutoClickSaveChat)
-		except Exception as e:
-			log.warning(f"LINE cacheChatToBackground error: {e}", exc_info=True)
-			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
-			ui.message(_("背景快取功能錯誤"))
 
 	def _messageReaderAutoClickSaveChat(self, retriesLeft=15):
 		"""Poll the ChatMoreOptions virtual window until 儲存聊天 is found, then click it."""
@@ -10581,7 +7811,6 @@ class AppModule(appModuleHandler.AppModule):
 				core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
 			else:
 				self._messageReaderPending = False
-				self._messageReaderBackgroundCache = False
 				ui.message(_("找不到儲存聊天選項"))
 			return
 
@@ -10596,7 +7825,6 @@ class AppModule(appModuleHandler.AppModule):
 			core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
 		else:
 			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
 			ui.message(_("找不到儲存聊天選項"))
 
 	def _messageReaderHandleSaveDialog(self, retriesLeft=10):
@@ -10629,7 +7857,6 @@ class AppModule(appModuleHandler.AppModule):
 				core.callLater(300, lambda: self._messageReaderHandleSaveDialog(retriesLeft - 1))
 			else:
 				self._messageReaderPending = False
-				self._messageReaderBackgroundCache = False
 				ui.message(_("未偵測到儲存對話框"))
 			return
 
@@ -10638,58 +7865,11 @@ class AppModule(appModuleHandler.AppModule):
 		editHwnd = self._findSaveDialogEdit(dialogHwnd)
 		if not editHwnd:
 			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
 			ui.message(_("無法操作儲存對話框"))
 			return
 
-		# Read LINE's pre-filled filename — it's [LINE]{chatRoomName}.txt and
-		# carries the authoritative room name straight from LINE (much cleaner
-		# than OCR-derived names that include unread badges like "( ) 9").
-		WM_GETTEXT = 0x000D
-		WM_GETTEXTLENGTH = 0x000E
-		dialogStem = ""
-		try:
-			textLen = ctypes.windll.user32.SendMessageW(editHwnd, WM_GETTEXTLENGTH, 0, 0)
-			if textLen > 0:
-				readBuf = ctypes.create_unicode_buffer(textLen + 1)
-				ctypes.windll.user32.SendMessageW(editHwnd, WM_GETTEXT, textLen + 1, readBuf)
-				suggested = readBuf.value or ""
-				stem, ext = os.path.splitext(os.path.basename(suggested))
-				if ext.lower() == ".txt" and stem.startswith("[LINE]"):
-					dialogStem = stem[len("[LINE]") :].strip()
-				log.info(
-					f"LINE: save dialog suggested filename {suggested!r}, extracted stem {dialogStem!r}",
-				)
-		except Exception as e:
-			log.debug(f"LINE: could not read save dialog edit text: {e}", exc_info=True)
-
-		# Adopt the dialog's chat name so the cache and any later NVDA+Windows+T
-		# read use the LINE-authoritative name, not a stale list-nav OCR value.
-		if dialogStem:
-			global _currentChatRoomName
-			if _currentChatRoomName != dialogStem:
-				log.info(
-					f"LINE: updating chat room name from save dialog: {_currentChatRoomName!r} -> {dialogStem!r}",
-				)
-				_currentChatRoomName = dialogStem
-
 		# Build temp file path (use system temp dir to avoid locking the addon folder).
-		# Use a separate file when caching to background so an open reader window
-		# (cleanupPath bound) does not race with the cache file.
-		if getattr(self, "_messageReaderBackgroundCache", False):
-			# Name cache files [LINE]姓名.txt so users can identify which room
-			# each cache belongs to. Prefer the dialog stem (LINE's own name)
-			# over _currentChatRoomName which may be empty or list-nav noise.
-			candidate = dialogStem or (_currentChatRoomName or "").strip()
-			safeName = re.sub(r'[\\/:*?"<>|]', "_", candidate) if candidate else ""
-			safeName = safeName.rstrip(" .")
-			if safeName:
-				fileName = f"[LINE]{safeName}.txt"
-			else:
-				fileName = "lineDesktop_chat_cache.txt"
-		else:
-			fileName = "lineDesktop_chat_export.txt"
-		savePath = os.path.join(tempfile.gettempdir(), fileName)
+		savePath = os.path.join(tempfile.gettempdir(), "lineDesktop_chat_export.txt")
 		self._messageReaderSavePath = savePath
 
 		# Pre-delete existing file to suppress the overwrite confirmation dialog
@@ -10849,13 +8029,11 @@ class AppModule(appModuleHandler.AppModule):
 		core.callLater(300, self._messageReaderOpenFile)
 
 	def _messageReaderOpenFile(self):
-		"""Read the saved chat file, then either open the reader or cache silently."""
+		"""Read the saved chat file and open the reader."""
 		savePath = getattr(self, "_messageReaderSavePath", None)
-		backgroundCache = getattr(self, "_messageReaderBackgroundCache", False)
 		if not savePath or not os.path.isfile(savePath):
 			ui.message(_("找不到儲存的聊天紀錄檔案"))
 			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
 			return
 
 		try:
@@ -10865,41 +8043,19 @@ class AppModule(appModuleHandler.AppModule):
 			if not messages:
 				ui.message(_("聊天紀錄中沒有訊息"))
 				self._messageReaderPending = False
-				self._messageReaderBackgroundCache = False
-				try:
-					if backgroundCache and os.path.isfile(savePath):
-						os.remove(savePath)
-				except Exception:
-					pass
 				return
 
-			if backgroundCache:
-				from . import _chatCache
+			from ._messageReader import openMessageReader
 
-				_chatCache.setCache(messages, savePath, _currentChatRoomName)
-				log.info(
-					f"LINE: cached {len(messages)} messages from {savePath}"
-					f" for room {_currentChatRoomName!r}",
-				)
-				ui.message(
-					_("聊天已快取到背景，瀏覽訊息時將直接讀取（離開聊天室後清除）"),
-				)
-			else:
-				from ._messageReader import openMessageReader
-
-				log.info(
-					f"LINE: message reader parsed {len(messages)} messages from {savePath}",
-				)
-				openMessageReader(messages, cleanupPath=savePath)
+			log.info(
+				f"LINE: message reader parsed {len(messages)} messages from {savePath}",
+			)
+			openMessageReader(messages, cleanupPath=savePath)
 			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
 		except Exception as e:
 			log.warning(f"LINE: message reader parse error: {e}", exc_info=True)
-			ui.message(
-				_("背景快取開啟錯誤") if backgroundCache else _("訊息閱讀器開啟錯誤"),
-			)
+			ui.message(_("訊息閱讀器開啟錯誤"))
 			self._messageReaderPending = False
-			self._messageReaderBackgroundCache = False
 
 	@script(
 		# Translators: Description of the script bound to control+O in LINE
@@ -10910,125 +8066,6 @@ class AppModule(appModuleHandler.AppModule):
 		"""Pass Ctrl+O to LINE, suppress addon while file dialog is open."""
 		self._suppressAddonForFileDialog("Ctrl+O pressed")
 		gesture.send()
-
-	@script(
-		# Translators: Description of the script bound to tab/shift+tab/left/right in LINE
-		description=_("在 LINE 介面中移動焦點並讀出目前項目"),
-		category=SCRIPT_CATEGORY,
-	)
-	def script_navigateAndTrack(self, gesture):
-		"""Pass navigation key to LINE, then poll UIA focused element.
-
-		LINE's Qt6 framework does not fire UIA focus change events when
-		navigating with Tab/arrows. This script sends the key through,
-		waits briefly for LINE to process it, then queries the UIA
-		focused element directly and announces it.
-
-		Special case: if the most recently announced cached message was
-		a reply, pressing left arrow speaks the original (quoted)
-		message instead of navigating, so users can hear what the reply
-		is replying to.
-		"""
-		if _suppressAddon:
-			gesture.send()
-			return
-		try:
-			keyName = gesture.mainKeyName
-		except Exception:
-			keyName = None
-		if keyName == "leftArrow":
-			try:
-				from . import _chatCache
-
-				replyInfo = _chatCache.getLastReplyInfo()
-			except Exception:
-				log.debug(
-					"LINE: chat cache reply lookup failed",
-					exc_info=True,
-				)
-				replyInfo = None
-			if replyInfo and replyInfo.get("originalContent"):
-				ui.message(
-					f"{replyInfo['originalName']} {replyInfo['originalContent']}",
-				)
-				_chatCache.clearLastReplyInfo()
-				return
-		global _lastOCRElement, _chatListMode
-		# Exiting chat list mode on Tab/Shift+Tab navigation
-		_chatListMode = False
-		_lastOCRElement = None
-		gesture.send()
-		_scheduleQueryAndSpeakUIAFocus(100)
-
-	@script(
-		# Translators: Description of the script bound to up/down arrows in LINE
-		description=_("在聊天列表中上下移動並讀出目前聊天室"),
-		category=SCRIPT_CATEGORY,
-	)
-	def script_chatListArrow(self, gesture):
-		"""Navigate the chat list with up/down arrows.
-
-		When in chat list context (search field or chat list item),
-		passes the arrow key to LINE, then sends Tab twice to reach
-		the chatroom name and reads it aloud.
-
-		When NOT in chat list context (e.g. message list), passes
-		the arrow key through normally with standard announcement.
-		"""
-		if _suppressAddon:
-			gesture.send()
-			return
-
-		global _lastOCRElement, _chatListArrowRequestId
-		_lastOCRElement = None
-		# Invalidate any in-flight Tab×2 chain from a previous (rapid) press.
-		_chatListArrowRequestId += 1
-		arrowToken = _chatListArrowRequestId
-
-		# Check if we're in the chat list context
-		try:
-			handler = UIAHandler.handler
-			if handler:
-				inList, listEl, items, currentIdx = _isInChatListContext(handler)
-				if inList:
-					# In chat list — arrow + Tab x2 to read chatroom name
-					gesture.send()
-
-					def _sendFirstTab():
-						"""Send first Tab key, then schedule second Tab."""
-						if arrowToken != _chatListArrowRequestId:
-							return
-						try:
-							from keyboardHandler import KeyboardInputGesture
-
-							tabGesture = KeyboardInputGesture.fromName("tab")
-							tabGesture.send()
-						except Exception:
-							log.debugWarning("First Tab simulation failed", exc_info=True)
-						core.callLater(50, _sendSecondTabAndRead)
-
-					def _sendSecondTabAndRead():
-						"""Send second Tab key, then read the focused element."""
-						if arrowToken != _chatListArrowRequestId:
-							return
-						try:
-							from keyboardHandler import KeyboardInputGesture
-
-							tabGesture = KeyboardInputGesture.fromName("tab")
-							tabGesture.send()
-						except Exception:
-							log.debugWarning("Second Tab simulation failed", exc_info=True)
-						# Read the focused element after Tab x2
-						_scheduleQueryAndSpeakUIAFocus(100)
-
-					core.callLater(200, _sendFirstTab)
-					return
-		except Exception:
-			log.debugWarning("Chat list context check failed", exc_info=True)
-
-		# Not in chat list — pass through normally (message list, etc.)
-		gesture.send()
-		_scheduleQueryAndSpeakUIAFocus(100)
 
 	# Map Control+number keys to LINE tab names
 	_TAB_NAMES = {
@@ -11052,17 +8089,6 @@ class AppModule(appModuleHandler.AppModule):
 		if _suppressAddon:
 			gesture.send()
 			return
-		global _currentChatRoomName, _chatListMode, _chatListSearchField
-		# Clear chat state when switching tabs
-		_currentChatRoomName = None
-		_chatListMode = False
-		_chatListSearchField = None
-		try:
-			from . import _chatCache
-
-			_chatCache.clearCache()
-		except Exception:
-			log.debug("LINE: chat cache clear-on-tab-switch failed", exc_info=True)
 		gesture.send()
 		# Extract the number key from the gesture identifier
 		# gesture.mainKeyName gives us the key name like "1", "2", "3"
@@ -11097,9 +8123,7 @@ class AppModule(appModuleHandler.AppModule):
 				if rawElement:
 					ct = rawElement.CurrentControlType
 					if ct == 50004:  # Edit control
-						label = _detectEditFieldLabel(rawElement, handler, allowNotesOcr=False)
-						log.debug(f"LINE Enter key: edit field label={label!r}")
-						if label == _("Message input"):
+						if _isMessageInputElement(rawElement, handler):
 							isMessageInput = True
 							try:
 								preVal = rawElement.GetCurrentPropertyValue(30045)  # ValueValue
@@ -11164,32 +8188,6 @@ class AppModule(appModuleHandler.AppModule):
 			ctypes.windll.user32.SetForegroundWindow(hwnd)
 
 		_sendMouseClick(int(x), int(y), "right")
-
-	def _getMessageCenter(self):
-		"""Get the center coordinates of the currently focused message.
-
-		Returns (cx, cy, hwnd) or None.
-		"""
-		import ctypes
-
-		try:
-			handler = UIAHandler.handler
-			rawEl = handler.clientObject.GetFocusedElement()
-			if not rawEl:
-				return None
-
-			rect = rawEl.CurrentBoundingRectangle
-			cx = int((rect.left + rect.right) / 2)
-			cy = int((rect.top + rect.bottom) / 2)
-
-			if cx <= 0 or cy <= 0:
-				return None
-
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			return (cx, cy, hwnd)
-		except Exception as e:
-			log.debug(f"LINE: _getMessageCenter failed: {e}")
-			return None
 
 	# Reference offsets from right-click point to each context menu item
 	# center, measured at 100% DPI (1920x1080, 17-inch screen).
@@ -11325,73 +8323,6 @@ class AppModule(appModuleHandler.AppModule):
 			"""Right-click at clickPositions[posIdx] and find the menu item."""
 			clickPositions = state["clickPositions"]
 			if posIdx >= len(clickPositions):
-				# All click positions exhausted.
-				# For copy action, fall back to OCR + direct clipboard.
-				if actionName == "複製":
-					log.info(
-						"LINE: all click positions failed, falling back to OCR copy",
-					)
-					try:
-						rect = rawEl.CurrentBoundingRectangle
-						elW = int(rect.right - rect.left)
-						elH = int(rect.bottom - rect.top)
-						if elW > 0 and elH > 0:
-							ocrText = appModRef._ocrWindowArea(
-								hwnd,
-								region=(
-									int(rect.left),
-									int(rect.top),
-									elW,
-									elH,
-								),
-								sync=True,
-								timeout=3.0,
-							)
-							ocrText = (
-								_removeCJKSpaces(
-									ocrText.strip(),
-								)
-								if ocrText
-								else ""
-							)
-							if ocrText:
-								# Remove timestamp lines
-								lines = ocrText.split("\n")
-								content = []
-								for ln in lines:
-									stripped = ln.strip()
-									# Skip timestamp lines
-									if re.match(
-										r"^[上下午]*\s*\d{1,2}\s*:\s*\d{2}",
-										stripped,
-									):
-										continue
-									if stripped:
-										content.append(stripped)
-								if content:
-									copyText = "\n".join(content)
-									import api
-
-									api.copyToClip(copyText)
-									log.info(
-										f"LINE: OCR fallback copied: {copyText!r}",
-									)
-									ui.message(_("複製"))
-									try:
-										nvwave.playWaveFile(_OCR_SOUND_PATH, asynchronous=True)
-									except Exception:
-										log.debugWarning("Failed to play OCR sound", exc_info=True)
-									if afterCallback:
-										core.callLater(
-											500,
-											afterCallback,
-										)
-									return
-					except Exception as e:
-						log.debug(
-							f"LINE: OCR fallback failed: {e}",
-							exc_info=True,
-						)
 				ui.message(_("找不到「{actionName}」選項").format(actionName=actionName))
 				return
 
@@ -11928,12 +8859,11 @@ class AppModule(appModuleHandler.AppModule):
 		Only activates in message list context.
 		In edit fields, passes Control+C through normally.
 
-		NOTE: We must check the actual UIA focused element, not
-		NVDA's focus object (api.getFocusObject()).  LINE's Qt6
-		framework does not fire UIA focus change events during
-		Tab/arrow navigation, so NVDA's internal focus object
-		may be stale (e.g. still pointing to a search field
-		even though the real focus moved to the message list).
+		NOTE: We check the actual UIA focused element, not NVDA's
+		focus object (api.getFocusObject()).  LINE builds before
+		26.6.0.4004 did not fire UIA focus change events during
+		Tab/arrow navigation, so NVDA's focus object could be stale
+		there; the raw UIA focus is right on every version.
 		"""
 		try:
 			handler = UIAHandler.handler
@@ -13345,6 +10275,11 @@ class AppModule(appModuleHandler.AppModule):
 		_messageContextMenuRequestId += 1
 		requestId = _messageContextMenuRequestId
 		targetRuntimeId = _getElementRuntimeId(rawEl)
+		import keyboardHandler
+
+		# keyCounter only counts real key presses (NVDA skips keys it injects
+		# for gesture.send), so a change means the user typed or navigated.
+		startKeyCount = keyboardHandler.keyCounter
 
 		def _isCurrentRequest():
 			if requestId != _messageContextMenuRequestId:
@@ -13362,7 +10297,15 @@ class AppModule(appModuleHandler.AppModule):
 		def _logAndAbortIfStale(stage):
 			if _isCurrentRequest():
 				return False
-			if requestId == _messageContextMenuRequestId and _shouldDismissCopyReadMenu(hwnd):
+			# Pull focus back only when one of our own probes moved it. If the
+			# user pressed a key (e.g. Tab or an arrow while OCR was running),
+			# focus is where they put it, so just abandon the request.
+			userPressedKey = keyboardHandler.keyCounter != startKeyCount
+			if (
+				requestId == _messageContextMenuRequestId
+				and not userPressedKey
+				and _shouldDismissMessageMenu(hwnd)
+			):
 				_restoreFocusToElement(rawEl, targetRuntimeId)
 			log.debug(
 				f"LINE: messageContextMenu abandoning stale request during "
@@ -14200,12 +11143,6 @@ class AppModule(appModuleHandler.AppModule):
 			return False
 
 	__gestures = {
-		"kb:tab": "navigateAndTrack",
-		"kb:shift+tab": "navigateAndTrack",
-		"kb:upArrow": "chatListArrow",
-		"kb:downArrow": "chatListArrow",
-		"kb:leftArrow": "navigateAndTrack",
-		"kb:rightArrow": "navigateAndTrack",
 		"kb:control+o": "openFileDialog",
 		"kb:control+1": "switchTabAndAnnounce",
 		"kb:control+2": "switchTabAndAnnounce",

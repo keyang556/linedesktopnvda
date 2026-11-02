@@ -826,13 +826,11 @@ msgstr "LINE Desktop Accessibility"
 
 #: buildVars.py:24
 msgid ""
-"Enhances NVDA accessibility support for LINE Desktop on Windows.\n"
-"Provides improved navigation for chat lists, messages, contacts, and message input.\n"
-"Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."
+"Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.\n"
+"Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."
 msgstr ""
-"Enhances NVDA accessibility support for LINE Desktop on Windows.\n"
-"Provides improved navigation for chat lists, messages, contacts, and message input.\n"
-"Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."
+"Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.\n"
+"Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."
 
 #: buildVars.py:31
 msgid ""

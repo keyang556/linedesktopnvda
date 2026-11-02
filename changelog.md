@@ -1,33 +1,37 @@
-## 1.3.0-beta4
+## 1.4.0-beta1
 
 ### English
 
-- Message recall and LINE's first-run "Convert to text" photo upload notice are now confirmed in a standard NVDA message dialog instead of a temporary single-key mode. The same actions are available as buttons: Recall (`Y`), Cancel (`N`), Stealth recall (`P`, Premium required, shown only when LINE offers it), Agree (`A`) and Decline (`D`).
-- Because those letters are now button accelerators inside a dialog rather than global bindings, they are no longer swallowed while you are typing in LINE, and a failed confirmation can no longer leave them stuck.
-- The confirmation no longer times out after ten seconds; the dialog waits for your answer. Pressing escape still cancels the recall, or declines the photo upload, exactly as the timeout used to.
-- All of the add-on's dialogs, including the AI image-description consent dialog and the settings-panel error messages, now use NVDA's message dialog API (`gui.message.MessageDialog`) instead of the deprecated `gui.messageBox`.
-- The minimum supported NVDA version is now 2025.1, which introduced that dialog API; last tested with NVDA 2026.2.
+- LINE for Windows 26.6.0.4004 or later is now recommended. Starting with that version, LINE exposes the chat list, messages (including reply quotes, times, and read counts), tabs, buttons, and edit fields to NVDA, so NVDA reads them itself as you press Tab or the arrow keys. On older LINE versions the chat list and messages may not be read at all, so please update LINE first.
+- The add-on no longer intercepts Tab, Shift+Tab, or the arrow keys, and no longer polls the focus, right-clicks messages to copy them, touches the clipboard, or runs OCR to read messages and chat names. This removes double speech, the synthetic Tab presses after each arrow key in the chat list, and the `ocr.wav` sound.
+- The background chat cache (`NVDA+Windows+U`) has been removed. It only existed to correct OCR-read messages, which LINE now provides directly.
+- `Control+C` in the message list no longer falls back to OCR when LINE's "Copy" menu item cannot be found; it reports the problem instead of copying guessed text.
+- Pressing `Enter` in a search box whose name mentions messages (for example "Search chats and messages") no longer plays the message-sent sound.
+- The readmes, the website, and the add-on description now recommend LINE 26.6.0.4004 or later instead of LINE MR. If you also use LINE MR, do not enable both add-ons at the same time.
 
 ### 繁體中文
 
-- 收回訊息與 LINE 第一次使用「轉為文字」時的照片上傳提示，現在改用標準的 NVDA 訊息對話方塊確認，不再使用臨時單鍵模式。原本的動作都以按鈕呈現：收回 (`Y`)、取消 (`N`)、無痕收回 (`P`，需 Premium，只在 LINE 有提供時顯示)、同意 (`A`)、不同意 (`D`)。
-- 這些字母現在是對話方塊內的按鈕快捷鍵，而非全域綁定，因此在 LINE 中輸入時不會再被攔截，確認失敗也不會讓這些按鍵卡住。
-- 確認不再於 10 秒後逾時，對話方塊會等待您回答。按 `Escape` 仍等同取消收回或不同意照片上傳，行為與原本的逾時相同。
-- 附加元件所有的對話方塊，包含 AI 圖片描述同意對話方塊與設定面板的錯誤訊息，現在都改用 NVDA 的訊息對話方塊 API (`gui.message.MessageDialog`)，不再使用已棄用的 `gui.messageBox`。
-- 最低支援的 NVDA 版本提高為 2025.1（該版本開始提供此對話方塊 API）；最後測試版本為 NVDA 2026.2。
+- 現在建議使用 Windows 版 LINE 26.6.0.4004 以上版本。從這個版本開始，LINE 會直接向 NVDA 提供聊天清單、訊息（包含回覆引用的原始訊息、時間與已讀人數）、分頁、按鈕與編輯欄位，按 Tab 或方向鍵時由 NVDA 直接讀出。較舊的 LINE 版本可能完全無法讀出聊天清單與訊息，請先更新 LINE。
+- 附加元件不再攔截 Tab、Shift+Tab 與方向鍵，也不再輪詢焦點、對訊息按右鍵複製、動用剪貼簿，或用 OCR 讀取訊息與聊天室名稱。因此不會再重複報讀、不會在聊天清單中每按一次方向鍵就自動送出 Tab，也不會再播放 `ocr.wav` 音效。
+- 移除背景聊天快取 (`NVDA+Windows+U`)。這個功能只是用來校正 OCR 讀出的訊息，現在 LINE 已直接提供訊息內容。
+- 在訊息列表中按 `Control+C` 時，若找不到 LINE 的「複製」選項，不再改用 OCR，而是直接告知，不會把猜測的文字放進剪貼簿。
+- 在名稱提到訊息的搜尋框（例如英文介面的 "Search chats and messages"）中按 `Enter`，不再播放訊息送出音效。
+- 說明文件、網站與附加元件描述改為建議使用 LINE 26.6.0.4004 以上版本，不再推薦 LINE MR。若同時安裝了 LINE MR，請勿同時啟用兩個附加元件。
 
 ### 日本語
 
-- メッセージの取り消しと、LINE の初回「テキストに変換」時の写真アップロード通知が、一時的な単独キー モードではなく標準の NVDA メッセージ ダイアログで確認されるようになりました。同じ操作がボタンとして用意されています: 取り消し (`Y`)、キャンセル (`N`)、ステルス取り消し (`P`、Premium が必要、LINE が提供している場合のみ表示)、同意 (`A`)、同意しない (`D`)。
-- これらの文字はグローバルな割り当てではなくダイアログ内のボタンのアクセスキーになったため、LINE で入力中に横取りされることがなくなり、確認に失敗してもキーが押せなくなることがなくなりました。
-- 確認は 10 秒でタイムアウトしなくなり、ダイアログは応答を待ちます。`Escape` は従来のタイムアウトと同じく、取り消しのキャンセル、または写真アップロードの拒否として機能します。
-- AI 画像説明の同意ダイアログや設定パネルのエラー メッセージを含め、アドオンのすべてのダイアログが、非推奨の `gui.messageBox` ではなく NVDA のメッセージ ダイアログ API (`gui.message.MessageDialog`) を使用するようになりました。
-- サポートする NVDA の最低バージョンは、このダイアログ API が導入された 2025.1 になりました。最終テストは NVDA 2026.2 で行っています。
+- Windows 版 LINE 26.6.0.4004 以降を推奨するようになりました。このバージョンから、LINE がチャットリスト、メッセージ（返信の引用元、時刻、既読数を含む）、タブ、ボタン、入力欄を NVDA に提供するため、Tab キーや矢印キーを押すと NVDA が直接読み上げます。古いバージョンの LINE ではチャットリストやメッセージがまったく読み上げられない場合があるため、先に LINE を更新してください。
+- アドオンは Tab、Shift+Tab、矢印キーを横取りしなくなり、フォーカスのポーリング、メッセージを右クリックしてのコピー、クリップボードの使用、OCR によるメッセージやチャット名の読み取りを行わなくなりました。これにより、二重読み上げ、チャットリストで矢印キーを押すたびに送られていた Tab、`ocr.wav` の音がなくなりました。
+- バックグラウンドのチャットキャッシュ (`NVDA+Windows+U`) を削除しました。OCR で読み取ったメッセージを補正するためだけの機能で、現在は LINE がメッセージを直接提供します。
+- メッセージリストで `Control+C` を押したときに LINE の「コピー」項目が見つからない場合、OCR に切り替えず、推測した文字をコピーせずにその旨をお知らせするようになりました。
+- 名前にメッセージを含む検索ボックス（例: "Search chats and messages"）で `Enter` を押しても、送信音が鳴らなくなりました。
+- ドキュメント、Web サイト、アドオンの説明は、LINE MR ではなく LINE 26.6.0.4004 以降を推奨するようになりました。LINE MR も使用している場合は、両アドオンを同時に有効化しないでください。
 
 ### ภาษาไทย
 
-- การเรียกคืนข้อความ และประกาศอัปโหลดรูปภาพเมื่อใช้ "แปลงเป็นข้อความ" ครั้งแรกของ LINE ตอนนี้ยืนยันผ่านกล่องโต้ตอบข้อความมาตรฐานของ NVDA แทนโหมดคีย์เดี่ยวชั่วคราว คำสั่งเดิมทั้งหมดมีให้เป็นปุ่ม ได้แก่ เรียกคืน (`Y`), ยกเลิก (`N`), เรียกคืนแบบไร้ร่องรอย (`P`, ต้องใช้ Premium และแสดงเฉพาะเมื่อ LINE มีตัวเลือกนั้น), ยอมรับ (`A`) และไม่ยอมรับ (`D`)
-- เนื่องจากตัวอักษรเหล่านี้กลายเป็นคีย์เข้าถึงปุ่มภายในกล่องโต้ตอบแทนการผูกคีย์ส่วนกลาง จึงไม่ถูกดักจับขณะพิมพ์ใน LINE อีกต่อไป และการยืนยันที่ล้มเหลวก็ไม่ทำให้คีย์เหล่านั้นค้างอีก
-- การยืนยันไม่หมดเวลาใน 10 วินาทีอีกต่อไป กล่องโต้ตอบจะรอคำตอบของคุณ การกด `Escape` ยังคงเท่ากับยกเลิกการเรียกคืนหรือปฏิเสธการอัปโหลดรูปภาพ เช่นเดียวกับการหมดเวลาแบบเดิม
-- กล่องโต้ตอบทั้งหมดของส่วนเสริม รวมถึงกล่องยินยอมสำหรับคำอธิบายรูปภาพด้วย AI และข้อความแจ้งข้อผิดพลาดในแผงการตั้งค่า ตอนนี้ใช้ API กล่องโต้ตอบข้อความของ NVDA (`gui.message.MessageDialog`) แทน `gui.messageBox` ที่เลิกใช้แล้ว
-- เวอร์ชัน NVDA ขั้นต่ำที่รองรับคือ 2025.1 ซึ่งเป็นเวอร์ชันที่เริ่มมี API ดังกล่าว ทดสอบล่าสุดกับ NVDA 2026.2
+- ตอนนี้แนะนำให้ใช้ LINE สำหรับ Windows เวอร์ชัน 26.6.0.4004 หรือใหม่กว่า ตั้งแต่เวอร์ชันนี้ LINE ส่งข้อมูลรายการแชท ข้อความ (รวมถึงข้อความต้นฉบับที่ถูกตอบกลับ เวลา และจำนวนผู้อ่าน) แท็บ ปุ่ม และช่องกรอกข้อความให้ NVDA เอง เมื่อกด Tab หรือปุ่มลูกศร NVDA จะอ่านได้โดยตรง ใน LINE เวอร์ชันเก่าอาจอ่านรายการแชทและข้อความไม่ได้เลย โปรดอัปเดต LINE ก่อน
+- ส่วนเสริมไม่ดักจับปุ่ม Tab, Shift+Tab และปุ่มลูกศรอีกต่อไป และไม่ตรวจจับโฟกัสซ้ำ ๆ ไม่คลิกขวาที่ข้อความเพื่อคัดลอก ไม่แตะต้องคลิปบอร์ด และไม่ใช้ OCR อ่านข้อความหรือชื่อห้องแชท จึงไม่มีการอ่านซ้ำ ไม่มีการกด Tab อัตโนมัติหลังกดปุ่มลูกศรในรายการแชท และไม่มีเสียง `ocr.wav` อีก
+- นำแคชแชทเบื้องหลัง (`NVDA+Windows+U`) ออกแล้ว ฟังก์ชันนี้มีไว้เพื่อแก้ไขข้อความที่อ่านด้วย OCR เท่านั้น ซึ่งตอนนี้ LINE ส่งข้อความให้โดยตรงแล้ว
+- เมื่อกด `Control+C` ในรายการข้อความแล้วไม่พบรายการ "คัดลอก" ของ LINE ส่วนเสริมจะไม่สลับไปใช้ OCR อีก แต่จะแจ้งให้ทราบแทนการคัดลอกข้อความที่เดาเอา
+- การกด `Enter` ในช่องค้นหาที่มีชื่อเกี่ยวกับข้อความ (เช่น "Search chats and messages") จะไม่เล่นเสียงส่งข้อความอีก
+- เอกสาร เว็บไซต์ และคำอธิบายส่วนเสริมแนะนำ LINE 26.6.0.4004 หรือใหม่กว่าแทน LINE MR หากคุณใช้ LINE MR ด้วย อย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน

@@ -1,14 +1,14 @@
 # LINE Desktop Accessibility Add-on for NVDA
 
-> **Recommended alternative / 推薦其他專案 / おすすめの代替プロジェクト / โครงการทางเลือกที่แนะนำ: [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)**
+> **Recommended LINE version / 建議安裝版本 / 推奨バージョン / เวอร์ชันที่แนะนำ: LINE for Windows 26.6.0.4004+**
 >
-> **English:** For everyday navigation and message reading in LINE for Windows, we recommend trying LINE MR first. Its Qt accessibility bridge exposes controls and message text directly to NVDA, reducing reliance on OCR and clipboard workarounds. It requires a bridge DLL in LINE; check compatibility first. The two add-ons should not be enabled together. This add-on also offers chat-history export reading and AI image descriptions.
+> **English:** LINE 26.6.0.4004 and later expose the chat list, messages, tabs, buttons, and edit fields to NVDA directly, so this add-on no longer reads messages with OCR or the clipboard. Please update LINE first; on older versions the chat list and messages may not be read. If you also use [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win), do not enable both add-ons together.
 >
-> **繁體中文：** 若主要需要操作 LINE 介面和閱讀訊息，建議優先試用 LINE MR。其 Qt 無障礙橋接元件可直接向 NVDA 提供控制項與訊息文字，減少依賴 OCR 與剪貼簿。安裝前請確認 DLL 橋接元件的相容性，且不建議同時啟用兩個附加元件。本專案仍提供聊天紀錄閱讀器與 AI 圖片描述。
+> **繁體中文：** LINE 26.6.0.4004 以上版本會直接向 NVDA 提供聊天清單、訊息、分頁、按鈕與編輯欄位，因此本附加元件不再用 OCR 或剪貼簿閱讀訊息。請先更新 LINE；在較舊版本中，聊天清單與訊息可能無法讀出。若同時安裝了 [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)，請勿同時啟用兩個附加元件。
 >
-> **日本語：** LINE の基本操作やメッセージの読み上げには、Qt アクセシビリティブリッジで NVDA に情報を直接提供する LINE MR を先に試すことをおすすめします。OCR やクリップボードへの依存を減らせます。DLL の互換性を確認し、両アドオンを同時に有効化しないでください。本アドオンにはチャット履歴リーダーと AI 画像説明もあります。
+> **日本語：** LINE 26.6.0.4004 以降は、チャットリスト、メッセージ、タブ、ボタン、入力欄を NVDA に直接提供するため、本アドオンは OCR やクリップボードでメッセージを読み取らなくなりました。先に LINE を更新してください。古いバージョンではチャットリストやメッセージが読み上げられない場合があります。[LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win) も使用している場合は、両アドオンを同時に有効化しないでください。
 >
-> **ไทย:** สำหรับการนำทางและอ่านข้อความใน LINE แนะนำให้ลอง LINE MR ก่อน เพราะใช้สะพานเชื่อมการเข้าถึงของ Qt ให้ NVDA อ่านตัวควบคุมและข้อความได้โดยตรง ลดการพึ่งพา OCR และคลิปบอร์ด โปรดตรวจสอบความเข้ากันได้ของ DLL และอย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน ส่วนเสริมนี้ยังมีตัวอ่านประวัติแชทและการอธิบายรูปภาพด้วย AI
+> **ไทย:** LINE 26.6.0.4004 หรือใหม่กว่าส่งข้อมูลรายการแชท ข้อความ แท็บ ปุ่ม และช่องกรอกข้อความให้ NVDA โดยตรง ส่วนเสริมนี้จึงไม่ใช้ OCR หรือคลิปบอร์ดในการอ่านข้อความอีกต่อไป โปรดอัปเดต LINE ก่อน ในเวอร์ชันเก่าอาจอ่านรายการแชทและข้อความไม่ได้ หากคุณใช้ [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win) ด้วย อย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน
 
 ---
 
@@ -29,7 +29,6 @@ Detailed documentation is available in the following languages:
 
 ### Traditional Chinese (繁體中文)
 此附加元件增強了 LINE 電腦版的無障礙支援，包含：
-- 改善聊天清單與訊息輸入框的導覽。
 - 支援語音與視訊通話快速鍵 (`NVDA+Windows+C/V`)。
 - 支援來電接聽與拒絕 (`NVDA+Windows+A/D`)。
 - 跳到通話視窗 (`NVDA+Windows+F`)。
@@ -38,12 +37,11 @@ Detailed documentation is available in the following languages:
 - 可在 LINE Desktop 設定面板選擇圖片描述服務、API Key、模型與提示詞。
 - 通話中麥克風與相機狀態播報。
 - 收回訊息與圖片轉文字提示改以標準 NVDA 對話框確認（按鈕快捷鍵仍是 `Y/N/P`、`A/D`）。
-- 使用 OCR 技術輔助讀取介面文字。
+- 聊天清單與訊息由 NVDA 直接讀取（需 LINE 26.6.0.4004 以上）；OCR 只用於通話視窗、彈出選單與確認對話框。
 - **注意**：OCR 並非 100% 準確。
 
 ### English
 This add-on enhances LINE Desktop accessibility, featuring:
-- Improved navigation for chat lists and message input.
 - Shortcuts for voice and video calls (`NVDA+Windows+C/V`).
 - Answer/reject incoming calls (`NVDA+Windows+A/D`).
 - Focus call window (`NVDA+Windows+F`).
@@ -52,12 +50,11 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - LINE Desktop settings for image-description service, API key, model, and prompt.
 - Microphone and camera status announcements during calls.
 - Standard NVDA confirmation dialogs for recall and photo-to-text prompts (button keys are still `Y/N/P`, `A/D`).
-- OCR-assisted text reading for the Qt6 interface.
+- The chat list and messages are read by NVDA directly (LINE 26.6.0.4004 or later required); OCR is only used for call windows, popup menus, and confirmation dialogs.
 - **Note**: OCR is not perfectly accurate.
 
 ### Japanese (日本語)
 このアドオンは LINE デスクトップ版のアクセシビリティを向上させます：
-- チャットリストとメッセージ入力欄の操作性を改善。
 - 音声・ビデオ通話のショートカット (`NVDA+Windows+C/V`)。
 - 着信への応答・拒否 (`NVDA+Windows+A/D`)。
 - 通話ウィンドウにフォーカス (`NVDA+Windows+F`)。
@@ -66,12 +63,11 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - LINE Desktop 設定パネルで画像説明サービス、API Key、モデル、プロンプトを設定。
 - 通話中のマイクとカメラの状態読み上げ。
 - 取り消し確認と画像のテキスト化通知を標準の NVDA ダイアログで確認（ボタンのキーは `Y/N/P`、`A/D` のまま）。
-- OCR 技術によるインターフェース文字の読み上げ補助。
+- チャットリストとメッセージは NVDA が直接読み上げます（LINE 26.6.0.4004 以降が必要）。OCR は通話ウィンドウ、ポップアップメニュー、確認ダイアログにのみ使用します。
 - **注意**: OCR は完全に正確ではありません。
 
 ### Thai (ภาษาไทย)
 ส่วนเสริมนี้ช่วยเพิ่มประสิทธิภาพการเข้าถึง LINE Desktop:
-- ปรับปรุงการนำทางสำหรับรายการแชทและช่องป้อนข้อความ
 - คีย์ลัดสำหรับการโทรด้วยเสียงและวิดีโอ (`NVDA+Windows+C/V`)
 - รับสาย/ปฏิเสธสายเรียกเข้า (`NVDA+Windows+A/D`)
 - ไปยังหน้าต่างการโทร (`NVDA+Windows+F`)
@@ -80,7 +76,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - ตั้งค่าบริการอธิบายรูปภาพ API Key โมเดล และพรอมต์ได้ในแผง LINE Desktop
 - แจ้งสถานะไมโครโฟนและกล้องระหว่างการโทร
 - ยืนยันการเรียกคืนและการแจ้งเตือนแปลงเป็นข้อความผ่านกล่องโต้ตอบมาตรฐานของ NVDA (คีย์ปุ่มยังคงเป็น `Y/N/P`, `A/D`)
-- อ่านข้อความด้วย OCR สำหรับอินเทอร์เฟซ Qt6
+- NVDA อ่านรายการแชทและข้อความได้โดยตรง (ต้องใช้ LINE 26.6.0.4004 หรือใหม่กว่า) ใช้ OCR เฉพาะหน้าต่างการโทร เมนูป๊อปอัป และกล่องโต้ตอบยืนยัน
 - **หมายเหตุ**: OCR ไม่ถูกต้อง 100%
 
 ---
