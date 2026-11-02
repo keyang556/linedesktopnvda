@@ -10275,6 +10275,11 @@ class AppModule(appModuleHandler.AppModule):
 		_messageContextMenuRequestId += 1
 		requestId = _messageContextMenuRequestId
 		targetRuntimeId = _getElementRuntimeId(rawEl)
+		import keyboardHandler
+
+		# keyCounter only counts real key presses (NVDA skips keys it injects
+		# for gesture.send), so a change means the user typed or navigated.
+		startKeyCount = keyboardHandler.keyCounter
 
 		def _isCurrentRequest():
 			if requestId != _messageContextMenuRequestId:
@@ -10292,7 +10297,15 @@ class AppModule(appModuleHandler.AppModule):
 		def _logAndAbortIfStale(stage):
 			if _isCurrentRequest():
 				return False
-			if requestId == _messageContextMenuRequestId and _shouldDismissMessageMenu(hwnd):
+			# Pull focus back only when one of our own probes moved it. If the
+			# user pressed a key (e.g. Tab or an arrow while OCR was running),
+			# focus is where they put it, so just abandon the request.
+			userPressedKey = keyboardHandler.keyCounter != startKeyCount
+			if (
+				requestId == _messageContextMenuRequestId
+				and not userPressedKey
+				and _shouldDismissMessageMenu(hwnd)
+			):
 				_restoreFocusToElement(rawEl, targetRuntimeId)
 			log.debug(
 				f"LINE: messageContextMenu abandoning stale request during "

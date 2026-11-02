@@ -1633,6 +1633,75 @@ def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
 	), "mouse probe path should pass popup validation the app module, window handle, and popup rect"
 
 
+def test_message_context_menu_does_not_undo_user_navigation():
+	"""With Tab/arrows left to NVDA, nothing bumps the request id when the user
+	navigates mid-request. The stale-request focus restore must therefore skip
+	itself once a real key was pressed, or it would yank focus back to the old
+	message."""
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	method = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "script_messageContextMenu"
+	)
+
+	def _reads_key_counter(node):
+		return any(
+			isinstance(sub, ast.Attribute)
+			and sub.attr == "keyCounter"
+			and isinstance(sub.value, ast.Name)
+			and sub.value.id == "keyboardHandler"
+			for sub in ast.walk(node)
+		)
+
+	assert any(
+		isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "startKeyCount" for target in node.targets)
+		and _reads_key_counter(node.value)
+		for node in method.body
+	), "the request should snapshot keyboardHandler.keyCounter when it starts"
+
+	abort_if_stale = next(
+		node
+		for node in method.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_logAndAbortIfStale"
+	)
+	restore_guards = [
+		node
+		for node in ast.walk(abort_if_stale)
+		if isinstance(node, ast.If)
+		and any(
+			isinstance(call, ast.Call)
+			and isinstance(call.func, ast.Name)
+			and call.func.id == "_restoreFocusToElement"
+			for stmt in node.body
+			for call in ast.walk(stmt)
+		)
+	]
+	assert restore_guards, "focus restore should stay behind a guard"
+	user_pressed_assign = next(
+		node
+		for node in abort_if_stale.body
+		if isinstance(node, ast.Assign)
+		and any(isinstance(target, ast.Name) and target.id == "userPressedKey" for target in node.targets)
+	)
+	assert _reads_key_counter(user_pressed_assign.value)
+	assert all(
+		any(
+			isinstance(sub, ast.UnaryOp)
+			and isinstance(sub.op, ast.Not)
+			and isinstance(sub.operand, ast.Name)
+			and sub.operand.id == "userPressedKey"
+			for sub in ast.walk(guard.test)
+		)
+		for guard in restore_guards
+	), "focus must not be restored after the user pressed a key"
+
+
 def test_context_menu_action_uses_popup_label_click_point_resolution():
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
