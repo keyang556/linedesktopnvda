@@ -26,17 +26,16 @@ addon_info = AddonInfo(
 	addon_summary=_("LINE Desktop Accessibility"),
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-on store
-	addon_description=_("""Enhances NVDA accessibility support for LINE Desktop on Windows.
-Provides improved navigation for chat lists, messages, contacts, and message input.
-Supports calls, incoming call handling, OCR-assisted reading, message export reading, and AI image description with follow-up questions."""),
+	addon_description=_("""Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.
+Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."""),
 	# version
-	addon_version="1.3.0",
+	addon_version="1.4.0-beta1",
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
-	addon_changelog=_("""Message recall and the "Convert to text" photo notice now ask in a standard NVDA dialog instead of temporarily binding the Y/N/P and A/D keys.
-Those letters are no longer swallowed inside LINE, and the confirmation no longer times out after ten seconds; Y/N/P and A/D still work as button shortcuts in the dialog.
-All dialogs now use NVDA's message dialog API, replacing the deprecated gui.messageBox.
-NVDA 2025.1 or later is now required."""),
+	addon_changelog=_("""LINE 26.6.0.4004 or later is now recommended. It exposes the chat list, messages, tabs, buttons, and edit fields to NVDA, so NVDA reads them natively as you press Tab or the arrow keys.
+The add-on no longer intercepts Tab and the arrow keys, and no longer right-clicks messages, uses the clipboard, or runs OCR to read them. This removes double speech, the synthetic Tab presses in the chat list, and the OCR sound.
+The background chat cache (NVDA+Windows+U) has been removed; it only existed to correct OCR-read messages.
+Control+C no longer falls back to OCR when LINE's Copy menu item cannot be found; it reports the problem instead."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support

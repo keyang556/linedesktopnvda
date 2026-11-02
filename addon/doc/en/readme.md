@@ -1,24 +1,23 @@
 # LINE Desktop Accessibility Add-on for NVDA
 
-> **Recommended alternative: [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win)**
+> **Recommended LINE version: LINE for Windows 26.6.0.4004 or later**
 >
-> For everyday navigation and reading messages in LINE for Windows, we recommend trying LINE MR. Its Qt accessibility bridge exposes LINE controls and message text directly to NVDA, avoiding many OCR and clipboard workarounds used by this add-on.
+> Starting with 26.6.0.4004, LINE itself exposes the chat list, messages (including reply quotes, times, and read counts), tabs, buttons, and edit fields to NVDA. NVDA reads them directly as you press Tab or the arrow keys, so this add-on no longer reads messages with OCR or the clipboard. Please update LINE before using this version of the add-on: on older LINE versions the chat list and messages may not be read at all.
 >
-> **Before installing:** LINE MR installs a bridge DLL into LINE; check its compatibility requirements. Both add-ons provide an NVDA application module for LINE and should not be enabled at the same time. This add-on still offers a chat-history export reader and AI image descriptions.
+> If you also use [LINE MR for Windows](https://github.com/Peetchy/line-mr-for-win), do not enable it together with this add-on; both provide an NVDA application module for LINE.
 
 ## Overview
 
-This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). It uses OCR (Optical Character Recognition), coordinate-based automation, and optional AI image description to improve chat list navigation, message reading, image understanding, and call handling.
+This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface and messages natively; the add-on adds calls, message actions, confirmation dialogs, a chat-history reader, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
 
 > [!IMPORTANT]
-> Some features in this add-on rely on OCR (Optical Character Recognition), so the recognition results may not be 100% accurate.
+> Some actions (call windows, popup menus, confirmation dialogs, and reading the chat room name) still rely on OCR, so their recognition may not be 100% accurate. Reading messages does not use OCR.
 
 ## Features
 
-* Improved navigation experience for chat lists and the message input field.
 * **Voice and Video Calls**: Initiate calls directly from the friends tab.
 * **Incoming Call Handling**: Answer and reject incoming calls, and check caller information.
-* **OCR Support**: Automatically attempts to read text that cannot be accessed through standard accessibility APIs.
+* **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows, popup menus, and confirmation dialogs.
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
 * **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
 * **AI Image Description**: Describe the focused image or sticker message with a configurable AI service, then ask follow-up questions in an accessible dialog.
@@ -30,7 +29,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Establish Connection**: Before using this version to send a message to someone, it is recommended to send a message first using a mobile phone or the Chrome web version. Having chat history makes it easier for the add-on to locate UI elements.
 * **Sending Messages**:
     1. Search for a friend's name. Enter specific keywords so the search result yields only one friend to avoid errors.
-    2. In the message list or sidebar, press `Shift+Tab` to move to the edit field.
+    2. Press `Enter` on the chat to open it; focus moves to the message list. Press `Tab` to move to the message input.
     3. Type your message and press `Enter` to send.
 * **Making Calls**:
     Currently, you cannot initiate calls directly from the chat tab using this add-on. Please follow these steps:
@@ -45,18 +44,12 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 ### Sound Effects
 
-* **Default (Copy Success)**: If the message is read via the context menu copy method, no special sound effect is played.
-* **OCR Fallback Sound**: If the message is read via OCR, the `ocr.wav` sound effect will be played to indicate that the content may not be fully accurate.
 * **Send Sound**: When you press `Enter` in the message input and LINE really sends the message, the add-on plays a short sound. If `Enter` only confirms IME composition, no sound is played.
-
-> [!WARNING]
-> OCR (Optical Character Recognition) results are **not 100% accurate**. If you hear the `ocr.wav` sound effect, be aware that the text may differ from the actual message content. To verify the exact content, it is recommended to check the message on your phone or another platform.
 
 ## Message Reading and Copying
 
-* **Reading Messages**: When navigating through the message list, the add-on uses a "copy-first" approach to read messages. It automatically right-clicks the message → selects "Copy" → reads the clipboard content. The original clipboard content is restored after reading.
-* **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu.
-* **OCR Fallback**: If copying via the context menu fails (e.g., the menu or menu item cannot be found), the add-on will automatically fall back to OCR (Optical Character Recognition) to read the message content.
+* **Reading Messages**: With LINE 26.6.0.4004 or later, NVDA reads each message itself as you move through the message list with the arrow keys, including the sender, the quoted original of a reply, the time, and the read count. The add-on no longer right-clicks messages or runs OCR to read them, and your clipboard is left untouched.
+* **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu. If the "Copy" item cannot be found, the add-on says so instead of guessing the text with OCR.
 
 ## Message Reader, Context Menus, and Temporary Keys
 
@@ -252,5 +245,5 @@ These are button accelerators inside the add-on's confirmation dialogs, not glob
 
 ## Supported Versions
 
-* LINE Desktop for Windows (Standard installer or Microsoft Store version).
+* LINE Desktop for Windows 26.6.0.4004 or later (standard installer or Microsoft Store version). Older LINE versions do not expose messages to NVDA, so the chat list and messages may not be read.
 * NVDA 2025.1 or higher.
