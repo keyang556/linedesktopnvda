@@ -40,7 +40,8 @@ Shift+F10 and the Applications key now open LINE's own readable context menu; th
 LINE's own recall confirmation and "Convert to text" photo notice are used instead of the add-on's Y/N/P and A/D dialogs.
 Control+1, Control+2, and Control+3 go straight to LINE, without the add-on speaking a second, fixed tab name.
 NVDA+Windows+R, K, Delete and Control+C now pick their item from LINE's own Shift+F10 menu by name instead of right-clicking and reading the menu with OCR.
-NVDA+Windows+O opens LINE's own More options menu, and the message reader picks Save chat from it by name."""),
+NVDA+Windows+O opens LINE's own More options menu, and the message reader picks Save chat from it by name.
+NVDA+Windows+T reads the chat room name from LINE's chat header instead of OCR, which is kept only as a fallback."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support

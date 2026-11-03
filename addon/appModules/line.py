@@ -801,10 +801,13 @@ def _tryInvokeUIAElement(element):
 # helpers below pick an item from such a menu by its name. They do raw UIA
 # work and wait for LINE, so they run on worker threads (_runOnWorkerThread).
 
+_UIA_BOUNDING_RECTANGLE_PROPERTY_ID = 30001
 _UIA_CONTROL_TYPE_PROPERTY_ID = 30003
 _UIA_NAME_PROPERTY_ID = 30005
+_UIA_IS_OFFSCREEN_PROPERTY_ID = 30022
 _UIA_BUTTON_CONTROL_TYPE_ID = 50000
 _UIA_EDIT_CONTROL_TYPE_ID = 50004
+_UIA_LIST_CONTROL_TYPE_ID = 50008
 
 # _chooseNativeMenuItem results
 _MENU_ITEM_CLICKED = "clicked"
@@ -877,6 +880,86 @@ def _findNamedButton(handler, hwnd, names):
 		if element:
 			return element
 	return None
+
+
+def _pickChatTitle(buttons, listRects=()):
+	"""Return the chat's name among a LINE window's ``(name, rect)`` buttons, or "".
+
+	LINE 26.6.0.4004 names the header button that shows the chat: "room, N人"
+	for a group, the friend's name for a one-to-one chat. It is the nearest
+	named button left of the header's tool buttons, on the row of "More
+	options". The chat pane starts where the lists that end left of "More
+	options" (the chat list) end; anything further left is not the header.
+	Rects are ``(left, top, right, bottom)`` in screen pixels, or None.
+	"""
+	anchor = next(
+		(
+			rect
+			for name, rect in buttons
+			if rect and _lineLabels.isOneOf(name, _lineLabels._MORE_OPTIONS_BUTTON)
+		),
+		None,
+	)
+	if anchor is None:
+		return ""
+	paneLeft = max((rect[2] for rect in listRects if rect and rect[2] <= anchor[0]), default=None)
+	rowHeight = anchor[3] - anchor[1]
+	rowTop = anchor[1] - rowHeight / 2
+	rowBottom = anchor[3] + rowHeight / 2
+	title, titleRight = "", None
+	for name, rect in buttons:
+		name = (name or "").strip()
+		if not name or not rect or _lineLabels.isOneOf(name, _lineLabels._CHAT_HEADER_TOOL_BUTTONS):
+			continue
+		left, top, right, bottom = rect
+		# Left of the tools and centred on their row; a tall element there is a
+		# message scrolled under the header, not a header button.
+		if right > anchor[0] or not rowTop <= (top + bottom) / 2 <= rowBottom or bottom - top > 3 * rowHeight:
+			continue
+		if paneLeft is not None and (left + right) / 2 < paneLeft:
+			continue
+		if titleRight is None or right > titleRight:
+			title, titleRight = name, right
+	return title
+
+
+def _findChatTitle(handler, hwnd):
+	"""Worker thread: return the chat's name from window ``hwnd``'s header, or "".
+
+	One cached query fetches the name, type and rect of every visible button
+	and list; see _pickChatTitle for how the title is told apart.
+	"""
+	client = handler.clientObject
+	root = client.ElementFromHandle(hwnd)
+	if not root:
+		return ""
+	cacheRequest = client.CreateCacheRequest()
+	for propertyId in (
+		_UIA_NAME_PROPERTY_ID,
+		_UIA_CONTROL_TYPE_PROPERTY_ID,
+		_UIA_BOUNDING_RECTANGLE_PROPERTY_ID,
+	):
+		cacheRequest.AddProperty(propertyId)
+	condition = client.CreateAndCondition(
+		client.CreateOrCondition(
+			client.CreatePropertyCondition(_UIA_CONTROL_TYPE_PROPERTY_ID, _UIA_BUTTON_CONTROL_TYPE_ID),
+			client.CreatePropertyCondition(_UIA_CONTROL_TYPE_PROPERTY_ID, _UIA_LIST_CONTROL_TYPE_ID),
+		),
+		client.CreatePropertyCondition(_UIA_IS_OFFSCREEN_PROPERTY_ID, False),
+	)
+	elements = root.FindAllBuildCache(UIAHandler.TreeScope_Descendants, condition, cacheRequest)
+	buttons = []
+	listRects = []
+	for index in range(elements.Length if elements else 0):
+		element = elements.GetElement(index)
+		rect = _rectTupleFromWinRect(element.CachedBoundingRectangle)
+		if element.CachedControlType == _UIA_LIST_CONTROL_TYPE_ID:
+			listRects.append(rect)
+		else:
+			buttons.append((element.CachedName, rect))
+	title = _pickChatTitle(buttons, listRects)
+	log.debug(f"LINE: chat title {title!r} picked from {len(buttons)} buttons, lists at {listRects}")
+	return title
 
 
 def _waitForFocusedMenuItem(handler, processId, previousRuntimeId, timeoutSec=1.5):
@@ -5826,81 +5909,56 @@ class AppModule(appModuleHandler.AppModule):
 	# ── Read chat room name ────────────────────────────────────────────
 
 	def _readChatRoomName(self):
-		"""Read the current chat room name by OCR of the chat header area."""
-		import ctypes
-		import ctypes.wintypes
+		"""Speak the open chat's name, as LINE's chat header shows it.
 
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			ui.message(_("找不到 LINE 視窗"))
-			return
+		LINE 26.6.0.4004 names the header button that shows the chat, so UIA
+		gives the name. OCR of the header is only a fallback for when that
+		button cannot be told apart, e.g. in a LINE UI language whose header
+		labels _lineLabels does not list yet.
+		"""
+		processId = self.processID
 
+		def _read():
+			# From the NVDA menu, LINE takes a moment to get the foreground back.
+			deadline = time.monotonic() + 1.0
+			while not _isLineForeground(processId) and time.monotonic() < deadline:
+				time.sleep(0.05)
+			hwnd = ctypes.windll.user32.GetForegroundWindow()
+			if not hwnd or not _isLineForeground(processId):
+				_queueUiMessage(_("找不到 LINE 視窗"))
+				return
+			title = ""
+			handler = UIAHandler.handler
+			if handler:
+				try:
+					title = _findChatTitle(handler, hwnd)
+				except Exception:
+					log.debug("LINE: reading the chat title from UIA failed", exc_info=True)
+			if not title:
+				title = self._ocrChatHeaderName(hwnd)
+			_queueUiMessage(title or _("無法讀取聊天室名稱"))
+
+		_runOnWorkerThread(_read, taskName="readChatRoomName")
+
+	def _ocrChatHeaderName(self, hwnd):
+		"""Worker thread: OCR the chat's name from the header of window ``hwnd``.
+
+		The area assumes LINE's default chat list width (280 px at 96 DPI) and
+		ends before the header's tool icons.
+		"""
+		windowRect = _getWindowClientScreenRect(hwnd) or _getWindowScreenRect(hwnd)
+		if not windowRect:
+			return ""
+		winLeft, winTop, winRight, _winBottom = windowRect
 		scale = _getDpiScale(hwnd)
-
-		# Get window rect
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		winLeft = rect.left
-		winTop = rect.top
-		winRight = rect.right
-		_winWidth = winRight - winLeft
-
-		# Try DWM extended frame bounds for accuracy
-		dwmRect = ctypes.wintypes.RECT()
-		try:
-			DWMWA_EXTENDED_FRAME_BOUNDS = 9
-			hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
-				hwnd,
-				DWMWA_EXTENDED_FRAME_BOUNDS,
-				ctypes.byref(dwmRect),
-				ctypes.sizeof(dwmRect),
-			)
-			if hr == 0:
-				if dwmRect.right != rect.right or dwmRect.top != rect.top:
-					winLeft = dwmRect.left
-					winTop = dwmRect.top
-					winRight = dwmRect.right
-					_winWidth = winRight - winLeft
-		except Exception:
-			pass
-
-		# The chat room name is in the header area.
-		# Sidebar width is roughly 280px at 96 DPI.
-		# Header name starts after the avatar/back button (~80px from sidebar edge)
-		# and ends before the toolbar icons (~120px from right edge).
-		# The name text is vertically in the range ~30px to ~60px from the top.
-		sidebarWidth = int(280 * scale)
-		nameLeft = winLeft + sidebarWidth + int(10 * scale)
-		nameTop = winTop + int(30 * scale)
-		nameRight = winRight - int(120 * scale)
-		nameBottom = winTop + int(65 * scale)
-
-		nameW = nameRight - nameLeft
-		nameH = nameBottom - nameTop
-
-		if nameW <= 0 or nameH <= 0:
-			ui.message(_("無法取得聊天室標題區域"))
-			return
-
-		log.info(
-			f"LINE: OCR chat room name area: ({nameLeft},{nameTop}) {nameW}x{nameH}, scale={scale:.2f}",
-		)
-
-		def _ocrName():
-			# The header OCR blocks up to 3 s; run it on a worker thread.
-			ocrText = self._ocrWindowArea(
-				hwnd,
-				region=(nameLeft, nameTop, nameW, nameH),
-				sync=True,
-				timeout=3.0,
-			)
-			ocrText = _removeCJKSpaces(ocrText.strip()) if ocrText else ""
-			if ocrText:
-				_queueUiMessage(ocrText)
-			else:
-				_queueUiMessage(_("無法讀取聊天室名稱"))
-
-		_runOnWorkerThread(_ocrName, taskName="readChatRoomName")
+		left = winLeft + int(290 * scale)
+		top = winTop + int(30 * scale)
+		width = winRight - int(120 * scale) - left
+		height = int(35 * scale)
+		if width <= 0:
+			return ""
+		log.info(f"LINE: OCR chat name area: ({left},{top}) {width}x{height}, scale={scale:.2f}")
+		return self._ocrWindowArea(hwnd, region=(left, top, width, height), sync=True, timeout=3.0)
 
 	@script(
 		# Translators: Description of a script to read the current chat room name
@@ -5909,10 +5967,7 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_readChatRoomName(self, gesture):
-		"""Read the current chat room name.
-
-		Always uses OCR on the header area for reliable reading.
-		"""
+		"""Read the current chat room name from LINE's chat header."""
 		try:
 			self._readChatRoomName()
 		except Exception as e:

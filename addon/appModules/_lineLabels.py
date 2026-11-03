@@ -1,8 +1,8 @@
 """Centralised multi-language label table for matching LINE's UI text.
 
 The add-on finds menu items and status text by matching the strings LINE
-renders: the UIA names of the buttons in LINE's own popup menus, and OCR text
-in call windows. Those strings were previously hard-coded as Traditional
+renders: the UIA names of the buttons in LINE's own popup menus and chat
+header, and OCR text in call windows. Those strings were previously hard-coded as Traditional
 Chinese literals scattered across the code base, so the add-on only worked when
 LINE's UI language was Traditional Chinese.
 
@@ -83,6 +83,20 @@ _MORE_OPTIONS_LABELS = {
 # back to clicking the header icon by its position.
 _MORE_OPTIONS_BUTTON = ("其他功能",)
 
+# Accessible names of the chat header's tool buttons, which sit right of the
+# button naming the chat (zh-Hant only). Group chats have 開始通話 where
+# one-to-one chats have 撥號; the notification toggle names the action it takes.
+_CHAT_HEADER_TOOL_BUTTONS = (
+	*_MORE_OPTIONS_BUTTON,
+	"記事本",
+	"開始通話",
+	"撥號",
+	"搜尋聊天",
+	"以個別視窗開啟",
+	"關閉提醒",
+	"開啟提醒",
+)
+
 # Microphone status keywords (the LINE control bar shows the toggle action,
 # so "mute" means the mic is currently ON, and vice-versa).
 _MIC_CURRENTLY_ON = ("關麥克風", "關閉麥克風", "Mute", "mute", "ミュート")
@@ -108,6 +122,12 @@ def labelKeyOf(text, table):
 		if any(_normalize(alias).casefold() == normalized for alias in aliases):
 			return canonical
 	return None
+
+
+def isOneOf(text, aliases):
+	"""True if ``text`` is exactly one of ``aliases``, ignoring whitespace and case."""
+	normalized = _normalize(text).casefold()
+	return bool(normalized) and any(_normalize(alias).casefold() == normalized for alias in aliases)
 
 
 def containsAny(text, aliases):

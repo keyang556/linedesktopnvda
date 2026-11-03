@@ -553,6 +553,148 @@ def test_label_key_of_matches_whole_uia_names_only():
 	assert labels.labelKeyOf("Copy link", table) is None
 	assert labels.labelKeyOf("", table) is None
 	assert labels.labelKeyOf(None, table) is None
+	assert labels.isOneOf(" 撥號 ", labels._CHAT_HEADER_TOOL_BUTTONS)
+	assert not labels.isOneOf("撥號給岳駿", labels._CHAT_HEADER_TOOL_BUTTONS)
+	assert not labels.isOneOf("", labels._CHAT_HEADER_TOOL_BUTTONS)
+
+
+def _load_chat_title_symbols():
+	return _load_line_symbols(
+		assignment_names={
+			"_UIA_BOUNDING_RECTANGLE_PROPERTY_ID",
+			"_UIA_CONTROL_TYPE_PROPERTY_ID",
+			"_UIA_NAME_PROPERTY_ID",
+			"_UIA_IS_OFFSCREEN_PROPERTY_ID",
+			"_UIA_BUTTON_CONTROL_TYPE_ID",
+			"_UIA_LIST_CONTROL_TYPE_ID",
+		},
+		function_names={"_pickChatTitle", "_findChatTitle", "_rectTupleFromWinRect"},
+		namespace={
+			"_lineLabels": _load_line_labels(),
+			"UIAHandler": SimpleNamespace(TreeScope_Descendants=4),
+			"log": _Log(),
+		},
+	)
+
+
+def _chat_header_buttons(title, callLabel):
+	"""Buttons of LINE 26.6.0.4004's main window, at the rects UIA reported live."""
+	return [
+		# Chat list pane: its part of the header row (the collapse button
+		# straddles the pane border), a banner's close button, a chat list item.
+		("聊天室排序", (489, 106, 525, 142)),
+		("收起聊天視窗", (531, 96, 558, 153)),
+		("關閉", (516, 141, 543, 168)),
+		("岳駿, 沒事, 2026年11月3日", (93, 200, 552, 260)),
+		# Chat header: the title, with two of the tools right beside it.
+		(title, (571, 108, 751, 136)),
+		("關閉提醒", (751, 105, 781, 141)),
+		("以個別視窗開啟", (781, 105, 811, 141)),
+		("", (900, 110, 920, 130)),
+		("搜尋聊天", (940, 105, 976, 141)),
+		(callLabel, (984, 105, 1020, 141)),
+		("記事本", (1029, 105, 1065, 141)),
+		("其他功能", (1072, 105, 1096, 141)),
+		# A sticker scrolled up under the header.
+		("岳駿, 貼圖, 上午 9:50", (600, 40, 1060, 200)),
+	]
+
+
+# The chat list and the message list of that window.
+_CHAT_LISTS = [(93, 165, 552, 619), (553, 162, 1115, 556)]
+
+
+def test_pick_chat_title_takes_the_header_button_left_of_the_tools():
+	"""NVDA+Windows+T reads the name LINE gives the chat header's title button;
+	the buttons on the chat list pane's part of that row are further left."""
+	pick = _load_chat_title_symbols()["_pickChatTitle"]
+	assert pick(_chat_header_buttons("視障電腦群組, 410人", "開始通話"), _CHAT_LISTS) == "視障電腦群組, 410人"
+	assert pick(_chat_header_buttons("岳駿", "撥號"), _CHAT_LISTS) == "岳駿"
+	# A chat opened in its own window has no chat list.
+	assert pick(_chat_header_buttons("岳駿", "撥號")) == "岳駿"
+	# No title button: never fall back to a tool or a chat list pane button.
+	untitled = [button for button in _chat_header_buttons("岳駿", "撥號") if button[0] != "岳駿"]
+	assert pick(untitled, _CHAT_LISTS) == ""
+	# A message list that ends before the tools leaves no pane to trust.
+	assert pick(_chat_header_buttons("岳駿", "撥號"), [(93, 165, 552, 619), (553, 162, 1000, 556)]) == ""
+	# Header labels of another UI language are not known yet: OCR takes over.
+	english = [("More options" if name == "其他功能" else name, rect) for name, rect in untitled]
+	assert pick(english, _CHAT_LISTS) == ""
+
+
+def test_find_chat_title_reads_buttons_and_lists_in_one_cached_query():
+	ns = _load_chat_title_symbols()
+	requested = []
+	queries = []
+
+	def cached(controlType, name, rect):
+		return SimpleNamespace(
+			CachedControlType=controlType,
+			CachedName=name,
+			CachedBoundingRectangle=SimpleNamespace(left=rect[0], top=rect[1], right=rect[2], bottom=rect[3]),
+		)
+
+	elements = []
+
+	def showWindow(withTitle=True):
+		elements[:] = [
+			cached(50000, name, rect)
+			for name, rect in _chat_header_buttons("岳駿", "撥號")
+			if withTitle or name != "岳駿"
+		]
+		elements.extend(cached(50008, "", rect) for rect in _CHAT_LISTS)
+
+	def findAllBuildCache(scope, condition, cacheRequest):
+		queries.append((scope, condition, cacheRequest))
+		return SimpleNamespace(Length=len(elements), GetElement=lambda index: elements[index])
+
+	root = SimpleNamespace(FindAllBuildCache=findAllBuildCache)
+	client = SimpleNamespace(
+		ElementFromHandle=lambda hwnd: root if hwnd == 101 else None,
+		CreateCacheRequest=lambda: SimpleNamespace(AddProperty=requested.append),
+		CreatePropertyCondition=lambda *args: args,
+		CreateAndCondition=lambda *args: args,
+		CreateOrCondition=lambda *args: args,
+	)
+	handler = SimpleNamespace(clientObject=client)
+
+	# Only the chat list's rect keeps 收起聊天視窗 from passing for the title.
+	showWindow(withTitle=False)
+	assert ns["_findChatTitle"](handler, 101) == ""
+	requested.clear()
+	queries.clear()
+	showWindow()
+	assert ns["_findChatTitle"](handler, 101) == "岳駿"
+	assert sorted(requested) == sorted(
+		[
+			ns["_UIA_NAME_PROPERTY_ID"],
+			ns["_UIA_CONTROL_TYPE_PROPERTY_ID"],
+			ns["_UIA_BOUNDING_RECTANGLE_PROPERTY_ID"],
+		],
+	)
+	assert len(queries) == 1
+	assert (ns["_UIA_IS_OFFSCREEN_PROPERTY_ID"], False) in queries[0][1]
+	assert ns["_findChatTitle"](handler, 202) == ""
+
+
+def test_chat_title_is_read_from_uia_before_ocr():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
+	module = ast.parse(module_path.read_text(encoding="utf-8"))
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
+	)
+	read = next(
+		node
+		for node in app_module.body
+		if isinstance(node, ast.FunctionDef) and node.name == "_readChatRoomName"
+	)
+	calls = {
+		node.func.id if isinstance(node.func, ast.Name) else node.func.attr: node.lineno
+		for node in ast.walk(read)
+		if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
+	}
+	assert "_ocrWindowArea" not in calls, "OCR belongs in the _ocrChatHeaderName fallback only"
+	assert calls["_findChatTitle"] < calls["_ocrChatHeaderName"]
 
 
 class _FakeUIAElement:
