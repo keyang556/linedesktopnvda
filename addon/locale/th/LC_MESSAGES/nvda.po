@@ -824,11 +824,11 @@ msgstr "การเข้าถึง LINE Desktop"
 
 #: buildVars.py:24
 msgid ""
-"Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.\n"
-"Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."
+"Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list, messages, menus, and dialogs natively.\n"
+"Adds calls, incoming call handling, message shortcuts, message export reading, and AI image description with follow-up questions."
 msgstr ""
-"เพิ่มการรองรับการเข้าถึงของ NVDA สำหรับ LINE Desktop บน Windows แนะนำ LINE 26.6.0.4004 หรือใหม่กว่า ซึ่ง NVDA อ่านรายการแชทและข้อความได้โดยตรง\n"
-"เพิ่มการโทร การจัดการสายเรียกเข้า การจัดการข้อความและกล่องโต้ตอบยืนยัน โปรแกรมอ่านข้อความจากการส่งออก และการอธิบายรูปภาพด้วย AI พร้อมคำถามต่อเนื่อง"
+"เพิ่มการรองรับการเข้าถึงของ NVDA สำหรับ LINE Desktop บน Windows แนะนำ LINE 26.6.0.4004 หรือใหม่กว่า ซึ่ง NVDA อ่านรายการแชท ข้อความ เมนู และกล่องโต้ตอบได้โดยตรง\n"
+"เพิ่มการโทร การจัดการสายเรียกเข้า คีย์ลัดสำหรับข้อความ โปรแกรมอ่านข้อความจากการส่งออก และการอธิบายรูปภาพด้วย AI พร้อมคำถามต่อเนื่อง"
 
 #: buildVars.py:31
 msgid ""

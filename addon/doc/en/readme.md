@@ -8,21 +8,20 @@
 
 ## Overview
 
-This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface and messages natively; the add-on adds calls, message actions, confirmation dialogs, a chat-history reader, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
+This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface, messages, menus, and dialogs natively; the add-on adds calls, message shortcuts, a chat-history reader, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
 
 > [!IMPORTANT]
-> Some actions (call windows, popup menus, confirmation dialogs, and reading the chat room name) still rely on OCR, so their recognition may not be 100% accurate. Reading messages does not use OCR.
+> Some actions (call windows and reading the chat room name) still rely on OCR, so their recognition may not be 100% accurate. Reading messages and the message shortcuts do not use OCR.
 
 ## Features
 
 * **Voice and Video Calls**: Initiate calls directly from the friends tab.
 * **Incoming Call Handling**: Answer and reject incoming calls, and check caller information.
-* **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows, popup menus, and confirmation dialogs.
+* **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows and the chat room name.
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
 * **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
 * **AI Image Description**: Describe the focused image or sticker message with a configurable AI service, then ask follow-up questions in an accessible dialog.
-* **Confirmation Dialogs**: Asks about message recall and the "Convert to text" photo notice in a standard NVDA dialog.
-* **Status Feedback**: Announces tab changes plus microphone/camera state, and plays a short sound after a message is actually sent.
+* **Status Feedback**: Announces microphone/camera state during calls, and plays a short sound after a message is actually sent.
 
 ## Usage Tips and Reminders
 
@@ -49,15 +48,16 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 ## Message Reading and Copying
 
 * **Reading Messages**: With LINE 26.6.0.4004 or later, NVDA reads each message itself as you move through the message list with the arrow keys, including the sender, the quoted original of a reply, the time, and the read count. The add-on no longer right-clicks messages or runs OCR to read them, and your clipboard is left untouched.
-* **Copying Messages**: Press `Control+C` in the message list, and the add-on will copy the message text to the clipboard via the right-click context menu. If the "Copy" item cannot be found, the add-on says so instead of guessing the text with OCR.
+* **Copying Messages**: Press `Control+C` in the message list, and the add-on chooses "Copy" from LINE's own context menu for the focused message. If that menu has no "Copy" item, the add-on says so.
 
-## Message Reader, Context Menus, and Temporary Keys
+## Message Reader and Context Menus
 
 * **Message Reader (`NVDA+Windows+J`)**: The add-on opens the chat room's "More options" menu, chooses "Save chat", parses the exported text, and opens an accessible reader dialog.
 * **Reader Navigation**: Use `UpArrow` / `DownArrow` to move one entry, `PageUp` / `PageDown` to jump ten entries, `Ctrl+Home` / `Ctrl+End` to reach the first / last entry, and `Escape` to close the window. Date separators are preserved, and the current position is announced.
-* **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, this opens a virtual context menu for the focused message, making actions such as copy, reply, recall, and "Convert to text" easier to use.
-* **Recall Confirmation Dialog**: After you choose recall, the add-on opens a standard NVDA dialog with **Recall** (`Y`), **Cancel** (`N`), and, when LINE offers it, **Stealth recall** (`P`, Premium required). Press escape to cancel. The dialog waits for your answer.
-* **Photo-to-Text Consent Dialog**: When LINE shows the first-run "Convert to text" photo upload notice, the add-on opens a standard NVDA dialog with **Agree** (`A`) and **Decline** (`D`). Press escape to decline.
+* **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, these keys open LINE's own context menu for the focused message (reply, copy, share, recall, translate, "Convert to text", and more), and NVDA reads it directly: use `UpArrow` / `DownArrow` to move, `Enter` to choose, and `Escape` to close. The add-on no longer replaces it with an OCR-based virtual menu.
+* **Message Shortcuts**: `NVDA+Windows+R` (reply), `NVDA+Windows+K` (save as), `NVDA+Windows+Delete` (recall), and `Control+C` (copy) open that same menu and choose the item for you, so they work only where LINE's menu offers the item.
+* **Recall Confirmation**: After you choose recall (from that menu or with `NVDA+Windows+Delete`), LINE shows its own confirmation dialog and NVDA reads it: press `Tab` to hear the question and reach the **Recall** button, then press `Space` or `Enter`. The add-on no longer opens a dialog of its own for this.
+* **Photo-to-Text Notice**: The first-run photo upload notice for "Convert to text" is likewise left to LINE's own dialog.
 
 ## AI Image Description
 
@@ -70,20 +70,18 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 
 ### What are Virtual Windows?
 
-Virtual Windows are special interfaces provided by this add-on to improve access to certain LINE features that are difficult to access through standard accessibility APIs. When you use specific shortcuts, the add-on creates a virtual menu or dialog box, allowing you to operate these features more conveniently.
+Virtual Windows are special interfaces provided by this add-on to improve access to certain LINE features that are difficult to access through standard accessibility APIs. When one of those LINE screens appears, the add-on creates a virtual menu or dialog box, allowing you to operate these features more conveniently.
 
 ### Types of Virtual Windows
 
 This add-on currently provides the following virtual windows:
 
-1. **Chat Room More Options Menu**: Press `NVDA+Windows+O` to open
-2. **Message Context Menu**: Used for copying, replying, recalling messages, and other operations
-3. **Verification Code Window**: Reads out the verification code when logging into LINE for the first time; enter this code on your mobile device
-4. **System Tray Menu**: Used to access LINE options in the system tray
+1. **Verification Code Window**: Reads out the verification code when logging into LINE for the first time; enter this code on your mobile device
+2. **System Tray Menu**: Used to access LINE options in the system tray
 
 ### How to Use Virtual Windows
 
-1. **Open Virtual Window**: Use the corresponding shortcut (e.g., `NVDA+Windows+O`)
+1. **Open Virtual Window**: It opens by itself when the verification code screen or LINE's tray menu appears
 2. **Navigate Options**: Use the up and down arrow keys to move between options
 3. **Select Option**: Press `Enter` to execute the selected option
 4. **Close Window**: Press `Escape` to close the virtual window
@@ -97,7 +95,7 @@ This add-on currently provides the following virtual windows:
 ## Keyboard Shortcuts
 
 > [!NOTE]
-> In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, "Add-on (temporary)" indicates context-specific shortcuts that are only active while a dialog is open, and "LINE" indicates built-in LINE Desktop shortcuts.
+> In the "Category" column, "Add-on" indicates shortcuts provided by this add-on, and "LINE" indicates built-in LINE Desktop shortcuts.
 
 > [!TIP]
 > You can customize these shortcuts through "NVDA Menu → Preferences → Input Gestures".
@@ -121,25 +119,11 @@ This add-on currently provides the following virtual windows:
 |---|---|---|
 | **Control+C** | Add-on | Copy the current message (in message list; normal copy in edit fields) |
 | **NVDA+Windows+R** | Add-on | Reply to the current message |
-| **NVDA+Windows+Delete** | Add-on | Recall (unsend) the current message |
+| **NVDA+Windows+Delete** | Add-on | Recall (unsend) the current message; LINE then shows its own confirmation dialog |
 | **NVDA+Windows+T** | Add-on | Read current chat room name |
 | **NVDA+Windows+K** | Add-on | Open Save As dialog (Files can only be downloaded for 7 days after upload) |
 | **NVDA+Windows+I** | Add-on | Describe the current image or sticker message with the configured AI service |
-| **Applications / Shift+F10** | Add-on | Open the virtual context menu for the current message |
-
-### Confirmation Dialog Buttons
-
-These are button accelerators inside the add-on's confirmation dialogs, not global shortcuts; the same letters keep working normally in LINE itself.
-
-| Key | Dialog | Action |
-|---|---|---|
-| **Y** | Recall confirmation | Confirm message recall |
-| **N** | Recall confirmation | Cancel message recall |
-| **P** | Recall confirmation | Stealth recall (Premium required, shown only when LINE offers it) |
-| **Escape** | Recall confirmation | Cancel message recall |
-| **A** | Photo-to-text consent | Agree to LINE's photo upload notice for "Convert to text" |
-| **D** | Photo-to-text consent | Decline LINE's photo upload notice for "Convert to text" |
-| **Escape** | Photo-to-text consent | Decline LINE's photo upload notice |
+| **Applications / Shift+F10** | LINE | Open LINE's context menu for the current message |
 
 ### Basic Shortcuts
 
@@ -177,7 +161,7 @@ These are button accelerators inside the add-on's confirmation dialogs, not glob
 |---|---|---|
 | **Enter** | LINE | Send message; the add-on plays a sound only when sending succeeds |
 | **NVDA+Windows+J** | Add-on | Open the message reader |
-| **NVDA+Windows+O** | Add-on | Click more options button |
+| **NVDA+Windows+O** | Add-on | Open the chat room's More options menu (LINE's own menu) |
 | **Shift+Enter** | LINE | New line |
 | **Ctrl+F** | LINE | Search |
 | **Ctrl+N** | LINE | Open notes |

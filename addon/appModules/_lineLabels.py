@@ -1,23 +1,23 @@
 """Centralised multi-language label table for matching LINE's UI text.
 
-The add-on detects menu items, dialog buttons and status text by matching the
-strings LINE renders (via UIA names or OCR). Those strings were previously
-hard-coded as Traditional Chinese literals scattered across the code base, so
-the add-on only worked when LINE's UI language was Traditional Chinese.
+The add-on finds menu items and status text by matching the strings LINE
+renders: the UIA names of the buttons in LINE's own popup menus, and OCR text
+in call windows. Those strings were previously hard-coded as Traditional
+Chinese literals scattered across the code base, so the add-on only worked when
+LINE's UI language was Traditional Chinese.
 
 This module collects them in one place keyed by a *canonical* string. The
 canonical string is deliberately the Traditional Chinese label, because the
-rest of the code dispatches on those exact literals (e.g.
-``actionName == "收回"``); returning the canonical keeps every caller working
-unchanged while letting OCR/UIA text in other languages still match.
+rest of the code names items by those exact literals (e.g. ``"收回"``); the
+other aliases let UIA/OCR text in other languages match the same key.
 
 Each entry maps the canonical label to the set of strings that should match it
-across languages, including common OCR mis-reads. Languages that have not been
-verified yet are simply omitted — add them here as they are confirmed; nothing
-else needs to change.
+across languages. Some entries still carry OCR mis-reads from when the menus
+were read with OCR; they are harmless for exact UIA-name matching. Languages
+that have not been verified yet are simply omitted — add them here as they are
+confirmed; nothing else needs to change.
 """
 
-import difflib
 import re
 
 
@@ -78,22 +78,10 @@ _MORE_OPTIONS_LABELS = {
 	"封鎖": ("封鎖", "Block", "ブロック", "บล็อก"),
 }
 
-# Incoming/outgoing call buttons. Used to locate buttons by UIA name or OCR.
-_CALL_ANSWER = ("接聽", "接受", "accept", "answer", "応答", "รับสาย")
-_CALL_DECLINE = ("拒絕", "decline", "reject", "拒否", "ปฏิเสธ")
-
-# Recall confirmation dialog actions.
-_RECALL_ACTIONS = {
-	"收回": ("收回", "Unsend", "送信取り消し", "ยกเลิกการส่ง"),
-	"取消": ("取消", "Cancel", "キャンセル", "ยกเลิก"),
-	"無痕收回": ("無痕收回", "Unsend silently", "こっそり取り消し"),
-}
-
-# Photo-to-text first-run consent dialog actions.
-_PHOTO_CONSENT_ACTIONS = {
-	"同意": ("同意", "Agree", "同意する", "ยอมรับ", "ยินยอม"),
-	"不同意": ("不同意", "Disagree", "同意しない", "ไม่ยอมรับ"),
-}
+# Accessible name of the chat header's "More options" button, which opens
+# _MORE_OPTIONS_LABELS. Only zh-Hant is confirmed; other UI languages fall
+# back to clicking the header icon by its position.
+_MORE_OPTIONS_BUTTON = ("其他功能",)
 
 # Microphone status keywords (the LINE control bar shows the toggle action,
 # so "mute" means the mic is currently ON, and vice-versa).
@@ -106,37 +94,19 @@ def _normalize(text):
 	return re.sub(r"\s+", "", (text or "").strip())
 
 
-def allAliases(table, key):
-	"""Return the accepted strings for one canonical key, or ()."""
-	return table.get(key, ())
+def labelKeyOf(text, table):
+	"""Return the canonical key that ``text`` names exactly, or ``None``.
 
-
-def matchLabel(text, table, threshold=0.62):
-	"""Return the canonical key whose aliases best match ``text``.
-
-	First tries substring containment against every alias (cheap and exact),
-	then falls back to a fuzzy ratio against the canonical keys. Returns the
-	canonical (Traditional Chinese) string so existing dispatch code that
-	compares against those literals keeps working, or ``None``.
+	Used on UIA names, which LINE renders verbatim, so only whole-string
+	matches count (ignoring whitespace and case): "Copy" must not match
+	"Copy link".
 	"""
-	normalized = _normalize(text)
+	normalized = _normalize(text).casefold()
 	if not normalized:
 		return None
-
 	for canonical, aliases in table.items():
-		for alias in aliases:
-			if _normalize(alias) in normalized:
-				return canonical
-
-	bestKey = None
-	bestRatio = 0.0
-	for canonical in table:
-		ratio = difflib.SequenceMatcher(None, normalized, _normalize(canonical)).ratio()
-		if ratio > bestRatio:
-			bestRatio = ratio
-			bestKey = canonical
-	if bestKey and bestRatio >= threshold:
-		return bestKey
+		if any(_normalize(alias).casefold() == normalized for alias in aliases):
+			return canonical
 	return None
 
 

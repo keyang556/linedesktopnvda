@@ -36,8 +36,7 @@ Detailed documentation is available in the following languages:
 - 支援 AI 圖片描述，可描述圖片或貼圖訊息並在對話視窗追問 (`NVDA+Windows+I`)。
 - 可在 LINE Desktop 設定面板選擇圖片描述服務、API Key、模型與提示詞。
 - 通話中麥克風與相機狀態播報。
-- 收回訊息與圖片轉文字提示改以標準 NVDA 對話框確認（按鈕快捷鍵仍是 `Y/N/P`、`A/D`）。
-- 聊天清單與訊息由 NVDA 直接讀取（需 LINE 26.6.0.4004 以上）；OCR 只用於通話視窗、彈出選單與確認對話框。
+- 聊天清單、訊息、`Shift+F10` 右鍵選單與收回確認對話框都由 NVDA 直接讀取（需 LINE 26.6.0.4004 以上）；訊息快速鍵也改用 LINE 的選單；OCR 只用於通話視窗與聊天室名稱。
 - **注意**：OCR 並非 100% 準確。
 
 ### English
@@ -49,8 +48,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - AI Image Description for images and stickers, with follow-up questions in a dialog (`NVDA+Windows+I`).
 - LINE Desktop settings for image-description service, API key, model, and prompt.
 - Microphone and camera status announcements during calls.
-- Standard NVDA confirmation dialogs for recall and photo-to-text prompts (button keys are still `Y/N/P`, `A/D`).
-- The chat list and messages are read by NVDA directly (LINE 26.6.0.4004 or later required); OCR is only used for call windows, popup menus, and confirmation dialogs.
+- The chat list, messages, the `Shift+F10` context menu, and the recall confirmation are read by NVDA directly (LINE 26.6.0.4004 or later required); the message shortcuts use LINE's own menus too; OCR is only used for call windows and the chat room name.
 - **Note**: OCR is not perfectly accurate.
 
 ### Japanese (日本語)
@@ -62,8 +60,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - 画像やスタンプを説明し、ダイアログで追加質問できる AI 画像説明 (`NVDA+Windows+I`)。
 - LINE Desktop 設定パネルで画像説明サービス、API Key、モデル、プロンプトを設定。
 - 通話中のマイクとカメラの状態読み上げ。
-- 取り消し確認と画像のテキスト化通知を標準の NVDA ダイアログで確認（ボタンのキーは `Y/N/P`、`A/D` のまま）。
-- チャットリストとメッセージは NVDA が直接読み上げます（LINE 26.6.0.4004 以降が必要）。OCR は通話ウィンドウ、ポップアップメニュー、確認ダイアログにのみ使用します。
+- チャットリスト、メッセージ、`Shift+F10` のコンテキストメニュー、取り消しの確認ダイアログは NVDA が直接読み上げます（LINE 26.6.0.4004 以降が必要）。メッセージ用ショートカットも LINE のメニューを使い、OCR は通話ウィンドウとチャットルーム名にのみ使用します。
 - **注意**: OCR は完全に正確ではありません。
 
 ### Thai (ภาษาไทย)
@@ -75,8 +72,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - อธิบายรูปภาพหรือสติกเกอร์ด้วย AI และถามต่อในหน้าต่างโต้ตอบ (`NVDA+Windows+I`)
 - ตั้งค่าบริการอธิบายรูปภาพ API Key โมเดล และพรอมต์ได้ในแผง LINE Desktop
 - แจ้งสถานะไมโครโฟนและกล้องระหว่างการโทร
-- ยืนยันการเรียกคืนและการแจ้งเตือนแปลงเป็นข้อความผ่านกล่องโต้ตอบมาตรฐานของ NVDA (คีย์ปุ่มยังคงเป็น `Y/N/P`, `A/D`)
-- NVDA อ่านรายการแชทและข้อความได้โดยตรง (ต้องใช้ LINE 26.6.0.4004 หรือใหม่กว่า) ใช้ OCR เฉพาะหน้าต่างการโทร เมนูป๊อปอัป และกล่องโต้ตอบยืนยัน
+- NVDA อ่านรายการแชท ข้อความ เมนูคลิกขวา `Shift+F10` และกล่องโต้ตอบยืนยันการเรียกคืนได้โดยตรง (ต้องใช้ LINE 26.6.0.4004 หรือใหม่กว่า) คีย์ลัดสำหรับข้อความก็ใช้เมนูของ LINE เช่นกัน ใช้ OCR เฉพาะหน้าต่างการโทรและชื่อห้องแชท
 - **หมายเหตุ**: OCR ไม่ถูกต้อง 100%
 
 ---

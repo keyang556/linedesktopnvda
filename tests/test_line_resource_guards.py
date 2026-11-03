@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -254,549 +255,6 @@ def test_chat_header_icon_point_prefers_client_rect_over_outer_frame():
 	assert ns["_getChatHeaderIconPoint"](101, iconIndex=0) == (1890, 116)
 
 
-def test_should_dismiss_message_menu_requires_same_process_foreground():
-	ns = _load_line_symbols(
-		function_names={"_shouldDismissMessageMenu"},
-		namespace={
-			"ctypes": SimpleNamespace(
-				windll=SimpleNamespace(
-					user32=SimpleNamespace(GetForegroundWindow=lambda: 202),
-				),
-			),
-		},
-	)
-	ns["_getWindowProcessId"] = lambda hwnd: {
-		101: 7001,
-		202: 7001,
-		303: 7002,
-	}.get(hwnd, 0)
-
-	assert ns["_shouldDismissMessageMenu"](101) is True
-	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 303
-	assert ns["_shouldDismissMessageMenu"](101) is False
-	ns["ctypes"].windll.user32.GetForegroundWindow = lambda: 0
-	assert ns["_shouldDismissMessageMenu"](101) is False
-
-
-def test_message_probe_hit_test_rejects_edit_fields_but_allows_qt_hit_test_drift():
-	class _Element:
-		def __init__(self, runtime_id, control_type=50007):
-			self.runtime_id = runtime_id
-			self.CurrentControlType = control_type
-
-		def GetRuntimeId(self):
-			return self.runtime_id
-
-	class _Walker:
-		def __init__(self, parents):
-			self.parents = parents
-
-		def GetParentElement(self, element):
-			return self.parents.get(element)
-
-	class _Client:
-		def __init__(self, hit_element, walker):
-			self.hit_element = hit_element
-			self.RawViewWalker = walker
-
-		def ElementFromPoint(self, _point):
-			return self.hit_element
-
-	target = _Element((1, 2, 3))
-	target_child = _Element((1, 2, 4))
-	other = _Element((9, 9, 9))
-	edit = _Element((8, 8, 8), control_type=50004)
-	walker = _Walker({target_child: target})
-	client = _Client(target_child, walker)
-	handler = SimpleNamespace(clientObject=client)
-
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizeRuntimeId",
-			"_getElementRuntimeId",
-			"_messageProbePointHitsTargetElement",
-		},
-		namespace={
-			"ctypes": SimpleNamespace(
-				wintypes=SimpleNamespace(
-					POINT=lambda x, y: SimpleNamespace(x=x, y=y),
-				),
-			),
-			"log": _Log(),
-		},
-	)
-	target_id = ns["_getElementRuntimeId"](target)
-
-	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is True
-	client.hit_element = other
-	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is True
-	client.hit_element = edit
-	assert ns["_messageProbePointHitsTargetElement"](handler, target, 10, 20, target_id) is False
-
-
-def test_message_probe_hit_test_preserves_existing_behavior_when_uia_hit_test_fails():
-	class _Client:
-		RawViewWalker = None
-
-		def ElementFromPoint(self, _point):
-			raise RuntimeError("UIA unavailable")
-
-	ns = _load_line_symbols(
-		function_names={"_messageProbePointHitsTargetElement"},
-		namespace={
-			"ctypes": SimpleNamespace(
-				wintypes=SimpleNamespace(
-					POINT=lambda x, y: SimpleNamespace(x=x, y=y),
-				),
-			),
-			"log": _Log(),
-		},
-	)
-
-	assert (
-		ns["_messageProbePointHitsTargetElement"](
-			SimpleNamespace(clientObject=_Client()),
-			object(),
-			10,
-			20,
-			(1, 2, 3),
-		)
-		is True
-	)
-
-
-def test_extract_matched_message_context_menu_labels_ignores_message_body_text():
-	known_labels = {"回覆", "複製", "分享", "刪除", "收回"}
-	ns = _load_line_symbols(
-		function_names={"_extractMatchedMessageContextMenuLabels"},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"_matchMessageContextMenuLabel": lambda text: text if text in known_labels else None,
-		},
-	)
-
-	popup_lines, line_matches, matched_labels = ns["_extractMatchedMessageContextMenuLabels"](
-		"本次更新新增了訊息右鍵選單\n天、回覆、複製、收回等重要站點\n日期：2026 年 3 月 27 日",
-	)
-
-	assert popup_lines[1] == "天、回覆、複製、收回等重要站點"
-	assert line_matches[1] == ("天、回覆、複製、收回等重要站點", None)
-	assert matched_labels == []
-
-
-def test_extract_matched_message_context_menu_labels_accepts_real_menu_rows():
-	known_labels = {"回覆", "複製", "分享", "刪除", "收回"}
-	ns = _load_line_symbols(
-		function_names={"_extractMatchedMessageContextMenuLabels"},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"_matchMessageContextMenuLabel": lambda text: text if text in known_labels else None,
-		},
-	)
-
-	_popup_lines, line_matches, matched_labels = ns["_extractMatchedMessageContextMenuLabels"](
-		"回覆\n複製\n分享",
-	)
-
-	assert line_matches == [("回覆", "回覆"), ("複製", "複製"), ("分享", "分享")]
-	assert matched_labels == ["回覆", "複製", "分享"]
-
-
-def test_resolve_popup_menu_label_click_point_returns_aligned_click_target():
-	ns = _load_line_symbols(
-		function_names={"_resolvePopupMenuLabelClickPoint"},
-		namespace={"log": _Log()},
-	)
-
-	row_rects = [
-		(639, 439, 837, 479),
-		(639, 480, 837, 520),
-		(639, 520, 837, 560),
-	]
-	calls = {}
-
-	def _fake_build_menu_elements(lines, popup_rect, rowRects=None):
-		calls["lines"] = lines
-		calls["popup_rect"] = popup_rect
-		calls["row_rects"] = rowRects
-		return [
-			{"name": "回覆", "clickPoint": (738, 459)},
-			{"name": "複製", "clickPoint": (738, 500)},
-			{"name": "分享", "clickPoint": (738, 540)},
-		]
-
-	target = ns["_resolvePopupMenuLabelClickPoint"](
-		"複製",
-		[
-			{"text": "50", "rect": (700, 430, 732, 450)},
-			{"text": "回覆", "rect": (706, 449, 742, 469)},
-			{"text": "複製", "rect": (706, 489, 742, 511)},
-			{"text": "分享", "rect": (706, 530, 742, 550)},
-		],
-		(624, 415, 852, 860),
-		popupRowRects=row_rects,
-		buildMenuElements=_fake_build_menu_elements,
-	)
-
-	assert calls["row_rects"] == row_rects
-	assert target == {
-		"clickPoint": (738, 500),
-		"index": 1,
-		"count": 3,
-	}
-
-
-def test_build_message_bubble_click_positions_preserves_existing_priority_before_new_left_fallbacks():
-	ns = _load_line_symbols(
-		function_names={"_buildMessageBubbleClickPositions"},
-	)
-
-	positions = ns["_buildMessageBubbleClickPositions"](
-		(547, 274, 1102, 397),
-		0,
-		1000,
-	)
-
-	assert [label for _x, _y, label in positions[:6]] == [
-		"1/6-left",
-		"5/6-right",
-		"1/4-left",
-		"3/4-right",
-		"9/10-right",
-		"7/8-right",
-	]
-	assert [label for _x, _y, label in positions[6:8]] == [
-		"1/10-left",
-		"1/8-left",
-	]
-	assert [label for _x, _y, label in positions[-1:]] == [
-		"center",
-	]
-
-
-def test_build_message_bubble_click_positions_adds_vertical_probes_only_when_requested():
-	ns = _load_line_symbols(
-		function_names={"_buildMessageBubbleClickPositions"},
-	)
-
-	basePositions = ns["_buildMessageBubbleClickPositions"](
-		(547, 274, 1102, 397),
-		0,
-		1000,
-	)
-	verticalPositions = ns["_buildMessageBubbleClickPositions"](
-		(547, 274, 1102, 397),
-		0,
-		1000,
-		includeVerticalOffsets=True,
-	)
-
-	assert [label for _x, _y, label in basePositions] == [
-		"1/6-left",
-		"5/6-right",
-		"1/4-left",
-		"3/4-right",
-		"9/10-right",
-		"7/8-right",
-		"1/10-left",
-		"1/8-left",
-		"center",
-	]
-	assert [label for _x, _y, label in verticalPositions] == [
-		"1/6-left",
-		"5/6-right",
-		"1/4-left",
-		"3/4-right",
-		"9/10-right",
-		"7/8-right",
-		"1/10-left",
-		"1/8-left",
-		"1/10-top",
-		"1/8-top",
-		"1/6-top",
-		"1/10-bottom",
-		"1/8-bottom",
-		"5/6-bottom",
-		"center",
-	]
-
-
-def test_build_message_bubble_click_positions_prioritizes_right_edge_vertical_probes_for_lower_bubbles():
-	ns = _load_line_symbols(
-		function_names={"_buildMessageBubbleClickPositions"},
-	)
-
-	verticalPositions = ns["_buildMessageBubbleClickPositions"](
-		(547, 274, 1102, 397),
-		0,
-		735,
-		includeVerticalOffsets=True,
-	)
-
-	assert [label for _x, _y, label in verticalPositions] == [
-		"1/6-left",
-		"5/6-right",
-		"1/4-left",
-		"3/4-right",
-		"9/10-right",
-		"7/8-right",
-		"1/10-left",
-		"1/8-left",
-		"5/6-top",
-		"5/6-bottom",
-		"1/10-top",
-		"1/8-top",
-		"1/6-top",
-		"1/10-bottom",
-		"1/8-bottom",
-		"center",
-	]
-
-
-def test_is_message_bubble_metadata_ocr_line_filters_timestamps_and_read_receipts():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizeMessageBubbleOcrLine",
-			"_isMessageBubbleMetadataOcrLine",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"re": re,
-		},
-	)
-
-	assert ns["_isMessageBubbleMetadataOcrLine"]("下午 12 : 38") is True
-	assert ns["_isMessageBubbleMetadataOcrLine"](", 下午 12 : 38") is True
-	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀") is True
-	assert ns["_isMessageBubbleMetadataOcrLine"]("已讀 下午 12 ℃ 5") is True
-	assert ns["_isMessageBubbleMetadataOcrLine"]("謝謝 !") is False
-
-
-def test_build_message_bubble_ocr_click_positions_targets_side_padding_for_right_aligned_content():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizeMessageBubbleOcrLine",
-			"_isMessageBubbleMetadataOcrLine",
-			"_buildMessageBubbleOcrClickPositions",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-			"re": re,
-		},
-	)
-
-	positions = ns["_buildMessageBubbleOcrClickPositions"](
-		[
-			{"text": "謝謝 !", "rect": (996, 306, 1038, 333)},
-			{"text": ", 下午 12 : 38", "rect": (982, 336, 1060, 359)},
-		],
-		(547, 274, 1102, 397),
-		0,
-		735,
-	)
-
-	assert [label for _x, _y, label in positions] == [
-		"ocr-right-center",
-		"ocr-right-upper",
-		"ocr-right-lower",
-	]
-	assert all(x > 1038 for x, _y, _label in positions)
-	assert all(x < 1102 for x, _y, _label in positions)
-
-
-def test_has_exhausted_message_bubble_fallback_probes_ignores_trailing_center():
-	ns = _load_line_symbols(
-		function_names={
-			"_buildMessageBubbleClickPositions",
-			"_hasExhaustedMessageBubbleFallbackProbes",
-		},
-	)
-
-	positions = ns["_buildMessageBubbleClickPositions"](
-		(547, 274, 1102, 397),
-		0,
-		1000,
-		includeVerticalOffsets=True,
-	)
-
-	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](5, positions) is False
-	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](7, positions) is False
-	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](12, positions) is False
-	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](13, positions) is True
-	assert ns["_hasExhaustedMessageBubbleFallbackProbes"](14, positions) is True
-
-
-def test_extract_recall_dialog_action_labels_handles_modern_dialog_without_matching_body_text():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizeRecallDialogLine",
-			"_matchRecallDialogActionLabel",
-			"_extractRecallDialogActionLabels",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-		},
-	)
-
-	labels = ns["_extractRecallDialogActionLabels"](
-		"確定要收回訊息嗎？\n"
-		"您可無痕收回此則未讀訊息，對方不會收到任何提醒。\n"
-		"依對方使用的LINE版本而定，有可能無法收回訊息。\n"
-		"無痕收回 Premium\n"
-		"收回\n"
-		"關閉",
-	)
-
-	assert labels == ["無痕收回", "收回", "取消"]
-
-
-def test_get_recall_confirmation_prompt_marks_stealth_option_as_premium():
-	"""The dialog's buttons name the actions, so the body only has to carry what
-	a button label cannot: that stealth recall needs Premium."""
-	ns = _load_line_symbols(
-		function_names={"_getRecallConfirmationPrompt"},
-		namespace={"_": lambda text: text},
-	)
-
-	assert ns["_getRecallConfirmationPrompt"]({"收回", "取消"}) == "確認要收回嗎？"
-	assert (
-		ns["_getRecallConfirmationPrompt"](
-			{"收回", "取消"},
-			isModernDialog=True,
-		)
-		== "確認要收回嗎？"
-	)
-	assert (
-		ns["_getRecallConfirmationPrompt"](
-			{"無痕收回", "收回", "取消"},
-			isModernDialog=True,
-		)
-		== "確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。"
-	)
-
-
-def test_extract_photo_text_consent_action_labels_ignores_title_and_body_mentions_of_agree():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizePhotoTextConsentDialogLine",
-			"_matchPhotoTextConsentActionLabel",
-			"_extractPhotoTextConsentActionLabels",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-		},
-	)
-
-	labels = ns["_extractPhotoTextConsentActionLabels"](
-		"同意提供照片\n"
-		"使用本功能會將照片傳至本公司伺服器進行處理\n"
-		"您要同意本功能的服務規定並開始使用嗎？\n"
-		"同意\n"
-		"不同意",
-	)
-
-	assert labels == ["同意", "不同意"]
-
-
-def test_is_photo_text_consent_dialog_text_requires_upload_notice_and_buttons():
-	ns = _load_line_symbols(
-		function_names={"_isPhotoTextConsentDialogText"},
-		namespace={"_removeCJKSpaces": lambda text: text.replace(" ", "")},
-	)
-
-	assert (
-		ns["_isPhotoTextConsentDialogText"](
-			"同意提供照片\n"
-			"使用本功能會將照片傳至本公司伺服器進行處理\n"
-			"您要同意本功能的服務規定並開始使用嗎？\n"
-			"同意\n"
-			"不同意",
-			["同意", "不同意"],
-		)
-		is True
-	)
-	assert (
-		ns["_isPhotoTextConsentDialogText"](
-			"同意提供照片\n同意\n不同意",
-			["同意", "不同意"],
-		)
-		is False
-	)
-
-
-def test_get_photo_text_consent_prompt_mentions_upload_notice():
-	"""The consent dialog must still say where the photo goes before asking."""
-	ns = _load_line_symbols(
-		function_names={"_getPhotoTextConsentPrompt"},
-		namespace={"_": lambda text: text},
-	)
-
-	assert ns["_getPhotoTextConsentPrompt"]() == "轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？"
-
-
-def test_extract_photo_text_consent_action_click_points_use_button_rows_not_dialog_title():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizePhotoTextConsentDialogLine",
-			"_matchPhotoTextConsentActionLabel",
-			"_rectsIntersect",
-			"_extractPhotoTextConsentActionClickPoints",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-		},
-	)
-
-	points = ns["_extractPhotoTextConsentActionClickPoints"](
-		[
-			{"text": "同意提供照片", "rect": (360, 240, 560, 292)},
-			{"text": "同意", "rect": (432, 600, 516, 636)},
-			{"text": "不同意", "rect": (544, 600, 652, 636)},
-		],
-		(320, 220, 760, 760),
-	)
-
-	assert points == {
-		"同意": {
-			"clickPoint": (474, 618),
-			"rect": (432, 600, 516, 636),
-		},
-		"不同意": {
-			"clickPoint": (598, 618),
-			"rect": (544, 600, 652, 636),
-		},
-	}
-
-
-def test_is_modern_recall_dialog_text_accepts_compact_two_button_modern_layout():
-	ns = _load_line_symbols(
-		function_names={"_isModernRecallDialogText"},
-		namespace={"_removeCJKSpaces": lambda text: text.replace(" ", "")},
-	)
-
-	assert (
-		ns["_isModernRecallDialogText"](
-			"確定要收回此訊息嗎 ?\n"
-			"收回已讀訊息時, 對方將會收到通知。\n"
-			"依對方使用的LINE版本而定, 有可能無法收回訊息。\n"
-			"收回\n"
-			"關閉",
-			["收回", "取消"],
-		)
-		is True
-	)
-
-
-def test_is_compact_modern_recall_dialog_requires_two_button_modern_state():
-	ns = _load_line_symbols(
-		function_names={"_isCompactModernRecallDialog"},
-	)
-
-	assert ns["_isCompactModernRecallDialog"](["收回", "取消"], isModernDialog=True) is True
-	assert ns["_isCompactModernRecallDialog"](["無痕收回", "收回", "取消"], isModernDialog=True) is False
-	assert ns["_isCompactModernRecallDialog"](["收回", "取消"], isModernDialog=False) is False
-
-
 def test_try_invoke_uia_element_prefers_direct_invoke_without_generated_stubs():
 	ns = _load_line_symbols(
 		function_names={"_invokeUIAInvokePattern", "_tryInvokeUIAElement"},
@@ -964,771 +422,6 @@ def test_extract_ocr_lines_supports_nvda_lines_words_result_shape():
 	]
 
 
-def test_infer_recall_dialog_targets_by_geometry_recovers_modern_unlabeled_buttons():
-	ns = _load_line_symbols(
-		function_names={
-			"_rectIntersectionArea",
-			"_rectIoU",
-			"_isCompactModernRecallDialog",
-			"_inferRecallDialogTargetsByGeometry",
-		},
-	)
-
-	candidates = [
-		{
-			"element": "junk-top",
-			"rect": (150, 160, 260, 190),
-			"controlType": 50003,
-			"hasInvoke": False,
-		},
-		{
-			"element": "stealth",
-			"rect": (150, 290, 450, 332),
-			"controlType": 50000,
-			"hasInvoke": True,
-		},
-		{
-			"element": "recall",
-			"rect": (150, 346, 450, 388),
-			"controlType": 50000,
-			"hasInvoke": True,
-		},
-		{
-			"element": "cancel-text",
-			"rect": (238, 420, 362, 446),
-			"controlType": 50003,
-			"hasInvoke": False,
-		},
-	]
-
-	inferred = ns["_inferRecallDialogTargetsByGeometry"](
-		candidates,
-		(100, 120, 500, 500),
-		["無痕收回", "收回"],
-		isModernDialog=True,
-	)
-
-	assert inferred["無痕收回"]["element"] == "stealth"
-	assert inferred["收回"]["element"] == "recall"
-
-
-def test_infer_recall_dialog_targets_by_geometry_recovers_legacy_primary_button():
-	ns = _load_line_symbols(
-		function_names={
-			"_rectIntersectionArea",
-			"_rectIoU",
-			"_isCompactModernRecallDialog",
-			"_inferRecallDialogTargetsByGeometry",
-		},
-	)
-
-	candidates = [
-		{
-			"element": "body",
-			"rect": (140, 180, 430, 220),
-			"controlType": 50003,
-			"hasInvoke": False,
-		},
-		{
-			"element": "recall",
-			"rect": (150, 320, 450, 364),
-			"controlType": 50000,
-			"hasInvoke": True,
-		},
-	]
-
-	inferred = ns["_inferRecallDialogTargetsByGeometry"](
-		candidates,
-		(100, 120, 500, 500),
-		["收回", "取消"],
-		isModernDialog=False,
-	)
-
-	assert inferred["收回"]["element"] == "recall"
-
-
-def test_infer_recall_dialog_targets_by_geometry_prefers_compact_modern_button_zone():
-	ns = _load_line_symbols(
-		function_names={
-			"_rectIntersectionArea",
-			"_rectIoU",
-			"_isCompactModernRecallDialog",
-			"_inferRecallDialogTargetsByGeometry",
-		},
-	)
-
-	candidates = [
-		{
-			"element": "topCard",
-			"rect": (150, 260, 450, 304),
-			"controlType": 50000,
-			"hasInvoke": True,
-		},
-		{
-			"element": "recallButton",
-			"rect": (150, 352, 450, 404),
-			"controlType": 50000,
-			"hasInvoke": True,
-		},
-	]
-
-	inferred = ns["_inferRecallDialogTargetsByGeometry"](
-		candidates,
-		(100, 120, 500, 560),
-		["收回", "取消"],
-		isModernDialog=True,
-	)
-
-	assert inferred["收回"]["element"] == "recallButton"
-
-
-def test_get_recall_dialog_fallback_click_point_covers_legacy_and_modern_layouts():
-	ns = _load_line_symbols(
-		function_names={
-			"_isCompactModernRecallDialog",
-			"_getRecallDialogFallbackClickPoint",
-		},
-	)
-
-	assert ns["_getRecallDialogFallbackClickPoint"]("收回", (100, 200, 500, 600), False) == (300, 432)
-	assert ns["_getRecallDialogFallbackClickPoint"]("取消", (100, 200, 500, 600), False) is None
-	assert ns["_getRecallDialogFallbackClickPoint"]("無痕收回", (100, 200, 500, 600), True) == (300, 396)
-	assert ns["_getRecallDialogFallbackClickPoint"](
-		"收回",
-		(100, 200, 500, 600),
-		True,
-		["收回", "取消"],
-	) == (300, 456)
-	assert ns["_getRecallDialogFallbackClickPoint"]("取消", (100, 200, 500, 600), True) is None
-
-
-def test_extract_recall_dialog_action_click_points_uses_ocr_label_centers():
-	ns = _load_line_symbols(
-		function_names={
-			"_normalizeRecallDialogLine",
-			"_matchRecallDialogActionLabel",
-			"_rectsIntersect",
-			"_extractRecallDialogActionClickPoints",
-		},
-		namespace={
-			"_removeCJKSpaces": lambda text: text.replace(" ", ""),
-		},
-	)
-
-	points = ns["_extractRecallDialogActionClickPoints"](
-		[
-			{"text": "收回訊息。", "rect": (180, 260, 300, 292)},
-			{"text": "收回", "rect": (470, 618, 550, 648)},
-			{"text": "關閉", "rect": (472, 676, 548, 706)},
-		],
-		(320, 220, 700, 760),
-	)
-
-	assert points == {
-		"收回": {
-			"clickPoint": (510, 633),
-			"rect": (470, 618, 550, 648),
-		},
-		"取消": {
-			"clickPoint": (510, 691),
-			"rect": (472, 676, 548, 706),
-		},
-	}
-
-
-def _get_app_module_method(name):
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	return next(node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == name)
-
-
-def _called_function_names(tree):
-	return {
-		node.func.id if isinstance(node.func, ast.Name) else node.func.attr
-		for node in ast.walk(tree)
-		if isinstance(node, ast.Call) and isinstance(node.func, (ast.Name, ast.Attribute))
-	}
-
-
-def test_begin_recall_confirmation_opens_the_standard_message_dialog():
-	"""Recall is confirmed in a real dialog, not by temporarily stealing Y/N/P
-	from LINE: those bindings swallowed plain letters in the chat and needed a
-	timeout to hand them back."""
-	begin_method = _get_app_module_method("_beginRecallConfirmation")
-	calls = _called_function_names(begin_method)
-
-	assert "openRecallConfirmationDialog" in calls
-	assert "bindGesture" not in calls
-
-
-def test_begin_photo_text_consent_opens_the_standard_message_dialog():
-	"""Same for LINE's first-run photo upload notice, which used to steal A/D."""
-	begin_method = _get_app_module_method("_beginPhotoTextConsent")
-	calls = _called_function_names(begin_method)
-
-	assert "openPhotoTextConsentDialog" in calls
-	assert "bindGesture" not in calls
-
-
-def test_end_recall_confirmation_defers_user_feedback_until_post_click_verification():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	end_method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_endRecallConfirmation"
-	)
-
-	calls = set()
-	for node in ast.walk(end_method):
-		if not (
-			isinstance(node, ast.Call)
-			and isinstance(node.func, ast.Attribute)
-			and isinstance(node.func.value, ast.Name)
-			and node.func.value.id == "self"
-		):
-			continue
-		calls.add(node.func.attr)
-
-	assert "_performRecallConfirmationAction" in calls
-	assert "_scheduleRecallCompletionAnnouncement" in calls
-
-	# On the success path the binding teardown (and the user feedback) is
-	# deferred to _scheduleRecallCompletionAnnouncement's post-click
-	# verification; the only direct clear allowed here is the worker-failure
-	# branch (performed is None), which must release the y/n/p keys so they
-	# are never left swallowed in LINE.
-	clear_calls = [
-		node
-		for node in ast.walk(end_method)
-		if isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Attribute)
-		and node.func.attr == "_clearRecallConfirmationState"
-	]
-	failure_ifs = [
-		node
-		for node in ast.walk(end_method)
-		if isinstance(node, ast.If)
-		and isinstance(node.test, ast.Compare)
-		and any(isinstance(op, ast.Is) for op in node.test.ops)
-		and any(isinstance(name, ast.Name) and name.id == "performed" for name in ast.walk(node.test))
-	]
-	guarded_clear_calls = [
-		call
-		for branch in failure_ifs
-		for stmt in branch.body
-		for call in ast.walk(stmt)
-		if isinstance(call, ast.Call)
-		and isinstance(call.func, ast.Attribute)
-		and call.func.attr == "_clearRecallConfirmationState"
-	]
-	assert len(clear_calls) == len(guarded_clear_calls), (
-		"_endRecallConfirmation may clear the recall bindings only on the worker-failure branch"
-	)
-
-
-def test_perform_recall_confirmation_action_prefers_ocr_click_point_for_legacy_recall():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_performRecallConfirmationAction"
-	)
-	compact_helper = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_isCompactModernRecallDialog"
-	)
-	ns = {
-		"log": _Log(),
-		"_getRecallDialogFallbackClickPoint": lambda *args, **kwargs: None,
-		"_": lambda text: text,
-	}
-	exec(
-		compile(
-			ast.Module(body=[compact_helper, method], type_ignores=[]),
-			str(module_path),
-			"exec",
-		),
-		ns,
-	)
-	perform = ns["_performRecallConfirmationAction"]
-	clicks = []
-
-	class _Self:
-		def _refreshRecallConfirmationState(self):
-			return {
-				"targets": {
-					"收回": {
-						"element": object(),
-						"rect": (100, 200, 300, 320),
-						"clickPoint": (210, 278),
-					},
-				},
-				"isModernDialog": False,
-				"hwnd": 123,
-				"dialogRect": (50, 50, 350, 350),
-			}
-
-		def _invokeElement(self, *args, **kwargs):
-			raise AssertionError("legacy recall should click the OCR hit before invoking UIA")
-
-		def _clickAtPosition(self, *args, **kwargs):
-			clicks.append((args, kwargs))
-
-	assert perform(_Self(), "收回") is True
-	assert clicks == [((210, 278), {"hwnd": 123})]
-
-
-def test_perform_recall_confirmation_action_prefers_ocr_click_point_for_modern_recall():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_performRecallConfirmationAction"
-	)
-	compact_helper = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_isCompactModernRecallDialog"
-	)
-	ns = {
-		"log": _Log(),
-		"_getRecallDialogFallbackClickPoint": lambda *args, **kwargs: None,
-		"_": lambda text: text,
-	}
-	exec(
-		compile(
-			ast.Module(body=[compact_helper, method], type_ignores=[]),
-			str(module_path),
-			"exec",
-		),
-		ns,
-	)
-	perform = ns["_performRecallConfirmationAction"]
-	clicks = []
-
-	class _Self:
-		def _refreshRecallConfirmationState(self):
-			return {
-				"targets": {
-					"收回": {
-						"element": object(),
-						"rect": (100, 200, 300, 320),
-						"clickPoint": (215, 284),
-					},
-				},
-				"isModernDialog": True,
-				"hwnd": 456,
-				"dialogRect": (50, 50, 350, 350),
-			}
-
-		def _invokeElement(self, *args, **kwargs):
-			raise AssertionError("OCR click point should win before UIA even for modern dialog")
-
-		def _clickAtPosition(self, *args, **kwargs):
-			clicks.append((args, kwargs))
-
-	assert perform(_Self(), "收回") is True
-	assert clicks == [((215, 284), {"hwnd": 456})]
-
-
-def test_perform_recall_confirmation_action_prefers_compact_modern_fallback_before_uia_when_ocr_missing():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_performRecallConfirmationAction"
-	)
-	compact_helper = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_isCompactModernRecallDialog"
-	)
-	fallback_calls = []
-	ns = {
-		"log": _Log(),
-		"_getRecallDialogFallbackClickPoint": lambda action, rect, **kwargs: (
-			fallback_calls.append((action, rect, kwargs)) or (222, 333)
-		),
-		"_": lambda text: text,
-	}
-	exec(
-		compile(
-			ast.Module(body=[compact_helper, method], type_ignores=[]),
-			str(module_path),
-			"exec",
-		),
-		ns,
-	)
-	perform = ns["_performRecallConfirmationAction"]
-	clicks = []
-
-	class _Self:
-		def _refreshRecallConfirmationState(self):
-			return {
-				"targets": {
-					"收回": {
-						"element": object(),
-						"rect": (100, 200, 300, 320),
-						"clickPoint": None,
-					},
-				},
-				"actionLabels": ["收回", "取消"],
-				"isModernDialog": True,
-				"hwnd": 789,
-				"dialogRect": (50, 50, 350, 350),
-			}
-
-		def _invokeElement(self, *args, **kwargs):
-			raise AssertionError("compact modern recall should fallback-click before invoking UIA")
-
-		def _clickAtPosition(self, *args, **kwargs):
-			clicks.append((args, kwargs))
-
-	assert perform(_Self(), "收回") is True
-	assert fallback_calls == [
-		("收回", (50, 50, 350, 350), {"isModernDialog": True, "availableActions": ["收回", "取消"]}),
-	]
-	assert clicks == [((222, 333), {"hwnd": 789})]
-
-
-def test_handle_message_context_menu_action_starts_photo_consent_watch_for_convert_to_text():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_handleMessageContextMenuAction"
-	)
-	ns = {}
-	exec(
-		compile(
-			ast.Module(body=[method], type_ignores=[]),
-			str(module_path),
-			"exec",
-		),
-		ns,
-	)
-	handle = ns["_handleMessageContextMenuAction"]
-	calls = []
-
-	class _Self:
-		def _watchForRecallConfirmationDialog(self):
-			calls.append("recall")
-
-		def _watchForPhotoTextConsentDialog(self):
-			calls.append("photo")
-
-	handle(_Self(), "轉為文字")
-	assert calls == ["photo"]
-	calls.clear()
-
-	handle(_Self(), "收回")
-	assert calls == ["recall"]
-
-
-def test_perform_photo_text_consent_action_prefers_ocr_click_point():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_performPhotoTextConsentAction"
-	)
-	ns = {
-		"log": _Log(),
-		"_getPhotoTextConsentDialogFallbackClickPoint": lambda *args, **kwargs: None,
-		"_": lambda text: text,
-	}
-	exec(
-		compile(
-			ast.Module(body=[method], type_ignores=[]),
-			str(module_path),
-			"exec",
-		),
-		ns,
-	)
-	perform = ns["_performPhotoTextConsentAction"]
-	clicks = []
-
-	class _Self:
-		def _refreshPhotoTextConsentState(self):
-			return {
-				"targets": {
-					"同意": {
-						"element": object(),
-						"rect": (100, 200, 300, 320),
-						"clickPoint": (184, 266),
-					},
-				},
-				"hwnd": 321,
-				"dialogRect": (50, 50, 350, 350),
-			}
-
-		def _invokeElement(self, *args, **kwargs):
-			raise AssertionError("photo consent should click the OCR hit before invoking UIA")
-
-		def _clickAtPosition(self, *args, **kwargs):
-			clicks.append((args, kwargs))
-
-	assert perform(_Self(), "同意") is True
-	assert clicks == [((184, 266), {"hwnd": 321})]
-
-
-def test_activate_message_context_menu_supports_keyboard_fallback_hooks():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_activateMessageContextMenu"
-	)
-
-	arg_names = [arg.arg for arg in method.args.args]
-	assert arg_names[:5] == ["self", "retriesLeft", "onAction", "onFailure", "shouldAbort"]
-
-	message_context_menu_calls = [
-		node
-		for node in ast.walk(method)
-		if isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "MessageContextMenu"
-	]
-	assert message_context_menu_calls, "expected MessageContextMenu construction"
-	assert any(
-		any(keyword.arg == "onAction" for keyword in call.keywords) for call in message_context_menu_calls
-	)
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_popupLooksLikeMessageContextMenu"
-		for node in ast.walk(method)
-	), "keyboard popup activation should validate popup OCR before opening the virtual window"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_popupLooksLikeMessageContextMenu"
-		and len(node.args) == 3
-		for node in ast.walk(method)
-	), "keyboard popup activation should pass app module, window handle, and popup rect into OCR validation"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_sendGestureWithAddonSuppressed"
-		and node.args
-		and isinstance(node.args[0], ast.Constant)
-		and node.args[0].value == "escape"
-		for node in ast.walk(method)
-	), "keyboard popup activation should dismiss invalid popups before failing"
-
-
-def test_message_context_menu_script_tries_keyboard_before_mouse_probes():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = [
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "script_messageContextMenu"
-	][-1]
-
-	keyboard_fallback = next(
-		node
-		for node in method.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_tryKeyboardFallback"
-	)
-	start_mouse_probes = next(
-		node
-		for node in method.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_startMouseContextMenuProbes"
-	)
-
-	# The flow starts with a worker-thread preamble whose completion callback
-	# (_afterPreamble) enters the keyboard-first path; mouse probes only run
-	# from _startMouseContextMenuProbes on keyboard failure.
-	after_preamble = next(
-		node for node in method.body if isinstance(node, ast.FunctionDef) and node.name == "_afterPreamble"
-	)
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_tryKeyboardFallback"
-		for node in ast.walk(after_preamble)
-	), "message context menu should try the native applications key before mouse probes"
-
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_sendGestureWithAddonSuppressed"
-		and node.args
-		and isinstance(node.args[0], ast.Constant)
-		and node.args[0].value == "applications"
-		for node in ast.walk(keyboard_fallback)
-	), "keyboard-first path should send the applications key directly to LINE"
-
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Attribute)
-		and isinstance(node.func.value, ast.Name)
-		and node.func.value.id == "self"
-		and node.func.attr == "_activateMessageContextMenu"
-		for node in ast.walk(keyboard_fallback)
-	), "keyboard-first path should activate popup detection after sending the gesture"
-
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_startMouseContextMenuProbes"
-		for node in ast.walk(keyboard_fallback)
-	), "keyboard failure should hand off to mouse probe fallback"
-	assert any(
-		isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_attemptAtOffset"
-		for node in ast.walk(start_mouse_probes)
-	), "mouse probe fallback should use the multi-coordinate probe path"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_popupLooksLikeMessageContextMenu"
-		and len(node.args) == 3
-		for node in ast.walk(method)
-	), "mouse probe path should pass popup validation the app module, window handle, and popup rect"
-
-
-def test_message_context_menu_does_not_undo_user_navigation():
-	"""With Tab/arrows left to NVDA, nothing bumps the request id when the user
-	navigates mid-request. The stale-request focus restore must therefore skip
-	itself once a real key was pressed, or it would yank focus back to the old
-	message."""
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	module = ast.parse(module_path.read_text(encoding="utf-8"))
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	method = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "script_messageContextMenu"
-	)
-
-	def _reads_key_counter(node):
-		return any(
-			isinstance(sub, ast.Attribute)
-			and sub.attr == "keyCounter"
-			and isinstance(sub.value, ast.Name)
-			and sub.value.id == "keyboardHandler"
-			for sub in ast.walk(node)
-		)
-
-	assert any(
-		isinstance(node, ast.Assign)
-		and any(isinstance(target, ast.Name) and target.id == "startKeyCount" for target in node.targets)
-		and _reads_key_counter(node.value)
-		for node in method.body
-	), "the request should snapshot keyboardHandler.keyCounter when it starts"
-
-	abort_if_stale = next(
-		node
-		for node in method.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_logAndAbortIfStale"
-	)
-	restore_guards = [
-		node
-		for node in ast.walk(abort_if_stale)
-		if isinstance(node, ast.If)
-		and any(
-			isinstance(call, ast.Call)
-			and isinstance(call.func, ast.Name)
-			and call.func.id == "_restoreFocusToElement"
-			for stmt in node.body
-			for call in ast.walk(stmt)
-		)
-	]
-	assert restore_guards, "focus restore should stay behind a guard"
-	user_pressed_assign = next(
-		node
-		for node in abort_if_stale.body
-		if isinstance(node, ast.Assign)
-		and any(isinstance(target, ast.Name) and target.id == "userPressedKey" for target in node.targets)
-	)
-	assert _reads_key_counter(user_pressed_assign.value)
-	assert all(
-		any(
-			isinstance(sub, ast.UnaryOp)
-			and isinstance(sub.op, ast.Not)
-			and isinstance(sub.operand, ast.Name)
-			and sub.operand.id == "userPressedKey"
-			for sub in ast.walk(guard.test)
-		)
-		for guard in restore_guards
-	), "focus must not be restored after the user pressed a key"
-
-
-def test_context_menu_action_uses_popup_label_click_point_resolution():
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	source = module_path.read_text(encoding="utf-8")
-	module = ast.parse(source)
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	context_menu_action = next(
-		node
-		for node in app_module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_contextMenuAction"
-	)
-
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_resolvePopupMenuLabelClickPoint"
-		for node in ast.walk(context_menu_action)
-	), "popup OCR flows should resolve labels through the shared click-point helper"
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_collectPopupMenuRowRects"
-		for node in ast.walk(context_menu_action)
-	), "popup OCR flows should collect row rects before clicking popup menu items"
-
-
 def _load_message_input_classifier(*, name, edit_count=1, rect=(700, 520, 1100, 640)):
 	"""Load _isMessageInputElement against a fake 1200x800 LINE window."""
 	left, top, right, bottom = rect
@@ -1797,74 +490,231 @@ def test_message_input_classifier_falls_back_to_position_and_skips_login_fields(
 	assert _load_message_input_classifier(name="輸入訊息", edit_count=2)() is False
 
 
-def test_navigation_keys_are_left_to_native_uia_focus():
-	"""LINE 26.6.0.4004 fires real UIA focus events, so NVDA announces Tab and
-	arrow navigation itself. Re-binding those keys would bring back the old
-	focus-polling path (double speech, synthetic Tabs in the chat list)."""
+def _app_module_bound_keys():
+	"""Every key the LINE AppModule binds, via __gestures or @script(gesture=...)."""
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	module = ast.parse(module_path.read_text(encoding="utf-8"))
 	app_module = next(
 		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
-	gesture_map = next(
-		node.value
-		for node in app_module.body
-		if isinstance(node, ast.Assign)
-		and any(isinstance(target, ast.Name) and target.id == "__gestures" for target in node.targets)
-	)
-	bound_keys = {key.value.lower() for key in gesture_map.keys}
+	bound_keys = set()
+	for node in app_module.body:
+		if isinstance(node, ast.Assign) and any(
+			isinstance(target, ast.Name) and target.id == "__gestures" for target in node.targets
+		):
+			bound_keys.update(key.value.lower() for key in node.value.keys)
+		if isinstance(node, ast.FunctionDef):
+			for decorator in node.decorator_list:
+				if not isinstance(decorator, ast.Call):
+					continue
+				for keyword in decorator.keywords:
+					if keyword.arg == "gesture":
+						bound_keys.add(keyword.value.value.lower())
+					elif keyword.arg == "gestures":
+						bound_keys.update(element.value.lower() for element in keyword.value.elts)
+	return bound_keys
+
+
+def test_navigation_keys_are_left_to_native_uia_focus():
+	"""LINE 26.6.0.4004 fires real UIA focus events, so NVDA announces Tab and
+	arrow navigation itself. Re-binding those keys would bring back the old
+	focus-polling path (double speech, synthetic Tabs in the chat list)."""
+	bound_keys = _app_module_bound_keys()
 	for key in ("kb:tab", "kb:shift+tab", "kb:uparrow", "kb:downarrow", "kb:leftarrow", "kb:rightarrow"):
 		assert key not in bound_keys, f"{key} must stay with NVDA's native focus handling"
 
 
-def test_popup_validation_and_native_gesture_helpers_exist_for_message_context_menu():
+def test_native_menu_and_tab_keys_are_left_to_line():
+	"""LINE 26.6.0.4004 opens its own readable context menu on Shift+F10 /
+	Applications, and Control+1/2/3 move the focus to a tab that NVDA already
+	announces. Intercepting them again would bring back the OCR menu window and
+	speak a second, hard-coded tab name over NVDA's own announcement. The
+	message shortcuts also send Shift+F10 themselves and rely on it reaching
+	LINE."""
+	bound_keys = _app_module_bound_keys()
+	for key in ("kb:shift+f10", "kb:applications", "kb:control+1", "kb:control+2", "kb:control+3"):
+		assert key not in bound_keys, f"{key} must reach LINE unchanged"
+
+
+def _load_line_labels():
+	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "_lineLabels.py"
+	spec = importlib.util.spec_from_file_location("line_labels_under_test", module_path)
+	module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(module)
+	return module
+
+
+def test_label_key_of_matches_whole_uia_names_only():
+	labels = _load_line_labels()
+	table = labels._MESSAGE_MENU_LABELS
+	assert labels.labelKeyOf("回覆", table) == "回覆"
+	assert labels.labelKeyOf(" copy ", table) == "複製"
+	assert labels.labelKeyOf("送信取り消し", table) == "收回"
+	assert labels.labelKeyOf("Copy link", table) is None
+	assert labels.labelKeyOf("", table) is None
+	assert labels.labelKeyOf(None, table) is None
+
+
+class _FakeUIAElement:
+	def __init__(self, name="", hwnd=0, parent=None, buttons=(), clickable=True):
+		self.CurrentName = name
+		self.CurrentNativeWindowHandle = hwnd
+		self.parent = parent
+		self.buttons = list(buttons)
+		self.clickable = clickable
+		self.searched = False
+
+	def FindAll(self, scope, condition):
+		self.searched = True
+		buttons = self.buttons
+		return SimpleNamespace(Length=len(buttons), GetElement=lambda index: buttons[index])
+
+
+def _fake_menu_handler():
+	walker = SimpleNamespace(GetParentElement=lambda element: element.parent)
+	return SimpleNamespace(
+		clientObject=SimpleNamespace(
+			RawViewWalker=walker,
+			CreatePropertyCondition=lambda *args: args,
+		),
+	)
+
+
+def _load_native_menu_symbols(namespace=None):
+	return _load_line_symbols(
+		assignment_names={
+			"_UIA_CONTROL_TYPE_PROPERTY_ID",
+			"_UIA_BUTTON_CONTROL_TYPE_ID",
+			"_MENU_ITEM_CLICKED",
+			"_MENU_ITEM_NOT_FOUND",
+			"_MENU_NOT_OPENED",
+		},
+		function_names={"_findMenuItem", "_chooseNativeMenuItem", "_waitForModifierRelease"},
+		namespace={
+			"_lineLabels": _load_line_labels(),
+			"UIAHandler": SimpleNamespace(TreeScope_Descendants=4),
+			"log": _Log(),
+			**(namespace or {}),
+		},
+	)
+
+
+def test_find_menu_item_searches_only_the_popup_window():
+	"""LINE opens its menus in windows of their own; a same-named button in the
+	main LINE window must never be picked when the menu lacks the item."""
+	ns = _load_native_menu_symbols()
+	labels = ns["_lineLabels"]
+	mainWindow = _FakeUIAElement("LINE", hwnd=1, buttons=[_FakeUIAElement("收回")])
+	reply = _FakeUIAElement("回覆")
+	copy = _FakeUIAElement("複製")
+	popup = _FakeUIAElement("LINE", hwnd=2, parent=mainWindow, buttons=[reply, copy])
+	row = _FakeUIAElement(parent=popup)
+	reply.parent = row
+	handler = _fake_menu_handler()
+
+	assert ns["_findMenuItem"](handler, reply, labels._MESSAGE_MENU_LABELS, "複製") == (copy, True)
+	assert ns["_findMenuItem"](handler, reply, labels._MESSAGE_MENU_LABELS, "收回") == (None, True)
+	assert popup.searched and not mainWindow.searched
+	assert ns["_findMenuItem"](handler, reply, labels._MORE_OPTIONS_LABELS, "儲存聊天") == (None, False)
+
+
+def test_choose_native_menu_item_reports_each_outcome():
+	ns = _load_native_menu_symbols()
+	labels = ns["_lineLabels"]
+	save = _FakeUIAElement("Save chat")
+	failing = _FakeUIAElement("儲存聊天", clickable=False)
+	focused = _FakeUIAElement("關閉提醒")
+	ns["_clickElementCenter"] = lambda element: element.clickable
+
+	def choose(menu, key="儲存聊天"):
+		ns["_waitForFocusedMenuItem"] = (
+			lambda handler, previousRuntimeId: focused if menu is not None else None
+		)
+		ns["_findMenuItem"] = lambda handler, item, table, wanted: menu
+		return ns["_chooseNativeMenuItem"](None, None, labels._MORE_OPTIONS_LABELS, key)
+
+	assert choose(None) == ("noMenu", "")
+	assert choose((None, True)) == ("notFound", "")
+	assert choose((None, False)) == ("noMenu", "")
+	assert choose((save, True)) == ("clicked", "Save chat")
+	assert choose((failing, True)) == ("notFound", "")
+
+
+def test_modifier_wait_includes_the_windows_key():
+	"""NVDA+Windows+R etc. would otherwise send Windows+Shift+F10 to LINE."""
+	held = {"polls": 0}
+
+	def getAsyncKeyState(vk):
+		if vk == 0x5B and held["polls"] < 3:
+			held["polls"] += 1
+			return 0x8000
+		return 0
+
+	clock = {"now": 0.0}
+
+	def sleep(seconds):
+		clock["now"] += seconds
+
+	fakeTime = SimpleNamespace(monotonic=lambda: clock["now"], sleep=sleep)
+	fakeCtypes = SimpleNamespace(
+		windll=SimpleNamespace(user32=SimpleNamespace(GetAsyncKeyState=getAsyncKeyState)),
+	)
+	ns = _load_native_menu_symbols({"ctypes": fakeCtypes, "time": fakeTime})
+	assert ns["_waitForModifierRelease"]() is True
+	assert held["polls"] == 3
+
+	fakeCtypes.windll.user32.GetAsyncKeyState = lambda vk: 0x8000 if vk == 0x11 else 0
+	assert ns["_waitForModifierRelease"](timeoutSec=0.2) is False
+
+
+def test_message_shortcuts_use_lines_own_menu():
+	"""Reply, copy, save-as and recall pick the item from LINE's Shift+F10 menu
+	by name; the right-click + OCR probing they used to do is gone."""
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
 	module = ast.parse(source)
-
-	popup_helper = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_popupLooksLikeMessageContextMenu"
+	app_module = next(
+		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
 	)
-	send_helper = next(
-		node
-		for node in module.body
-		if isinstance(node, ast.FunctionDef) and node.name == "_sendGestureWithAddonSuppressed"
-	)
-
-	assert [arg.arg for arg in popup_helper.args.args] == ["appMod", "hwnd", "popupRect"]
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Name)
-		and node.func.id == "_extractMatchedMessageContextMenuLabels"
-		for node in ast.walk(popup_helper)
-	), "popup validation helper should reuse message-menu label matching"
-
-	assert [arg.arg for arg in send_helper.args.args] == ["gestureName"]
-	assert any(
-		isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Attribute)
-		and isinstance(node.func.value, ast.Name)
-		and node.func.value.id == "KeyboardInputGesture"
-		and node.func.attr == "fromName"
-		for node in ast.walk(send_helper)
-	), "native gesture helper should synthesize keys by name"
+	methods = {node.name: node for node in app_module.body if isinstance(node, ast.FunctionDef)}
+	expected = {
+		"script_replyMessage": "回覆",
+		"script_copyMessage": "複製",
+		"script_saveAsMessage": "另存新檔",
+		"script_recallMessage": "收回",
+	}
+	for script_name, label in expected.items():
+		calls = [
+			node
+			for node in ast.walk(methods[script_name])
+			if isinstance(node, ast.Call)
+			and isinstance(node.func, ast.Attribute)
+			and node.func.attr == "_nativeMessageMenuAction"
+		]
+		assert calls, f"{script_name} must use LINE's own message menu"
+		assert calls[0].args[0].value == label
+	menu_action = methods["_nativeMessageMenuAction"]
+	called = {
+		node.func.id
+		for node in ast.walk(menu_action)
+		if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+	}
+	assert "_waitForModifierRelease" in called, "wait for the shortcut's keys before sending Shift+F10"
+	assert "_contextMenuAction" not in source
+	assert "_virtualWindows.messageContextMenu" not in source
+	assert "_virtualWindows.chatMoreOptions" not in source
 
 
 def test_no_transient_letter_gesture_bindings():
-	"""Confirmations are asked in a dialog, so the add-on never binds bare
-	letters at runtime. Such bindings swallowed those letters inside LINE's chat
-	until a timeout released them, and mutating the private _gestureMap to undo
-	them was worse still."""
+	"""The add-on never binds bare letters at runtime. Such bindings swallowed
+	those letters inside LINE's chat until a timeout released them, and mutating
+	the private _gestureMap to undo them was worse still. LINE's own
+	confirmation dialogs are readable, so there is nothing left to confirm with
+	letter keys."""
 	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
 	source = module_path.read_text(encoding="utf-8")
-	assert "._gestureMap[" not in source, (
-		"never mutate the private _gestureMap; confirmations belong in a message dialog"
-	)
-	assert "bindGesture" not in source, (
-		"ask in a gui.message.MessageDialog instead of binding transient letter keys"
-	)
+	assert "._gestureMap[" not in source, "never mutate the private _gestureMap"
+	assert "bindGesture" not in source, "never bind transient letter keys at runtime"
 
 
 def test_no_deprecated_message_box():

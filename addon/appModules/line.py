@@ -11,7 +11,6 @@ import os
 import nvwave
 import textInfos
 import speech
-import braille
 import core
 from logHandler import log
 from NVDAObjects.UIA import UIA
@@ -26,6 +25,7 @@ import configparser
 import winreg
 from ._virtualWindow import VirtualWindow
 from ._utils import pickOcrLanguage, setPreferredOcrLanguage
+from . import _lineLabels
 import addonHandler
 
 addonHandler.initTranslation()
@@ -255,27 +255,6 @@ _SEND_SOUND_PATH = os.path.join(
 )
 
 
-def _isImeComposing():
-	"""Check if an IME composition is currently in progress.
-
-	Uses Windows IMM32 API to detect active composition string.
-	Returns True if the user is in the middle of IME character selection.
-	"""
-	try:
-		user32 = ctypes.windll.user32
-		imm32 = ctypes.windll.imm32
-		hwnd = user32.GetForegroundWindow()
-		himc = imm32.ImmGetContext(hwnd)
-		if not himc:
-			return False
-		# GCS_COMPSTR = 0x0008 - composition string
-		comp_size = imm32.ImmGetCompositionStringW(himc, 0x0008, None, 0)
-		imm32.ImmReleaseContext(hwnd, himc)
-		return comp_size > 0
-	except Exception:
-		return False
-
-
 # Regex pattern to remove spurious spaces between CJK characters.
 # Windows OCR inserts spaces between every CJK character.
 # Covers: CJK Unified (\u4E00-\u9FFF), CJK Radicals (\u2E80-\u2FFF),
@@ -484,224 +463,6 @@ def _selectVoiceCallConfirmationActionTarget(ocrActionTargets, action):
 		if target:
 			return target
 	return {}
-
-
-def _normalizeRecallDialogLine(text):
-	"""Normalize a recall-dialog OCR/UIA line for action matching."""
-	return _removeCJKSpaces((text or "").strip()).replace(" ", "").lower()
-
-
-def _matchRecallDialogActionLabel(text):
-	"""Map a short recall-dialog action label to its canonical action name."""
-	normalized = _normalizeRecallDialogLine(text)
-	if not normalized:
-		return None
-
-	if normalized in ("無痕收回", "无痕收回"):
-		return "無痕收回"
-	if normalized.startswith("無痕收回premium") or normalized.startswith("无痕收回premium"):
-		return "無痕收回"
-	if normalized == "收回":
-		return "收回"
-	if normalized in {"取消", "關閉", "关闭"}:
-		return "取消"
-	return None
-
-
-def _extractRecallDialogActionLabels(text):
-	"""Extract actionable recall-dialog buttons from OCR text in reading order."""
-	labels = []
-	for rawLine in str(text or "").splitlines():
-		label = _matchRecallDialogActionLabel(rawLine)
-		if label and (not labels or labels[-1] != label):
-			labels.append(label)
-	return labels
-
-
-def _isModernRecallDialogText(text, actionLabels=()):
-	"""Return True when OCR hints this is the newer recall-dialog layout."""
-	actionSet = set(actionLabels or ())
-	if "無痕收回" in actionSet:
-		return True
-
-	normalized = _removeCJKSpaces(str(text or "").strip()).replace(" ", "").lower()
-	if (
-		"收回" in actionSet
-		and "取消" in actionSet
-		and any(keyword in normalized for keyword in ("關閉", "关闭"))
-		and "收回已讀訊息時" in normalized
-		and "收到通知" in normalized
-		and "有可能無法" in normalized
-	):
-		return True
-
-	return any(
-		keyword in normalized
-		for keyword in (
-			"無痕收回",
-			"无痕收回",
-			"premium",
-			"未讀訊息",
-			"未读讯息",
-			"任何提醒",
-		)
-	)
-
-
-def _isCompactModernRecallDialog(actionLabels=(), isModernDialog=False):
-	"""Return True for the newer two-button recall dialog without Premium recall."""
-	if not isModernDialog:
-		return False
-	actionSet = set(actionLabels or ())
-	return "收回" in actionSet and "取消" in actionSet and "無痕收回" not in actionSet
-
-
-def _getRecallConfirmationPrompt(availableActions, isModernDialog=False):
-	"""Return the message body for the recall confirmation dialog.
-
-	The actions themselves are the dialog's buttons, so this only carries what
-	the buttons cannot: that stealth recall needs a Premium subscription.
-	"""
-	actionSet = set(availableActions or ())
-	if "無痕收回" in actionSet:
-		# Translators: Body of the recall confirmation dialog when LINE also offers
-		# stealth recall, which requires a Premium subscription.
-		return _("確認要收回嗎？\n無痕收回不會通知對方，需要 Premium。")
-	# Translators: Body of the recall confirmation dialog.
-	return _("確認要收回嗎？")
-
-
-def _normalizePhotoTextConsentDialogLine(text):
-	"""Normalize a photo-to-text consent OCR/UIA line for action matching."""
-	normalized = _removeCJKSpaces((text or "").strip()).replace(" ", "").lower()
-	return normalized.strip(".,:;!?|/\\()[]{}<>。！？、．：；")
-
-
-def _matchPhotoTextConsentActionLabel(text):
-	"""Map a short photo-to-text consent action label to its canonical action name."""
-	normalized = _normalizePhotoTextConsentDialogLine(text)
-	if not normalized:
-		return None
-
-	if normalized == "同意":
-		return "同意"
-	if normalized == "不同意":
-		return "不同意"
-	return None
-
-
-def _extractPhotoTextConsentActionLabels(text):
-	"""Extract actionable photo-to-text consent buttons from OCR text."""
-	labels = []
-	for rawLine in str(text or "").splitlines():
-		label = _matchPhotoTextConsentActionLabel(rawLine)
-		if label and (not labels or labels[-1] != label):
-			labels.append(label)
-	return labels
-
-
-def _isPhotoTextConsentDialogText(text, actionLabels=()):
-	"""Return True when OCR/UIA text matches LINE's first-run photo consent dialog."""
-	normalized = _removeCJKSpaces(str(text or "").strip()).replace(" ", "").lower()
-	actionSet = set(actionLabels or ())
-	hasButtons = {"同意", "不同意"}.issubset(actionSet)
-	if not hasButtons:
-		return False
-
-	hasTitle = any(keyword in normalized for keyword in ("同意提供照片", "提供照片"))
-	hasUploadNotice = any(keyword in normalized for keyword in ("照片", "相片")) and any(
-		keyword in normalized for keyword in ("伺服器", "服务器", "上傳", "上传", "進行處理", "进行处理")
-	)
-	hasServiceNotice = any(
-		keyword in normalized for keyword in ("服務規定", "服务规定", "開始使用", "开始使用")
-	)
-	return sum(bool(flag) for flag in (hasTitle, hasUploadNotice, hasServiceNotice)) >= 2
-
-
-def _getPhotoTextConsentPrompt():
-	"""Return the message body for LINE's first-run photo consent dialog."""
-	# Translators: Body of the dialog shown when LINE asks, on first use of
-	# "Convert to text", for permission to upload the photo to its servers.
-	return _("轉為文字會將照片上傳到 LINE 伺服器處理。是否同意？")
-
-
-def _extractPhotoTextConsentActionClickPoints(ocrLines, dialogRect):
-	"""Map photo-to-text consent actions to OCR-derived click points."""
-	if not ocrLines or not dialogRect:
-		return {}
-
-	dialogLeft, dialogTop, dialogRight, dialogBottom = dialogRect
-	dialogWidth = dialogRight - dialogLeft
-	dialogHeight = dialogBottom - dialogTop
-	if dialogWidth <= 0 or dialogHeight <= 0:
-		return {}
-
-	buttonBandTop = dialogTop + (dialogHeight * 0.55)
-	preferredCenterX = {
-		"同意": dialogLeft + (dialogWidth * 0.38),
-		"不同意": dialogLeft + (dialogWidth * 0.62),
-	}
-	matched = {}
-
-	for index, line in enumerate(ocrLines):
-		label = _matchPhotoTextConsentActionLabel(line.get("text", ""))
-		rect = line.get("rect")
-		if not label or not rect or not _rectsIntersect(rect, dialogRect):
-			continue
-
-		rectLeft, rectTop, rectRight, rectBottom = rect
-		if rectRight <= rectLeft or rectBottom <= rectTop:
-			continue
-
-		centerX = (rectLeft + rectRight) / 2.0
-		centerY = (rectTop + rectBottom) / 2.0
-		score = (
-			1 if centerY >= buttonBandTop else 0,
-			centerY,
-			-abs(centerX - preferredCenterX[label]),
-			(rectRight - rectLeft) * (rectBottom - rectTop),
-			-index,
-		)
-		current = matched.get(label)
-		if current is None or score > current["score"]:
-			matched[label] = {
-				"clickPoint": (int(centerX), int(centerY)),
-				"rect": rect,
-				"score": score,
-			}
-
-	return {
-		label: {
-			"clickPoint": data["clickPoint"],
-			"rect": data["rect"],
-		}
-		for label, data in matched.items()
-	}
-
-
-def _getPhotoTextConsentDialogFallbackClickPoint(actionName, dialogRect):
-	"""Return a best-effort click point for the photo consent dialog buttons."""
-	if not dialogRect:
-		return None
-
-	ratios = {
-		"同意": (0.38, 0.79),
-		"不同意": (0.62, 0.79),
-	}
-	if actionName not in ratios:
-		return None
-
-	left, top, right, bottom = dialogRect
-	width = right - left
-	height = bottom - top
-	if width <= 0 or height <= 0:
-		return None
-
-	xRatio, yRatio = ratios[actionName]
-	return (
-		int(left + width * xRatio),
-		int(top + height * yRatio),
-	)
 
 
 def _extractOcrRectLike(obj):
@@ -993,50 +754,6 @@ def _extractOcrLines(result):
 	return [{"text": line.strip(), "rect": None} for line in text.splitlines() if line.strip()]
 
 
-def _extractRecallDialogActionClickPoints(ocrLines, dialogRect):
-	"""Map recall-dialog action labels to OCR-derived click points."""
-	if not ocrLines or not dialogRect:
-		return {}
-
-	dialogLeft, _dialogTop, dialogRight, _dialogBottom = dialogRect
-	dialogCenterX = (dialogLeft + dialogRight) / 2.0
-	matched = {}
-
-	for index, line in enumerate(ocrLines):
-		label = _matchRecallDialogActionLabel(line.get("text", ""))
-		rect = line.get("rect")
-		if not label or not rect or not _rectsIntersect(rect, dialogRect):
-			continue
-
-		rectLeft, rectTop, rectRight, rectBottom = rect
-		if rectRight <= rectLeft or rectBottom <= rectTop:
-			continue
-
-		centerX = (rectLeft + rectRight) / 2.0
-		centerY = (rectTop + rectBottom) / 2.0
-		score = (
-			centerY,
-			(rectRight - rectLeft) * (rectBottom - rectTop),
-			-abs(centerX - dialogCenterX),
-			-index,
-		)
-		current = matched.get(label)
-		if current is None or score > current["score"]:
-			matched[label] = {
-				"clickPoint": (int(centerX), int(centerY)),
-				"rect": rect,
-				"score": score,
-			}
-
-	return {
-		label: {
-			"clickPoint": data["clickPoint"],
-			"rect": data["rect"],
-		}
-		for label, data in matched.items()
-	}
-
-
 def _invokeUIAInvokePattern(pattern):
 	"""Invoke a UIA InvokePattern without relying on generated comtypes stubs."""
 	if not pattern:
@@ -1076,265 +793,153 @@ def _tryInvokeUIAElement(element):
 	return _invokeUIAInvokePattern(pattern)
 
 
-def _rectIntersectionArea(rectA, rectB):
-	"""Return the intersection area of two rectangles."""
-	if not rectA or not rectB:
-		return 0
-	left = max(rectA[0], rectB[0])
-	top = max(rectA[1], rectB[1])
-	right = min(rectA[2], rectB[2])
-	bottom = min(rectA[3], rectB[3])
-	if right <= left or bottom <= top:
-		return 0
-	return (right - left) * (bottom - top)
+# ---------------------------------------------------------------------------
+# LINE's own popup menus
+# ---------------------------------------------------------------------------
+#
+# LINE 26.6.0.4004+ opens the message menu (Shift+F10) and the chat's "More
+# options" menu as popups of named buttons that take the keyboard focus. The
+# helpers below pick an item from such a menu by its name. They do raw UIA
+# work and wait for LINE, so they run on worker threads (_runOnWorkerThread).
+
+_UIA_CONTROL_TYPE_PROPERTY_ID = 30003
+_UIA_NAME_PROPERTY_ID = 30005
+_UIA_BUTTON_CONTROL_TYPE_ID = 50000
+_UIA_EDIT_CONTROL_TYPE_ID = 50004
+
+# _chooseNativeMenuItem results
+_MENU_ITEM_CLICKED = "clicked"
+_MENU_ITEM_NOT_FOUND = "notFound"  # the expected menu opened without that item
+_MENU_NOT_OPENED = "noMenu"
 
 
-def _rectIoU(rectA, rectB):
-	"""Return the overlap ratio of two rectangles."""
-	intersection = _rectIntersectionArea(rectA, rectB)
-	if intersection <= 0:
-		return 0.0
-	areaA = max((rectA[2] - rectA[0]) * (rectA[3] - rectA[1]), 1)
-	areaB = max((rectB[2] - rectB[0]) * (rectB[3] - rectB[1]), 1)
-	union = areaA + areaB - intersection
-	return float(intersection) / float(union or 1)
+def _waitForModifierRelease(timeoutSec=2.0):
+	"""Worker thread: wait until Shift, Control, Alt and Windows are released.
+
+	Keys the add-on sends while the user still holds the shortcut's modifiers
+	combine with them: Shift+F10 sent during Control+C reaches LINE as
+	Control+Shift+F10, and during NVDA+Windows+R as Windows+Shift+F10.
+	"""
+	getAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
+	modifiers = (0x10, 0x11, 0x12, 0x5B, 0x5C)  # Shift, Control, Alt, left/right Windows
+	deadline = time.monotonic() + timeoutSec
+	while time.monotonic() < deadline:
+		if not any(getAsyncKeyState(vk) & 0x8000 for vk in modifiers):
+			return True
+		time.sleep(0.05)
+	return False
 
 
-def _inferRecallDialogTargetsByGeometry(candidates, dialogRect, actionLabels, isModernDialog=False):
-	"""Infer unlabeled recall-dialog button targets from geometry."""
-	if not dialogRect or not candidates:
-		return {}
+def _clickElementCenter(element):
+	"""Click the middle of a UIA element, or use its InvokePattern if it has no rect.
 
-	actionSet = set(actionLabels or ())
-	isCompactModernDialog = _isCompactModernRecallDialog(
-		actionLabels,
-		isModernDialog=isModernDialog,
-	)
-	left, top, right, bottom = dialogRect
-	dialogWidth = right - left
-	dialogHeight = bottom - top
-	if dialogWidth <= 0 or dialogHeight <= 0:
-		return {}
+	A real click comes first because LINE's Qt buttons are known to act on it,
+	while an advertised InvokePattern may have no handler behind it.
+	"""
+	try:
+		rect = element.CurrentBoundingRectangle
+		if rect.right > rect.left and rect.bottom > rect.top:
+			return _sendMouseClick(
+				int((rect.left + rect.right) / 2),
+				int((rect.top + rect.bottom) / 2),
+			)
+	except Exception:
+		log.debug("LINE: reading a UIA element's rect failed", exc_info=True)
+	try:
+		return _tryInvokeUIAElement(element)
+	except Exception:
+		log.debug("LINE: invoking a UIA element failed", exc_info=True)
+		return False
 
-	dialogCenterX = left + (dialogWidth / 2.0)
-	minWidth = max(120, int(dialogWidth * 0.26))
-	minHeight = max(24, int(dialogHeight * 0.05))
-	maxHeight = max(52, int(dialogHeight * 0.20))
-	maxCenterOffset = max(90, int(dialogWidth * 0.22))
-	minCenterY = top + (dialogHeight * 0.36)
-	maxCenterY = top + (dialogHeight * 0.84)
-	expectedCenterY = top + (
-		dialogHeight * (0.64 if isCompactModernDialog else 0.56 if isModernDialog else 0.60)
-	)
 
-	filtered = []
-	for candidate in candidates:
-		rect = candidate.get("rect")
-		if not rect:
-			continue
-		width = rect[2] - rect[0]
-		height = rect[3] - rect[1]
-		if width < minWidth or height < minHeight or height > maxHeight:
-			continue
-
-		centerX = (rect[0] + rect[2]) / 2.0
-		centerY = (rect[1] + rect[3]) / 2.0
-		if abs(centerX - dialogCenterX) > maxCenterOffset:
-			continue
-		if centerY < minCenterY or centerY > maxCenterY:
-			continue
-
-		score = (
-			1 if candidate.get("hasInvoke") else 0,
-			1 if candidate.get("controlType") == 50000 else 0,
-			width,
-			-abs(centerX - dialogCenterX),
-			-abs(centerY - expectedCenterY),
+def _findNamedButton(handler, hwnd, names):
+	"""Return the first button in window ``hwnd`` whose UIA name is one of ``names``."""
+	client = handler.clientObject
+	root = client.ElementFromHandle(hwnd)
+	if not root:
+		return None
+	for name in names:
+		condition = client.CreateAndCondition(
+			client.CreatePropertyCondition(_UIA_CONTROL_TYPE_PROPERTY_ID, _UIA_BUTTON_CONTROL_TYPE_ID),
+			client.CreatePropertyCondition(_UIA_NAME_PROPERTY_ID, name),
 		)
-		filtered.append(
-			{
-				**candidate,
-				"centerX": centerX,
-				"centerY": centerY,
-				"score": score,
-			},
-		)
+		element = root.FindFirst(UIAHandler.TreeScope_Descendants, condition)
+		if element:
+			return element
+	return None
 
-	if not filtered:
-		return {}
 
-	filtered.sort(key=lambda item: item["score"], reverse=True)
-	deduped = []
-	for candidate in filtered:
-		isDuplicate = False
-		for kept in deduped:
-			if _rectIoU(candidate["rect"], kept["rect"]) >= 0.55 or (
-				abs(candidate["centerX"] - kept["centerX"]) <= 18
-				and abs(candidate["centerY"] - kept["centerY"]) <= 18
+def _waitForFocusedMenuItem(handler, previousRuntimeId, timeoutSec=1.5):
+	"""Return the button that takes the focus once a popup menu opens, or None."""
+	deadline = time.monotonic() + timeoutSec
+	while time.monotonic() < deadline:
+		try:
+			element = handler.clientObject.GetFocusedElement()
+			if (
+				element
+				and element.CurrentControlType == _UIA_BUTTON_CONTROL_TYPE_ID
+				and _getElementRuntimeId(element) != previousRuntimeId
 			):
-				isDuplicate = True
-				break
-		if not isDuplicate:
-			deduped.append(candidate)
+				return element
+		except Exception:
+			log.debug("LINE: polling the focus for a popup menu failed", exc_info=True)
+		time.sleep(0.05)
+	return None
 
-	if not deduped:
-		return {}
 
-	deduped.sort(
-		key=lambda item: (
-			item["centerY"],
-			-(item["rect"][2] - item["rect"][0]),
+def _findMenuItem(handler, focusedItem, table, key):
+	"""Return ``(item, isKnownMenu)`` for the menu that holds ``focusedItem``.
+
+	LINE opens each menu in a window of its own, so the search climbs only to
+	the nearest ancestor with a window handle (at most a few levels) and looks
+	at the buttons below it. ``isKnownMenu`` says whether any of them is a
+	label from ``table``, i.e. whether this is the menu the caller expected.
+	"""
+	walker = handler.clientObject.RawViewWalker
+	root = focusedItem
+	for _level in range(4):
+		if root.CurrentNativeWindowHandle:
+			break
+		parent = walker.GetParentElement(root)
+		if not parent:
+			break
+		root = parent
+	buttons = root.FindAll(
+		UIAHandler.TreeScope_Descendants,
+		handler.clientObject.CreatePropertyCondition(
+			_UIA_CONTROL_TYPE_PROPERTY_ID,
+			_UIA_BUTTON_CONTROL_TYPE_ID,
 		),
 	)
-
-	inferred = {}
-	if isModernDialog:
-		if isCompactModernDialog:
-			if "收回" in actionSet and len(deduped) >= 1:
-				inferred["收回"] = max(
-					deduped,
-					key=lambda item: (
-						1 if item.get("hasInvoke") else 0,
-						1 if item.get("controlType") == 50000 else 0,
-						(item["rect"][2] - item["rect"][0]) * (item["rect"][3] - item["rect"][1]),
-						-abs(item["centerY"] - expectedCenterY),
-						-abs(item["centerX"] - dialogCenterX),
-					),
-				)
-		elif "無痕收回" in actionSet and len(deduped) >= 1:
-			inferred["無痕收回"] = deduped[0]
-		if "收回" in actionSet:
-			if "無痕收回" in actionSet and len(deduped) >= 2:
-				inferred["收回"] = deduped[1]
-			elif len(deduped) >= 1 and not isCompactModernDialog:
-				inferred["收回"] = deduped[0]
-	else:
-		if "收回" in actionSet and len(deduped) >= 1:
-			inferred["收回"] = max(
-				deduped,
-				key=lambda item: (
-					(item["rect"][2] - item["rect"][0]) * (item["rect"][3] - item["rect"][1]),
-					-abs(item["centerY"] - expectedCenterY),
-				),
-			)
-
-	return inferred
+	isKnownMenu = False
+	for index in range(buttons.Length if buttons else 0):
+		button = buttons.GetElement(index)
+		labelKey = _lineLabels.labelKeyOf(button.CurrentName, table)
+		if labelKey == key:
+			return button, True
+		if labelKey is not None:
+			isKnownMenu = True
+	return None, isKnownMenu
 
 
-def _getRecallDialogFallbackClickPoint(
-	actionName,
-	dialogRect,
-	isModernDialog=False,
-	availableActions=(),
-):
-	"""Return a best-effort click point for the modern recall dialog buttons."""
-	if not dialogRect:
-		return None
+def _chooseNativeMenuItem(handler, previousRuntimeId, table, key):
+	"""Worker thread: click ``key``'s item in the LINE popup menu that is opening.
 
-	if _isCompactModernRecallDialog(availableActions, isModernDialog=isModernDialog):
-		ratios = {
-			"收回": 0.64,
-		}
-	elif isModernDialog:
-		ratios = {
-			"無痕收回": 0.49,
-			"收回": 0.59,
-		}
-	else:
-		ratios = {
-			"收回": 0.58,
-		}
-	if actionName not in ratios:
-		return None
-
-	left, top, right, bottom = dialogRect
-	width = right - left
-	height = bottom - top
-	if width <= 0 or height <= 0:
-		return None
-
-	return (
-		int(left + width / 2),
-		int(top + height * ratios[actionName]),
-	)
-
-
-def _collectPopupMenuRowRects(
-	popupHwnd,
-	popupRect: tuple[int, int, int, int],
-	maxDepth: int = 5,
-) -> list[tuple[int, int, int, int]]:
-	"""Collect clickable menu-row rectangles from a popup window via UIA."""
-	left, top, right, bottom = popupRect
-	popupWidth = max(1, right - left)
-	popupHeight = max(1, bottom - top)
-
-	try:
-		handler = UIAHandler.handler
-		client = getattr(handler, "clientObject", None)
-		if not client:
-			return []
-		rootElement = client.ElementFromHandle(popupHwnd)
-		if not rootElement:
-			return []
-		walker = client.RawViewWalker
-	except Exception as e:
-		log.debug(f"LINE: failed to initialize popup row rect collector: {e}")
-		return []
-
-	rowRects: list[tuple[int, int, int, int]] = []
-	seen = set()
-
-	def _normalizeRect(rect):
-		try:
-			rowLeft = max(left, int(rect.left))
-			rowTop = max(top, int(rect.top))
-			rowRight = min(right, int(rect.right))
-			rowBottom = min(bottom, int(rect.bottom))
-		except Exception:
-			return None
-		if rowRight <= rowLeft or rowBottom <= rowTop:
-			return None
-		return (rowLeft, rowTop, rowRight, rowBottom)
-
-	def _visit(parent, depth=0):
-		try:
-			child = walker.GetFirstChildElement(parent)
-		except Exception:
-			return
-
-		idx = 0
-		while child and idx < 40:
-			try:
-				rect = _normalizeRect(child.CurrentBoundingRectangle)
-				if rect:
-					rowLeft, rowTop, rowRight, rowBottom = rect
-					rowWidth = rowRight - rowLeft
-					rowHeight = rowBottom - rowTop
-					isRowLike = 24 <= rowHeight <= 90 and rowWidth >= int(popupWidth * 0.55)
-					isContainerLike = depth < maxDepth and (
-						rowHeight > 90
-						or (rowWidth >= int(popupWidth * 0.75) and rowHeight >= int(popupHeight * 0.20))
-					)
-					if isRowLike:
-						if rect not in seen:
-							seen.add(rect)
-							rowRects.append(rect)
-					elif isContainerLike:
-						_visit(child, depth + 1)
-			except Exception:
-				pass
-
-			try:
-				child = walker.GetNextSiblingElement(child)
-			except Exception:
-				break
-			idx += 1
-
-	_visit(rootElement)
-	rowRects.sort(key=lambda rect: (((rect[1] + rect[3]) / 2), rect[0]))
-	log.debug(f"LINE: collected {len(rowRects)} popup row rects: {rowRects}")
-	return rowRects
+	Returns ``(status, itemName)``: _MENU_ITEM_CLICKED with the name LINE gives
+	the item, _MENU_ITEM_NOT_FOUND when the expected menu opened without that
+	item (it is still open), or _MENU_NOT_OPENED when no button took the focus
+	in time or the menu is not one ``table`` describes (left open for the user).
+	"""
+	focusedItem = _waitForFocusedMenuItem(handler, previousRuntimeId)
+	if focusedItem is None:
+		return _MENU_NOT_OPENED, ""
+	item, isKnownMenu = _findMenuItem(handler, focusedItem, table, key)
+	if item is None:
+		return (_MENU_ITEM_NOT_FOUND if isKnownMenu else _MENU_NOT_OPENED), ""
+	itemName = item.CurrentName or key
+	if not _clickElementCenter(item):
+		return _MENU_ITEM_NOT_FOUND, ""
+	return _MENU_ITEM_CLICKED, itemName
 
 
 def _normalizeRuntimeId(runtimeId):
@@ -1349,221 +954,6 @@ def _normalizeRuntimeId(runtimeId):
 			return None
 
 
-def _buildMessageBubbleClickPositions(
-	rect,
-	winTop,
-	winBottom,
-	includeVerticalOffsets=False,
-):
-	"""Build conservative right-click probes for a focused message row."""
-	try:
-		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
-	except Exception:
-		return []
-
-	elWidth = elRight - elLeft
-	if elWidth <= 0:
-		return []
-
-	cx = int((elLeft + elRight) / 2)
-	cy = int((elTop + elBottom) / 2)
-	clampedCenter = max(winTop + 10, min(cy, winBottom - 10))
-	clampedTop = max(elTop + 2, winTop + 10)
-	clampedBottom = min(elBottom - 2, winBottom - 10)
-	winHeight = max(int(winBottom - winTop), 1)
-	isLowerBubble = clampedCenter >= (winTop + int(winHeight * 0.45))
-
-	# Keep the historic six probes first so currently working messages
-	# behave the same, then add narrower left-edge fallbacks for short
-	# received bubbles whose clickable padding sits further left. Keep
-	# the synthetic "center" probe last so message actions can stop after the
-	# dedicated edge/padding probes are exhausted.
-	clickPositions = [
-		(elLeft + elWidth // 6, clampedCenter, "1/6-left"),
-		(elLeft + 5 * elWidth // 6, clampedCenter, "5/6-right"),
-		(elLeft + elWidth // 4, clampedCenter, "1/4-left"),
-		(elLeft + 3 * elWidth // 4, clampedCenter, "3/4-right"),
-		(elLeft + 9 * elWidth // 10, clampedCenter, "9/10-right"),
-		(elLeft + 7 * elWidth // 8, clampedCenter, "7/8-right"),
-		(elLeft + elWidth // 10, clampedCenter, "1/10-left"),
-		(elLeft + elWidth // 8, clampedCenter, "1/8-left"),
-	]
-
-	if includeVerticalOffsets:
-		if isLowerBubble:
-			clickPositions.extend(
-				[
-					(elLeft + 5 * elWidth // 6, clampedTop, "5/6-top"),
-					(elLeft + 5 * elWidth // 6, clampedBottom, "5/6-bottom"),
-				],
-			)
-		clickPositions.extend(
-			[
-				(elLeft + elWidth // 10, clampedTop, "1/10-top"),
-				(elLeft + elWidth // 8, clampedTop, "1/8-top"),
-				(elLeft + elWidth // 6, clampedTop, "1/6-top"),
-				(elLeft + elWidth // 10, clampedBottom, "1/10-bottom"),
-				(elLeft + elWidth // 8, clampedBottom, "1/8-bottom"),
-			],
-		)
-		if not isLowerBubble:
-			clickPositions.append(
-				(elLeft + 5 * elWidth // 6, clampedBottom, "5/6-bottom"),
-			)
-
-	clickPositions.append((cx, clampedCenter, "center"))
-	return clickPositions
-
-
-def _mergeClickPositions(primaryPositions, fallbackPositions):
-	"""Prepend unique primary probes before fallback probes."""
-	merged = []
-	seenPoints = set()
-	for positions in (primaryPositions or (), fallbackPositions or ()):
-		for position in positions:
-			try:
-				x, y, label = position
-				key = (int(x), int(y))
-			except Exception:
-				continue
-			if key in seenPoints:
-				continue
-			seenPoints.add(key)
-			merged.append((int(x), int(y), label))
-	return merged
-
-
-def _normalizeMessageBubbleOcrLine(text):
-	"""Normalize OCR line text for message-bubble metadata detection."""
-	normalized = _removeCJKSpaces((text or "").strip())
-	normalized = re.sub(
-		r"(?<=\d)\s*[:：•\.。．·･℃]+\s*(?=\d)",
-		":",
-		normalized,
-	)
-	normalized = re.sub(r"\s+", "", normalized)
-	return normalized
-
-
-def _isMessageBubbleMetadataOcrLine(text):
-	"""Return True when an OCR line looks like read/time metadata, not content."""
-	normalized = _normalizeMessageBubbleOcrLine(text)
-	if not normalized:
-		return True
-
-	stripped = normalized.strip(" ,，、.。:：;；!！?？'\"`()[]{}<>-~～")
-	if not stripped:
-		return True
-	if stripped in {"已讀", "未讀"}:
-		return True
-
-	timePattern = r"(?:(?:[上下]午)|午|am|pm)?\d{1,2}:\d{1,2}(?::\d{1,2})?"
-	if re.fullmatch(timePattern, stripped, re.IGNORECASE):
-		return True
-	if re.fullmatch(rf"(?:已讀|未讀){timePattern}", stripped, re.IGNORECASE):
-		return True
-	return False
-
-
-def _buildMessageBubbleOcrClickPositions(ocrLines, rect, winTop, winBottom):
-	"""Build OCR-derived probes near the bubble padding instead of the text body."""
-	if not ocrLines or not rect:
-		return []
-	try:
-		elLeft, elTop, elRight, elBottom = [int(value) for value in rect]
-	except Exception:
-		return []
-	if elRight <= elLeft or elBottom <= elTop:
-		return []
-
-	contentRects = []
-	for line in ocrLines:
-		if not isinstance(line, dict):
-			continue
-		if _isMessageBubbleMetadataOcrLine(line.get("text", "")):
-			continue
-		lineRect = line.get("rect")
-		if not lineRect:
-			continue
-		try:
-			lineLeft, lineTop, lineRight, lineBottom = [int(value) for value in lineRect]
-		except Exception:
-			continue
-		lineLeft = max(elLeft, lineLeft)
-		lineTop = max(elTop, lineTop)
-		lineRight = min(elRight, lineRight)
-		lineBottom = min(elBottom, lineBottom)
-		if lineRight <= lineLeft or lineBottom <= lineTop:
-			continue
-		contentRects.append((lineLeft, lineTop, lineRight, lineBottom))
-
-	if not contentRects:
-		return []
-
-	contentLeft = min(rect[0] for rect in contentRects)
-	contentTop = min(rect[1] for rect in contentRects)
-	contentRight = max(rect[2] for rect in contentRects)
-	contentBottom = max(rect[3] for rect in contentRects)
-	leftGap = max(0, contentLeft - elLeft)
-	rightGap = max(0, elRight - contentRight)
-	if max(leftGap, rightGap) < 8:
-		return []
-
-	contentWidth = max(1, contentRight - contentLeft)
-	contentHeight = max(1, contentBottom - contentTop)
-	rowWidth = max(1, elRight - elLeft)
-	paddingX = max(12, min(28, int(contentWidth * 0.40)))
-	edgeInset = max(8, min(18, int(rowWidth * 0.04)))
-	preferRight = leftGap > rightGap
-
-	if preferRight:
-		anchorX = min(elRight - edgeInset, contentRight + paddingX)
-		if anchorX <= contentRight:
-			anchorX = min(elRight - edgeInset, contentRight + 8)
-		sideLabel = "ocr-right"
-	else:
-		anchorX = max(elLeft + edgeInset, contentLeft - paddingX)
-		if anchorX >= contentLeft:
-			anchorX = max(elLeft + edgeInset, contentLeft - 8)
-		sideLabel = "ocr-left"
-
-	def _clampY(value):
-		return max(winTop + 10, min(int(value), winBottom - 10))
-
-	yCandidates = [
-		(_clampY((contentTop + contentBottom) / 2), "center"),
-	]
-	if contentHeight >= 18:
-		yCandidates.extend(
-			[
-				(_clampY(contentTop + (contentHeight * 0.35)), "upper"),
-				(_clampY(contentTop + (contentHeight * 0.65)), "lower"),
-			],
-		)
-
-	positions = []
-	seenY = set()
-	for yValue, suffix in yCandidates:
-		if yValue in seenY:
-			continue
-		seenY.add(yValue)
-		positions.append((int(anchorX), int(yValue), f"{sideLabel}-{suffix}"))
-	return positions
-
-
-def _hasExhaustedMessageBubbleFallbackProbes(posIdx, clickPositions):
-	"""Whether the non-center bubble probes have already been tried."""
-	try:
-		if posIdx < 0 or not clickPositions:
-			return False
-		lastRelevantIdx = len(clickPositions) - 1
-		if clickPositions[lastRelevantIdx][2] == "center":
-			lastRelevantIdx -= 1
-		return lastRelevantIdx >= 0 and posIdx >= lastRelevantIdx
-	except Exception:
-		return False
-
-
 def _getElementRuntimeId(element):
 	if element is None:
 		return None
@@ -1571,73 +961,6 @@ def _getElementRuntimeId(element):
 		return _normalizeRuntimeId(element.GetRuntimeId())
 	except Exception:
 		return None
-
-
-def _getFocusedElementRuntimeId():
-	try:
-		handler = UIAHandler.handler
-		client = getattr(handler, "clientObject", None)
-		if not client:
-			return None
-		return _getElementRuntimeId(client.GetFocusedElement())
-	except Exception:
-		return None
-
-
-def _messageProbePointHitsTargetElement(handler, targetElement, x, y, targetRuntimeId):
-	"""Return False only when UIA can prove a probe point targets an edit field.
-
-	LINE/Qt often reports bubble hit-test elements outside the focused
-	ListItem's UIA subtree.  Treat those as usable unless the point clearly
-	lands in an Edit control such as the message input or chat search field.
-	"""
-	if targetRuntimeId is None:
-		targetRuntimeId = _getElementRuntimeId(targetElement)
-	try:
-		client = getattr(handler, "clientObject", None)
-		if client is None or not hasattr(client, "ElementFromPoint"):
-			return True
-		point = ctypes.wintypes.POINT(int(x), int(y))
-		hitElement = client.ElementFromPoint(point)
-	except Exception:
-		log.debug("LINE: message probe hit-test failed", exc_info=True)
-		return True
-	if hitElement is None:
-		return True
-
-	try:
-		walker = client.RawViewWalker
-	except Exception:
-		walker = None
-
-	current = hitElement
-	for _depth in range(12):
-		if targetRuntimeId is not None and _getElementRuntimeId(current) == targetRuntimeId:
-			return True
-		try:
-			if current.CurrentControlType == 50004:  # Edit
-				return False
-		except Exception:
-			pass
-		if walker is None:
-			break
-		try:
-			current = walker.GetParentElement(current)
-		except Exception:
-			break
-		if current is None:
-			break
-	return True
-
-
-def _restoreFocusToElement(element, expectedRuntimeId=None):
-	"""Best-effort focus restore after an unsafe message probe."""
-	try:
-		if expectedRuntimeId is not None and _getElementRuntimeId(element) != expectedRuntimeId:
-			return
-		element.SetFocus()
-	except Exception:
-		log.debug("LINE: message probe focus restore failed", exc_info=True)
 
 
 def _queueUiMessage(text):
@@ -1788,10 +1111,6 @@ def _runOnWorkerThread(work, onDone=None, taskName="task"):
 
 	threading.Thread(target=_worker, daemon=True, name=f"lineAddon-{taskName}").start()
 
-
-# Tracks the newest async request for opening the message context menu so
-# stale callLater callbacks do not speak after the user has moved on.
-_messageContextMenuRequestId = 0
 
 # Flag to suppress addon while a file dialog is open
 _suppressAddon = False
@@ -3262,24 +2581,6 @@ def setUserImageMaxTokens(value):
 		return False
 
 
-# Recursion guard to prevent infinite _get_name → _getDeepText → _get_name loops.
-# Uses UIA runtime IDs (stable across Python wrapper recreation) instead of id(self).
-# Stored thread-locally so concurrent name computation on different threads cannot
-# corrupt the shared guard set / depth counter (the previous module-level set and
-# int were not thread-safe).
-_nameRecursion = threading.local()
-_MAX_NAME_RECURSION_DEPTH = 5
-
-
-def _getNameRecursionState():
-	"""Return the calling thread's private name-recursion guard state."""
-	state = _nameRecursion
-	if not hasattr(state, "guard"):
-		state.guard = set()
-		state.depth = 0
-	return state
-
-
 def _captureRegionAsPng(left, top, width, height):
 	"""Capture the given screen rect and return PNG bytes, or None on failure.
 
@@ -4055,17 +3356,6 @@ def _callMistralImageDescriptionApi(contents, timeout=60.0):
 	return None, _("圖片描述失敗 (無回應)")
 
 
-def _describeImageBytes(pngBytes, timeout=None):
-	"""Send PNG image bytes to the active image-description provider and return (description, error_msg).
-
-	Returns (text, None) on success or (None, error_msg) on failure.
-	"""
-	if not pngBytes:
-		return None, _("無法取得圖片資料")
-	contents = _buildInitialImageContents(pngBytes)
-	return _callImageDescriptionApi(contents, timeout=timeout)
-
-
 def _getDpiScale(hwnd=None):
 	"""Get DPI scale factor for the given window (or foreground window).
 
@@ -4257,34 +3547,6 @@ def _getChatHeaderIconPoint(hwnd, iconIndex=0):
 	return iconInfo[0]
 
 
-def _getWindowProcessId(hwnd):
-	"""Return the owning process ID for a window handle."""
-	try:
-		if not hwnd:
-			return 0
-		pid = ctypes.wintypes.DWORD()
-		ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-		return int(pid.value)
-	except Exception:
-		return 0
-
-
-def _shouldDismissMessageMenu(targetHwnd):
-	"""Return True only while the active popup still belongs to LINE."""
-	try:
-		currentHwnd = ctypes.windll.user32.GetForegroundWindow()
-	except Exception:
-		return False
-	if not currentHwnd or not targetHwnd:
-		return False
-	if currentHwnd == targetHwnd:
-		return True
-	targetPid = _getWindowProcessId(targetHwnd)
-	if not targetPid:
-		return False
-	return _getWindowProcessId(currentHwnd) == targetPid
-
-
 def _rectsIntersect(rectA, rectB):
 	if not rectA or not rectB:
 		return False
@@ -4315,127 +3577,6 @@ def _getEditPlaceholder(element):
 		except Exception:
 			pass
 	return placeholder
-
-
-def _matchMessageContextMenuLabel(text):
-	"""Map OCR text to a known LINE message context-menu label."""
-	try:
-		from ._virtualWindows import messageContextMenu as messageContextMenuModule
-
-		return messageContextMenuModule._matchMenuLabel(text)
-	except Exception:
-		return None
-
-
-def _extractMatchedMessageContextMenuLabels(ocrText):
-	"""Return OCR lines plus any labels that look like real message menu items."""
-	popupLines = [_removeCJKSpaces(line.strip()) for line in (ocrText or "").split("\n") if line.strip()]
-	lineMatches = []
-	matchedLabels = []
-	for line in popupLines:
-		label = _matchMessageContextMenuLabel(line)
-		lineMatches.append((line, label))
-		if label:
-			matchedLabels.append(label)
-	return popupLines, lineMatches, matchedLabels
-
-
-def _resolvePopupMenuLabelClickPoint(
-	targetLabel,
-	ocrLines,
-	popupRect,
-	popupRowRects=None,
-	buildMenuElements=None,
-):
-	"""Resolve a popup-menu label to a stable click point via OCR + row rects."""
-	if not targetLabel or not ocrLines or not popupRect:
-		return None
-
-	if buildMenuElements is None:
-		try:
-			from ._virtualWindows.messageContextMenu import _buildMenuElements as buildMenuElements
-		except Exception as e:
-			log.debug(
-				f"LINE: failed to load popup OCR menu builder: {e}",
-				exc_info=True,
-			)
-			return None
-
-	try:
-		elements = buildMenuElements(
-			ocrLines,
-			popupRect,
-			rowRects=popupRowRects,
-		)
-	except Exception as e:
-		log.debug(
-			f"LINE: popup OCR menu builder failed for {targetLabel!r}: {e}",
-			exc_info=True,
-		)
-		return None
-
-	for elementIndex, element in enumerate(elements):
-		if element.get("name") != targetLabel:
-			continue
-		clickPoint = element.get("clickPoint")
-		if not clickPoint or len(clickPoint) != 2:
-			continue
-		try:
-			clickX = int(clickPoint[0])
-			clickY = int(clickPoint[1])
-		except Exception:
-			continue
-		return {
-			"clickPoint": (clickX, clickY),
-			"index": elementIndex,
-			"count": len(elements),
-		}
-	return None
-
-
-def _sendGestureWithAddonSuppressed(gestureName):
-	"""Send a key directly to LINE without routing it back through addon scripts."""
-	from keyboardHandler import KeyboardInputGesture
-
-	global _suppressAddon
-	previousSuppressState = _suppressAddon
-	_suppressAddon = True
-	try:
-		KeyboardInputGesture.fromName(gestureName).send()
-	finally:
-		_suppressAddon = previousSuppressState
-
-
-def _popupLooksLikeMessageContextMenu(appMod, hwnd, popupRect):
-	"""Return True only when popup OCR matches known LINE message-menu labels."""
-	left, top, right, bottom = popupRect
-	popupW = right - left
-	popupH = bottom - top
-	if popupW <= 0 or popupH <= 0:
-		return False
-	try:
-		ocrText = appMod._ocrWindowArea(
-			hwnd,
-			region=(left, top, popupW, popupH),
-			sync=True,
-			timeout=2.0,
-		)
-		popupLines, _popupLineMatches, matchedLabels = _extractMatchedMessageContextMenuLabels(ocrText)
-		if matchedLabels:
-			log.info(
-				f"LINE: message context menu confirmed via popup OCR: "
-				f"lines={popupLines}, matched={matchedLabels}",
-			)
-			return True
-		log.debug(
-			f"LINE: popup OCR did not resemble a message context menu: {popupLines}",
-		)
-	except Exception as e:
-		log.debug(
-			f"LINE: popup OCR validation failed: {e}",
-			exc_info=True,
-		)
-	return False
 
 
 def _getTextViaUIAFindAll(obj, maxElements=30):
@@ -4512,90 +3653,6 @@ def _getTextFromDisplay(obj):
 	except Exception:
 		pass
 	return ""
-
-
-def _getObjectNameDirect(obj):
-	"""Get an object's name WITHOUT triggering _get_name overrides.
-
-	This prevents the infinite recursion where _get_name → _getDeepText
-	→ child.name → child._get_name → _getDeepText (depth resets to 0).
-
-	We access the raw UIA element's CurrentName directly when possible.
-	"""
-	# Prefer raw UIA name (bypasses Python _get_name completely)
-	if hasattr(obj, "UIAElement") and obj.UIAElement is not None:
-		try:
-			name = obj.UIAElement.CurrentName
-			if name and name.strip():
-				return name.strip()
-		except Exception:
-			pass
-	# Fallback: try the base NVDAObject.name (skip overlay _get_name)
-	try:
-		name = UIA.name.fget(obj) if isinstance(obj, UIA) else obj.name
-		if name and name.strip():
-			return name.strip()
-	except Exception:
-		pass
-	return ""
-
-
-def _getDeepText(obj, maxDepth=3, _depth=0):
-	"""Recursively collect non-empty text from an object and its children.
-
-	Falls back to _getTextViaUIAFindAll if childCount is 0.
-	Uses _getObjectNameDirect to avoid triggering _get_name overrides
-	which would cause infinite recursion.
-	"""
-	if _depth > maxDepth or obj is None:
-		return []
-	texts = []
-	# Get this object's name directly (bypassing _get_name overrides)
-	name = _getObjectNameDirect(obj)
-	if name:
-		texts.append(name)
-	# Try children via NVDA's normal enumeration
-	childCount = 0
-	try:
-		childCount = obj.childCount
-	except Exception:
-		pass
-	if childCount > 0:
-		# If we already found text at this level and it's not a container,
-		# don't recurse deeper to avoid duplication
-		if texts and obj.role not in (
-			controlTypes.Role.LIST,
-			controlTypes.Role.LISTITEM,
-			controlTypes.Role.GROUPING,
-			controlTypes.Role.SECTION,
-			controlTypes.Role.TREEVIEWITEM,
-			controlTypes.Role.PANE,
-			controlTypes.Role.WINDOW,
-		):
-			return texts
-
-		# If it's a generic container with children, recurse
-		try:
-			children = obj.children
-			for child in children:
-				childTexts = _getDeepText(child, maxDepth, _depth + 1)
-				texts.extend(childTexts)
-		except Exception:
-			pass
-	else:
-		# No children exposed to NVDA? Try UIA FindAll
-		uiaTexts = _getTextViaUIAFindAll(obj)
-		if uiaTexts:
-			texts.extend(uiaTexts)
-
-	# Deduplicate while preserving order
-	seen = set()
-	unique_texts = []
-	for t in texts:
-		if t not in seen:
-			unique_texts.append(t)
-			seen.add(t)
-	return unique_texts
 
 
 def _extractTextFromUIAElement(element):
@@ -4757,197 +3814,6 @@ def _isMessageInputElement(element, handler):
 		return False
 
 
-class LineChatListItem(UIA):
-	"""Overlay class for chat/contact list items in the sidebar.
-
-	Qt6 list items typically have empty name AND childCount=0.
-	We use UIA FindAll and display model as fallbacks.
-	"""
-
-	def _get_name(self):
-		# Prevent infinite recursion using a per-thread depth counter
-		state = _getNameRecursionState()
-		if state.depth >= _MAX_NAME_RECURSION_DEPTH:
-			return super().name or ""
-		# Also guard using UIA runtime ID (stable across Python wrapper recreation)
-		guardKey = None
-		try:
-			if hasattr(self, "UIAElement") and self.UIAElement:
-				rid = self.UIAElement.GetRuntimeId()
-				guardKey = ("LineChatListItem", str(rid))
-		except Exception:
-			guardKey = ("LineChatListItem", id(self))
-		if guardKey and guardKey in state.guard:
-			return super().name or ""
-		if guardKey:
-			state.guard.add(guardKey)
-		state.depth += 1
-		try:
-			# First try the native name
-			name = super().name
-			if name and name.strip():
-				return name
-			# Try deep text (includes UIA FindAll fallback)
-			# _getDeepText now uses _getObjectNameDirect to avoid re-entering _get_name
-			texts = _getDeepText(self, maxDepth=4)
-			if texts:
-				return " - ".join(texts)
-			# Last resort: read from display
-			displayText = _getTextFromDisplay(self)
-			if displayText:
-				return displayText
-			return ""
-		finally:
-			state.depth -= 1
-			if guardKey:
-				state.guard.discard(guardKey)
-
-	def event_gainFocus(self):
-		super().event_gainFocus()
-
-
-class LineMessageInput(UIA):
-	"""Overlay class for the message input/composition area."""
-
-	def _get_name(self):
-		try:
-			name = super().name
-		except Exception:
-			log.debugWarning(
-				"Error in LineMessageInput._get_name",
-				exc_info=True,
-			)
-			name = ""
-		if not name or not name.strip():
-			# Translators: Label for the LINE message input field
-			return _("Message input")
-		return name
-
-
-class LineSearchField(UIA):
-	"""Overlay class for the search/filter field in the sidebar."""
-
-	def _get_name(self):
-		try:
-			name = super().name
-		except Exception:
-			log.debugWarning(
-				"Error in LineSearchField._get_name",
-				exc_info=True,
-			)
-			name = ""
-		if not name or not name.strip() or name.strip().lower() in ("line",):
-			# Translators: Label for the search chat rooms field in LINE
-			return _("Search chat rooms")
-		return name
-
-
-class LineLoginEditField(UIA):
-	"""Overlay class for login window edit fields (email / password).
-
-	The LINE login window has two unlabelled edit fields.
-	We identify them via display-model / OCR placeholder text,
-	or fall back to vertical position (upper = email, lower = password).
-	"""
-
-	def _get_name(self):
-		# If UIA already provides a meaningful name (not just the app name), use it.
-		try:
-			name = super().name
-			if name and name.strip():
-				# Filter out generic names that are just the app/window name
-				if name.strip() not in ("LINE", "line"):
-					return name
-		except Exception:
-			pass
-
-		# Strategy 1: read display / placeholder text to identify field type
-		label = self._detectFieldLabel()
-		if label:
-			return label
-
-		# Strategy 2: use vertical position among sibling edit fields
-		label = self._detectByPosition()
-		if label:
-			return label
-
-		# Translators: Generic label for a login field when position cannot be determined
-		return _("Login field")
-
-	def _detectFieldLabel(self):
-		"""Read placeholder / visible text via display model to guess field type."""
-		try:
-			text = _getTextFromDisplay(self)
-			if text:
-				t = text.lower()
-				if any(
-					kw in t
-					for kw in (
-						"email",
-						"mail",
-						"電子郵件",
-						"メール",
-						"อีเมล",
-					)
-				):
-					# Translators: Label for the email input field on the LINE login screen
-					return _("Email")
-				if any(
-					kw in t
-					for kw in (
-						"password",
-						"密碼",
-						"パスワード",
-						"รหัสผ่าน",
-					)
-				):
-					# Translators: Label for the password input field on the LINE login screen
-					return _("Password")
-		except Exception:
-			log.debugWarning("LineLoginEditField._detectFieldLabel error", exc_info=True)
-		return ""
-
-	def _detectByPosition(self):
-		"""Use vertical position among siblings to guess email vs password."""
-		try:
-			if not hasattr(self, "UIAElement") or self.UIAElement is None:
-				return ""
-			rect = self.UIAElement.CurrentBoundingRectangle
-			myTop = rect.top
-
-			parent = self.parent
-			if not parent:
-				return ""
-
-			# Gather top-coordinates of sibling edit fields
-			editTops = []
-			try:
-				for child in parent.children:
-					try:
-						if child.role in (
-							controlTypes.Role.EDITABLETEXT,
-							controlTypes.Role.DOCUMENT,
-						):
-							if hasattr(child, "UIAElement") and child.UIAElement:
-								cr = child.UIAElement.CurrentBoundingRectangle
-								editTops.append(cr.top)
-					except Exception:
-						continue
-			except Exception:
-				pass
-
-			if len(editTops) >= 2:
-				if myTop <= min(editTops):
-					# Translators: Label for the email input field on the LINE login screen
-					return _("Email")
-				else:
-					# Translators: Label for the password input field on the LINE login screen
-					return _("Password")
-		except Exception:
-			log.debugWarning("LineLoginEditField._detectByPosition error", exc_info=True)
-		return ""
-
-
 class LineToolbarButton(UIA):
 	"""Overlay class for toolbar/sidebar buttons that lack labels."""
 
@@ -5024,22 +3890,14 @@ class AppModule(appModuleHandler.AppModule):
 		themselves, so clearing them is safe even when another LINE process
 		(e.g. LineCall) is still running.
 		"""
-		global _messageContextMenuRequestId, _suppressAddon
+		global _suppressAddon
 		try:
-			# Bump the request id so still-scheduled callLater chains notice
-			# they are stale and bail out instead of touching dead objects.
-			_messageContextMenuRequestId += 1
 			_suppressAddon = False
 			# Invalidate any in-flight file-dialog watcher so its worker thread
 			# stops at the next poll instead of outliving this AppModule (it
 			# polls by process ID, which Windows can recycle for the next LINE
 			# session).
 			AppModule._fileDialogWaitToken += 1
-			# Reset the current (main) thread's name-recursion guard; other
-			# threads' thread-local state is cleaned up when they exit.
-			_resetNameRecursionState = _getNameRecursionState()
-			_resetNameRecursionState.guard.clear()
-			_resetNameRecursionState.depth = 0
 			VirtualWindow.currentWindow = None
 			self._inCallOcrRecognizer = None
 			self._inCallOcrPixels = None
@@ -5055,7 +3913,12 @@ class AppModule(appModuleHandler.AppModule):
 		super().terminate()
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
-		"""Apply custom overlay classes based on role and hierarchy."""
+		"""Name the few buttons LINE still leaves unlabelled.
+
+		LINE 26.6.0.4004+ names its list items, edit fields (including the
+		login, search and message boxes) and nearly every button itself, so
+		only nameless buttons get an overlay.
+		"""
 		if _suppressAddon:
 			return
 		if not isinstance(obj, UIA):
@@ -5070,194 +3933,13 @@ class AppModule(appModuleHandler.AppModule):
 			)
 			return
 
-		try:
-			automationId = obj.UIAAutomationId or ""
-		except Exception:
-			automationId = ""
-
-		try:
-			className = obj.UIAClassName or ""
-		except Exception:
-			className = ""
-
-		# Qt6 specific class name patterns
-		isQt = "qt" in className.lower() or "Qt" in className
-
-		# --- Chat/contact list items ---
-		if role == controlTypes.Role.LISTITEM:
-			parent = obj.parent
-			if parent and parent.role == controlTypes.Role.LIST:
-				# Check if this looks like a chat list or contact list
-				if any(
-					keyword in automationId.lower()
-					for keyword in (
-						"chat",
-						"room",
-						"talk",
-						"conversation",
-						"friend",
-						"contact",
-						"message",
-						"buddy",
-					)
-				):
-					clsList.insert(0, LineChatListItem)
-				elif any(
-					keyword in (parent.name or "").lower()
-					for keyword in (
-						"chat",
-						"聊天",
-						"トーク",
-						"好友",
-						"友だち",
-						"friend",
-						"contact",
-						"message",
-						"訊息",
-						"メッセージ",
-					)
-				):
-					clsList.insert(0, LineChatListItem)
-				else:
-					# Default: treat any list item as potentially a chat item
-					clsList.insert(0, LineChatListItem)
-			log.debug(
-				f"LINE listitem: name={obj.name!r}, automationId={automationId!r}, children={obj.childCount}",
-			)
-
-		# --- Editable text fields ---
-		elif role in (
-			controlTypes.Role.EDITABLETEXT,
-			controlTypes.Role.DOCUMENT,
-		):
-			# Check if this is a login-window edit field first
-			if self._isLoginEditField(obj):
-				clsList.insert(0, LineLoginEditField)
-			elif self._isSearchField(obj):
-				clsList.insert(0, LineSearchField)
-			elif automationId and any(
-				kw in automationId.lower()
-				for kw in (
-					"input",
-					"compose",
-					"message",
-					"send",
-					"chat",
-					"editor",
-					"textbox",
-					"edit",
-				)
-			):
-				clsList.insert(0, LineMessageInput)
-			# Qt6 text edits
-			elif isQt and "edit" in className.lower():
-				clsList.insert(0, LineMessageInput)
-			elif controlTypes.State.FOCUSABLE in obj.states:
-				clsList.insert(0, LineMessageInput)
-
-		# --- Toolbar/sidebar buttons without labels ---
-		elif role == controlTypes.Role.BUTTON:
+		if role == controlTypes.Role.BUTTON:
 			try:
 				btnName = obj.name
 				if not btnName or not btnName.strip():
 					clsList.insert(0, LineToolbarButton)
 			except Exception:
 				clsList.insert(0, LineToolbarButton)
-
-	def _isLoginEditField(self, obj):
-		"""Detect if an edit field belongs to the login window.
-
-		The login window typically has 2 sibling edit fields (email + password),
-		while the chat window has only 1 (message input).
-
-		Uses raw UIA FindAll instead of parent.children to avoid triggering
-		chooseNVDAObjectOverlayClasses recursively (which causes RecursionError).
-		"""
-		try:
-			if not hasattr(obj, "UIAElement") or obj.UIAElement is None:
-				return False
-			parent = obj.parent
-			if not parent or not hasattr(parent, "UIAElement") or parent.UIAElement is None:
-				return False
-			# Use raw UIA to count edit-type children without creating NVDA objects
-			handler = UIAHandler.handler
-			if handler is None:
-				return False
-			# UIA ControlType for Edit = 50004
-			editCondition = handler.clientObject.CreatePropertyCondition(
-				30003,  # UIA_ControlTypePropertyId
-				50004,  # UIA_EditControlTypeId
-			)
-			editElements = parent.UIAElement.FindAll(
-				UIAHandler.TreeScope_Children,
-				editCondition,
-			)
-			editCount = editElements.Length if editElements else 0
-			return editCount >= 2
-		except Exception:
-			return False
-
-	def _isSearchField(self, obj):
-		"""Detect if an edit field is the search/filter field in the sidebar.
-
-		Checks UIA placeholder text for search keywords and falls back
-		to position-based heuristic (left sidebar, near the top).
-		"""
-		try:
-			if not hasattr(obj, "UIAElement") or obj.UIAElement is None:
-				return False
-			el = obj.UIAElement
-
-			# Check UIA Name for search keywords
-			SEARCH_KEYWORDS = ("搜尋", "search", "検索", "ค้นหา", "찾기")
-			try:
-				name = el.CurrentName
-				if name and name.strip():
-					nameLower = name.strip().lower()
-					if any(kw in nameLower for kw in SEARCH_KEYWORDS):
-						return True
-					# If name is meaningful but not search-related, it's not a search field
-					if nameLower not in ("line",):
-						return False
-			except Exception:
-				pass
-
-			# Check UIA ValueValue (30045) for placeholder
-			try:
-				val = el.GetCurrentPropertyValue(30045)
-				if val and isinstance(val, str) and val.strip():
-					valLower = val.strip().lower()
-					if any(kw in valLower for kw in SEARCH_KEYWORDS):
-						return True
-			except Exception:
-				pass
-
-			# Position heuristic: search field is in the left sidebar and near the top
-			try:
-				rect = el.CurrentBoundingRectangle
-				hwnd = ctypes.windll.user32.GetForegroundWindow()
-				if hwnd:
-					wndRect = ctypes.wintypes.RECT()
-					ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(wndRect))
-					wndWidth = wndRect.right - wndRect.left
-					wndHeight = wndRect.bottom - wndRect.top
-					if wndWidth > 0 and wndHeight > 0:
-						relX = (rect.left - wndRect.left) / wndWidth
-						relY = (rect.top - wndRect.top) / wndHeight
-						# Search field: left sidebar (< 50% width) and near top (< 30% height)
-						if relX < 0.5 and relY < 0.3:
-							return True
-			except Exception:
-				pass
-		except Exception:
-			pass
-		return False
-
-	def event_NVDAObject_init(self, obj):
-		"""Log object initialization at debug level."""
-		# Intentionally minimal — accessing obj.name here triggers cross-process
-		# COM calls for EVERY object, which can crash LINE's Qt6 UIA provider.
-		pass
 
 	def event_gainFocus(self, obj, nextHandler):
 		"""Let open virtual windows react to focus leaving them."""
@@ -5266,87 +3948,6 @@ class AppModule(appModuleHandler.AppModule):
 		except Exception:
 			# A broken virtual window must never break the focus event itself.
 			log.debugWarning("VirtualWindow focus handling failed", exc_info=True)
-		nextHandler()
-
-	def event_UIA_elementSelected(self, obj, nextHandler):
-		"""Handle UIA element selection events.
-
-		Qt6 apps sometimes fire elementSelected instead of focus for list items.
-		"""
-		if _suppressAddon:
-			nextHandler()
-			return
-		try:
-			log.debug(
-				f"LINE UIA_elementSelected: role={obj.role}, name={obj.name!r}, class={obj.windowClassName}",
-			)
-		except Exception:
-			pass
-		# If we get a selection event for a list item, treat it as focus
-		if obj.role == controlTypes.Role.LISTITEM:
-			try:
-				# Qt6 can fire elementSelected repeatedly for the same item;
-				# announcing only on change avoids double-speaking.
-				rid = None
-				try:
-					rid = str(obj.UIAElement.GetRuntimeId())
-				except Exception:
-					rid = None
-				if rid is not None and rid == getattr(self, "_lastSelectedRuntimeId", None):
-					nextHandler()
-					return
-				self._lastSelectedRuntimeId = rid
-				obj.setFocus()
-				api.setFocusObject(obj)
-				api.setNavigatorObject(obj)
-				speech.cancelSpeech()
-				speech.speakObject(obj, reason=controlTypes.OutputReason.FOCUS)
-				if braille.handler is not None:
-					braille.handler.handleGainFocus(obj)
-			except Exception:
-				log.debugWarning("Error handling elementSelected", exc_info=True)
-		nextHandler()
-
-	def event_UIA_notification(self, obj, nextHandler, **kwargs):
-		"""Handle UIA notification events."""
-		if _suppressAddon:
-			nextHandler()
-			return
-		try:
-			log.debug(
-				f"LINE UIA_notification: role={obj.role}, name={obj.name!r}, kwargs={kwargs}",
-			)
-		except Exception:
-			pass
-		nextHandler()
-
-	def event_stateChange(self, obj, nextHandler):
-		"""Track state changes for potentially focusable elements."""
-		if _suppressAddon:
-			nextHandler()
-			return
-		try:
-			if isinstance(obj, UIA) and obj.role == controlTypes.Role.LISTITEM:
-				if controlTypes.State.SELECTED in obj.states:
-					log.debug(
-						f"LINE stateChange SELECTED: role={obj.role}, "
-						f"name={obj.name!r}, class={obj.windowClassName}",
-					)
-		except Exception:
-			pass
-		nextHandler()
-
-	def event_nameChange(self, obj, nextHandler):
-		"""Track name changes which may indicate content update."""
-		if _suppressAddon:
-			nextHandler()
-			return
-		try:
-			log.debug(
-				f"LINE nameChange: role={obj.role}, name={obj.name!r}, class={obj.windowClassName}",
-			)
-		except Exception:
-			pass
 		nextHandler()
 
 	@script(
@@ -5838,28 +4439,6 @@ class AppModule(appModuleHandler.AppModule):
 		iconPoint, contentRect = iconInfo
 
 		return (iconPoint[0], iconPoint[1], contentRect[2])
-
-	def _clickMoreOptionsButton(self):
-		"""Click the more options (⋮) button in the chat header.
-
-		The more options button is the rightmost icon in the header (index 0).
-		Returns True if successful, False if window not found.
-		"""
-		import ctypes
-
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			log.debug("LINE: no foreground window for more options click")
-			return False
-
-		clickPoint = _getChatHeaderIconPoint(hwnd, iconIndex=0)
-		if not clickPoint:
-			return False
-
-		# Click the button
-		self._clickAtPosition(clickPoint[0], clickPoint[1], hwnd)
-
-		return True
 
 	def _makeCallByType(self, callType):
 		"""Click phone icon, wait for popup menu, then click voice or video.
@@ -7193,327 +5772,42 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_clickMoreOptions(self, gesture):
-		"""Click the more options (⋮) button in the chat header."""
-		try:
-			if not self._clickMoreOptionsButton():
+		"""Open the chat's "More options" menu; LINE's own menu takes the focus."""
+
+		def _afterOpen(result):
+			if not result or not result[0]:
 				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
-				return
-			import core
 
-			core.callLater(500, self._activateMoreOptionsMenu)
-		except Exception as e:
-			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
-			ui.message(_("更多選項功能錯誤: {error}").format(error=e))
+		_runOnWorkerThread(self._openChatMoreOptionsMenu, onDone=_afterOpen, taskName="openMoreOptions")
 
-	def _activateMoreOptionsMenu(self, retriesLeft=3):
-		"""Find the more options popup and activate the virtual window for browsing."""
-		import ctypes
-		import ctypes.wintypes as wintypes
+	def _openChatMoreOptionsMenu(self):
+		"""Worker thread: click the chat header's "More options" button.
 
+		Clicks the button LINE names (see _lineLabels._MORE_OPTIONS_BUTTON) when
+		UIA finds it, otherwise the header icon at its usual position. Returns
+		``(clicked, runtimeId)``, where ``runtimeId`` is the element that had the
+		focus before the click, so a caller can wait for the menu to take it.
+		"""
+		handler = UIAHandler.handler
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			return
-
-		pid = wintypes.DWORD()
-		tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-		threadWindows = []
-		seenWindows = set()
-
-		def _captureWindowInfo(targetHwnd):
-			if (
-				not targetHwnd
-				or targetHwnd in seenWindows
-				or not ctypes.windll.user32.IsWindow(targetHwnd)
-				or not ctypes.windll.user32.IsWindowVisible(targetHwnd)
-			):
-				return
-
-			windowRect = _getWindowScreenRect(targetHwnd)
-			if not windowRect:
-				return
-			left, top, right, bottom = windowRect
-			width = right - left
-			height = bottom - top
-			if width < 50 or height < 100:
-				return
-
-			classBuf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(targetHwnd, classBuf, 256)
-			seenWindows.add(targetHwnd)
-			threadWindows.append(
-				{
-					"hwnd": targetHwnd,
-					"left": left,
-					"top": top,
-					"right": right,
-					"bottom": bottom,
-					"width": width,
-					"height": height,
-					"area": width * height,
-					"className": classBuf.value,
-				},
-			)
-
-		def _enumCb(enumHwnd, lParam):
-			_captureWindowInfo(enumHwnd)
-			return True
-
-		ctypes.windll.user32.EnumThreadWindows(tid, WNDENUMPROC(_enumCb), 0)
-		_captureWindowInfo(hwnd)
-
-		if not threadWindows:
-			if retriesLeft > 0:
-				import core
-
-				core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
-			return
-
-		mainWindow = max(threadWindows, key=lambda item: item["area"])
-		scale = _getDpiScale(mainWindow["hwnd"])
-		anchorPoint = _getChatHeaderIconPoint(mainWindow["hwnd"], iconIndex=0)
-		if anchorPoint:
-			anchorX, anchorY = anchorPoint
-		else:
-			anchorX = mainWindow["right"] - _scaleLineUiPixels(_CHAT_HEADER_FIRST_ICON_OFFSET_BASE, scale)
-			anchorY = mainWindow["top"] + _scaleLineUiPixels(_CHAT_HEADER_ICON_Y_BASE, scale)
-		mainArea = max(mainWindow["area"], 1)
-
-		def _distanceToRect(pointX, pointY, rectInfo):
-			dx = 0
-			if pointX < rectInfo["left"]:
-				dx = rectInfo["left"] - pointX
-			elif pointX > rectInfo["right"]:
-				dx = pointX - rectInfo["right"]
-			dy = 0
-			if pointY < rectInfo["top"]:
-				dy = rectInfo["top"] - pointY
-			elif pointY > rectInfo["bottom"]:
-				dy = pointY - rectInfo["bottom"]
-			return dx + dy
-
-		candidates = []
-		for info in threadWindows:
-			if info["width"] >= int(mainWindow["width"] * 0.85) and info["height"] >= int(
-				mainWindow["height"] * 0.85,
-			):
-				log.debug(
-					f"LINE: skipping near-main window hwnd={info['hwnd']} "
-					f"rect=({info['left']}, {info['top']}, {info['right']}, {info['bottom']}) "
-					f"class={info['className']!r}",
-				)
-				continue
-
-			distance = _distanceToRect(anchorX, anchorY, info)
-			score = distance * 4
-			score += abs(info["right"] - mainWindow["right"])
-			score += abs(info["top"] - anchorY)
-			score += int(info["area"] / mainArea * 500)
-			if info["left"] < mainWindow["left"] + int(mainWindow["width"] * 0.5):
-				score += 250
-			if info["top"] > mainWindow["top"] + int(220 * scale):
-				score += 200
-			containsAnchor = (
-				info["left"] <= anchorX <= info["right"]
-				and info["top"] - int(24 * scale) <= anchorY <= info["bottom"]
-			)
-			if containsAnchor:
-				score -= 150
-
-			info["geometryScore"] = score
-			info["containsAnchor"] = containsAnchor
-			candidates.append(info)
-			log.debug(
-				f"LINE: more options candidate hwnd={info['hwnd']} "
-				f"class={info['className']!r} "
-				f"rect=({info['left']}, {info['top']}, {info['right']}, {info['bottom']}) "
-				f"score={score} containsAnchor={containsAnchor}",
-			)
-
-		if not candidates:
-			if retriesLeft > 0:
-				import core
-
-				core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
-			return
-
-		candidates.sort(key=lambda item: item["geometryScore"])
-
-		from ._virtualWindows.chatMoreOptions import ChatMoreOptions, _matchMenuLabel
-
-		topCandidates = candidates[: min(3, len(candidates))]
-
-		def _ocrCandidates():
-			"""Worker thread: OCR up to 3 popup candidates (up to ~4.5 s total)."""
-			bestCandidate = None
-			bestMatchCount = -1
-			for info in topCandidates:
-				ocrText = self._ocrWindowArea(
-					info["hwnd"],
-					region=(
-						info["left"],
-						info["top"],
-						info["width"],
-						info["height"],
-					),
-					sync=True,
-					timeout=1.5,
-				)
-				labels = []
-				for line in (ocrText or "").splitlines():
-					label = _matchMenuLabel(line)
-					if label and label not in labels:
-						labels.append(label)
-				info["ocrMenuLabels"] = labels
-				log.debug(
-					f"LINE: more options candidate hwnd={info['hwnd']} OCR labels={labels}",
-				)
-				if len(labels) > bestMatchCount:
-					bestCandidate = info
-					bestMatchCount = len(labels)
-				elif (
-					len(labels) == bestMatchCount
-					and bestCandidate
-					and info["geometryScore"] < bestCandidate["geometryScore"]
-				):
-					bestCandidate = info
-			return (bestCandidate, bestMatchCount)
-
-		def _afterOcr(result):
-			bestCandidate, bestMatchCount = result if result else (None, -1)
-			if bestCandidate is None:
-				bestCandidate = candidates[0]
-
-			if bestMatchCount <= 0 and retriesLeft > 0:
-				import core
-
-				log.debug("LINE: more options popup not verified by OCR yet, retrying")
-				core.callLater(300, lambda: self._activateMoreOptionsMenu(retriesLeft - 1))
-				return
-
-			left = bestCandidate["left"]
-			top = bestCandidate["top"]
-			right = bestCandidate["right"]
-			bottom = bestCandidate["bottom"]
-			popupRect = (left, top, right, bottom)
-			popupRowRects = _collectPopupMenuRowRects(
-				bestCandidate["hwnd"],
-				popupRect,
-			)
-			log.info(f"LINE: more options popup found at ({left}, {top}, {right}, {bottom})")
-			VirtualWindow.currentWindow = ChatMoreOptions(
-				popupRect,
-				rowRects=popupRowRects,
-				onAction=self._handleChatMoreOptionsAction,
-			)
-
-		_runOnWorkerThread(_ocrCandidates, onDone=_afterOcr, taskName="moreOptionsOcr")
-
-	# ── Message context menu (right-click / Shift+F10) ────────────────
-
-	def _activateMessageContextMenu(
-		self,
-		retriesLeft=3,
-		onAction=None,
-		onFailure=None,
-		shouldAbort=None,
-	):
-		"""Find a keyboard-opened message context menu and activate the virtual window."""
-		import ctypes
-		import ctypes.wintypes as wintypes
-
-		if callable(shouldAbort) and shouldAbort():
-			return
-
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not hwnd:
-			if callable(onFailure):
-				onFailure()
-			return
-
-		pid = wintypes.DWORD()
-		tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-		popupCandidates = []
-		mainRect = wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(mainRect))
-		mainArea = max(
-			(mainRect.right - mainRect.left) * (mainRect.bottom - mainRect.top),
-			1,
-		)
-
-		def _enumCb(enumHwnd, lParam):
-			if enumHwnd != hwnd and ctypes.windll.user32.IsWindowVisible(enumHwnd):
-				wRect = wintypes.RECT()
-				ctypes.windll.user32.GetWindowRect(enumHwnd, ctypes.byref(wRect))
-				w = wRect.right - wRect.left
-				h = wRect.bottom - wRect.top
-				area = w * h
-				if w >= 50 and h >= 30 and area < mainArea * 0.5:
-					popupCandidates.append(
-						{
-							"hwnd": enumHwnd,
-							"left": wRect.left,
-							"top": wRect.top,
-							"right": wRect.right,
-							"bottom": wRect.bottom,
-							"width": w,
-							"height": h,
-						},
-					)
-			return True
-
-		ctypes.windll.user32.EnumThreadWindows(tid, WNDENUMPROC(_enumCb), 0)
-
-		if not popupCandidates:
-			if retriesLeft > 0:
-				import core
-
-				core.callLater(
-					300,
-					lambda: self._activateMessageContextMenu(
-						retriesLeft - 1,
-						onAction=onAction,
-						onFailure=onFailure,
-						shouldAbort=shouldAbort,
-					),
-				)
-			elif callable(onFailure):
-				onFailure()
-			return
-
-		if callable(shouldAbort) and shouldAbort():
-			return
-
-		best = max(popupCandidates, key=lambda c: c["height"])
-		popupRect = (best["left"], best["top"], best["right"], best["bottom"])
-		popupRowRects = _collectPopupMenuRowRects(best["hwnd"], popupRect)
-		if not _popupLooksLikeMessageContextMenu(self, hwnd, popupRect):
-			log.debug(
-				f"LINE: keyboard-opened popup did not resemble a message context menu "
-				f"at {popupRect}; dismissing",
-			)
-			try:
-				_sendGestureWithAddonSuppressed("escape")
-			except Exception:
-				pass
-			if callable(onFailure):
-				onFailure()
-			return
-
-		log.info(
-			f"LINE: message context menu popup found at "
-			f"({best['left']}, {best['top']}, {best['right']}, {best['bottom']})",
-		)
-
-		from ._virtualWindows.messageContextMenu import MessageContextMenu
-
-		VirtualWindow.currentWindow = MessageContextMenu(
-			popupRect,
-			rowRects=popupRowRects,
-			onAction=onAction,
-		)
-		return
+		if not handler or not hwnd:
+			return False, None
+		try:
+			previousRuntimeId = _getElementRuntimeId(handler.clientObject.GetFocusedElement())
+		except Exception:
+			previousRuntimeId = None
+		try:
+			button = _findNamedButton(handler, hwnd, _lineLabels._MORE_OPTIONS_BUTTON)
+		except Exception:
+			log.debug("LINE: searching for the More options button failed", exc_info=True)
+			button = None
+		if button and _clickElementCenter(button):
+			return True, previousRuntimeId
+		clickPoint = _getChatHeaderIconPoint(hwnd, iconIndex=0)
+		if not clickPoint:
+			return False, previousRuntimeId
+		self._clickAtPosition(clickPoint[0], clickPoint[1], hwnd)
+		return True, previousRuntimeId
 
 	# ── Read chat room name ────────────────────────────────────────────
 
@@ -7771,61 +6065,41 @@ class AppModule(appModuleHandler.AppModule):
 
 		_runOnWorkerThread(_waitForDialogGone, onDone=_resume, taskName="fileDialogWatch")
 
-	def _handleChatMoreOptionsAction(self, actionName):
-		"""Handle post-click actions from the chat more-options virtual window."""
-		if actionName == "儲存聊天":
-			if getattr(self, "_messageReaderPending", False):
-				core.callLater(800, self._messageReaderHandleSaveDialog)
-			else:
-				self._suppressAddonForFileDialog("Save chat selected")
-
 	def script_openMessageReader(self, gesture):
-		"""Open message reader: click more options, auto-click save chat, parse, and display."""
+		"""Open message reader: choose "Save chat" in LINE's More options menu, parse, and display."""
 		if getattr(self, "_messageReaderPending", False):
 			ui.message(_("訊息閱讀器正在執行中，請稍候"))
 			return
 		ui.message(_("正在開啟訊息閱讀器…"))
-		try:
-			if not self._clickMoreOptionsButton():
+		self._messageReaderPending = True
+
+		def _openAndChooseSaveChat():
+			opened, previousRuntimeId = self._openChatMoreOptionsMenu()
+			if not opened:
+				return None
+			return _chooseNativeMenuItem(
+				UIAHandler.handler,
+				previousRuntimeId,
+				_lineLabels._MORE_OPTIONS_LABELS,
+				"儲存聊天",
+			)
+
+		def _afterChoice(result):
+			if result and result[0] == _MENU_ITEM_CLICKED:
+				speech.cancelSpeech()
+				core.callLater(800, self._messageReaderHandleSaveDialog)
+				return
+			self._messageReaderPending = False
+			if result is None:
 				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 				return
-			self._messageReaderPending = True
-			core.callLater(500, self._activateMoreOptionsMenu)
-			# Poll until virtual window is ready, then auto-click 儲存聊天
-			core.callLater(1500, self._messageReaderAutoClickSaveChat)
-		except Exception as e:
-			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
-			self._messageReaderPending = False
-			ui.message(_("訊息閱讀器功能錯誤"))
+			if result[0] == _MENU_ITEM_NOT_FOUND:
+				from keyboardHandler import KeyboardInputGesture
 
-	def _messageReaderAutoClickSaveChat(self, retriesLeft=15):
-		"""Poll the ChatMoreOptions virtual window until 儲存聊天 is found, then click it."""
-		if not getattr(self, "_messageReaderPending", False):
-			return
-
-		from ._virtualWindows.chatMoreOptions import ChatMoreOptions
-
-		window = VirtualWindow.currentWindow
-		if not isinstance(window, ChatMoreOptions) or not window.elements:
-			if retriesLeft > 0:
-				core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
-			else:
-				self._messageReaderPending = False
-				ui.message(_("找不到儲存聊天選項"))
-			return
-
-		for i, elem in enumerate(window.elements):
-			if elem.get("name") == "儲存聊天":
-				window.pos = i
-				window.click()
-				log.info("LINE: message reader auto-clicked 儲存聊天")
-				return
-
-		if retriesLeft > 0:
-			core.callLater(300, lambda: self._messageReaderAutoClickSaveChat(retriesLeft - 1))
-		else:
-			self._messageReaderPending = False
+				KeyboardInputGesture.fromName("escape").send()
 			ui.message(_("找不到儲存聊天選項"))
+
+		_runOnWorkerThread(_openAndChooseSaveChat, onDone=_afterChoice, taskName="messageReaderSaveChat")
 
 	def _messageReaderHandleSaveDialog(self, retriesLeft=10):
 		"""Find the Save As dialog, set filename to temp folder, and save."""
@@ -8067,36 +6341,6 @@ class AppModule(appModuleHandler.AppModule):
 		self._suppressAddonForFileDialog("Ctrl+O pressed")
 		gesture.send()
 
-	# Map Control+number keys to LINE tab names
-	_TAB_NAMES = {
-		"1": _("Friends"),
-		"2": _("Chats"),
-		"3": _("Add friends"),
-	}
-
-	@script(
-		# Translators: Description of the script bound to control+1/2/3 in LINE
-		description=_("切換 LINE 主要分頁並讀出分頁名稱"),
-		category=SCRIPT_CATEGORY,
-	)
-	def script_switchTabAndAnnounce(self, gesture):
-		"""Pass Control+1/2/3 to LINE and announce the tab name.
-
-		LINE's built-in shortcuts: Control+1=Friends, Control+2=Chats,
-		Control+3=Add friends. This script passes the key through and
-		announces the tab being switched to.
-		"""
-		if _suppressAddon:
-			gesture.send()
-			return
-		gesture.send()
-		# Extract the number key from the gesture identifier
-		# gesture.mainKeyName gives us the key name like "1", "2", "3"
-		keyName = gesture.mainKeyName
-		tabName = self._TAB_NAMES.get(keyName, "")
-		if tabName:
-			ui.message(tabName)
-
 	@script(
 		# Translators: Description of the script bound to enter in LINE's message input
 		description=_("傳送訊息，成功送出時播放提示音"),
@@ -8176,668 +6420,66 @@ class AppModule(appModuleHandler.AppModule):
 		elif isMessageInput:
 			log.debug("LINE: Enter on empty message input, skipping send sound")
 
-	# ── Right-click context menu actions ─────────────────────────────────
+	# ── Message actions via LINE's own context menu ──────────────────────
 
-	def _rightClickAtPosition(self, x, y, hwnd=None):
-		"""Perform a right-click at the given screen coordinates."""
-		import ctypes
+	def _nativeMessageMenuAction(self, labelKey, afterCallback=None):
+		"""Choose one item from LINE's own context menu for the focused message.
 
-		if hwnd is None:
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if hwnd:
-			ctypes.windll.user32.SetForegroundWindow(hwnd)
-
-		_sendMouseClick(int(x), int(y), "right")
-
-	# Reference offsets from right-click point to each context menu item
-	# center, measured at 100% DPI (1920x1080, 17-inch screen).
-	# Message at (697, 255); menu items at:
-	#   複製 (715, 288) → offset (+18, +33)
-	#   分享 (714, 323) → offset (+17, +68)
-	#   收回 (720, 350) → offset (+23, +95)
-	#   回覆 (647, 359) → offset (-50, +104)
-	# At runtime these are scaled by _getDpiScale().
-	_MENU_OFFSETS = {
-		"複製": (18, 33),
-		"分享": (17, 68),
-		"收回": (23, 95),
-		"回覆": (-50, 104),
-	}
-
-	def _contextMenuAction(self, itemIndex, actionName, afterCallback=None):
-		"""Right-click current message and select an item from the context menu.
-
-		Menu items top to bottom: 0=回覆, 1=複製, 2=分享, 3=收回
-		Uses UIA to find the popup menu and click directly on the target item.
-		Falls back to offset-based clicking if UIA detection fails.
-
-		If the right-click hits the text content area (producing a text
-		selection menu like '全選'), dismisses and retries at a different
-		Y offset on the message bubble.
+		Sends Shift+F10, which opens LINE's menu of named buttons for the
+		focused message, waits for that menu to take the focus, and clicks the
+		item that ``labelKey`` names in _lineLabels._MESSAGE_MENU_LABELS.
 		"""
+		from keyboardHandler import KeyboardInputGesture
+
+		handler = UIAHandler.handler
 		try:
-			handler = UIAHandler.handler
-			rawEl = handler.clientObject.GetFocusedElement()
-			if not rawEl:
-				ui.message(_("找不到目前的訊息"))
-				return
-
-			rect = rawEl.CurrentBoundingRectangle
-			cx = int((rect.left + rect.right) / 2)
-			cy = int((rect.top + rect.bottom) / 2)
-			elTop = int(rect.top)
-			elBottom = int(rect.bottom)
-
-			if cx <= 0 or cy <= 0:
-				ui.message(_("找不到目前的訊息"))
-				return
-
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			targetRuntimeId = _getElementRuntimeId(rawEl)
-
-			# Get LINE window rect to clamp click positions
-			import ctypes.wintypes as wintypes
-
-			winRect = wintypes.RECT()
-			ctypes.windll.user32.GetWindowRect(
-				hwnd,
-				ctypes.byref(winRect),
-			)
-			winTop = int(winRect.top)
-			winBottom = int(winRect.bottom)
-		except Exception as e:
-			log.debug(f"LINE: _contextMenuAction getElement failed: {e}")
+			message = handler.clientObject.GetFocusedElement() if handler else None
+		except Exception:
+			message = None
+		if not message:
 			ui.message(_("找不到目前的訊息"))
 			return
+		messageRuntimeId = _getElementRuntimeId(message)
 
-		elLeft = int(rect.left)
-		elRight = int(rect.right)
-
-		appModRef = self
-		state = {}
-
-		def _preamble():
-			"""Worker thread: wait out modifier keys, then OCR the bubble.
-
-			Both block (the modifier wait up to ~2 s, the OCR up to 2 s), so
-			they must stay off NVDA's main thread. rawEl is NOT touched here;
-			it is only used later on the main thread.
-			"""
-			# Wait for modifier keys (Ctrl, Shift, Alt) to be physically
-			# released before proceeding.  The user likely just pressed
-			# Ctrl+C, and if we send any keystrokes while Ctrl is still
-			# held, NVDA's keyboard hook will combine them (e.g.
-			# Escape → Ctrl+Escape → Windows Start Menu).
-			VK_CONTROL = 0x11
-			VK_SHIFT = 0x10
-			VK_MENU = 0x12  # Alt
-			GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
-			for _wait in range(40):  # up to ~2 seconds
-				held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
-				if not held:
-					break
-				time.sleep(0.05)
-
-			ocrLines = []
+		def _waitUntilReady():
+			_waitForModifierRelease()
 			try:
-				ocrResult = appModRef._ocrWindowAreaResult(
-					hwnd,
-					region=(
-						elLeft,
-						elTop,
-						max(elRight - elLeft, 0),
-						max(elBottom - elTop, 0),
-					),
-					sync=True,
-					timeout=2.0,
-				)
-				if ocrResult is not None and not isinstance(ocrResult, Exception):
-					ocrLines = _extractOcrLines(ocrResult)
-			except Exception as e:
-				log.debug(
-					f"LINE: failed to derive OCR bubble probes for {actionName}: {e}",
-					exc_info=True,
-				)
-			return ocrLines
+				return _getElementRuntimeId(handler.clientObject.GetFocusedElement()) == messageRuntimeId
+			except Exception:
+				return False
 
-		def _afterPreamble(ocrLines):
-			ocrLines = ocrLines or []
-			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
-				ocrLines,
-				(elLeft, elTop, elRight, elBottom),
-				winTop,
-				winBottom,
-			)
-			state["clickPositions"] = _mergeClickPositions(
-				ocrClickPositions,
-				_buildMessageBubbleClickPositions(
-					(elLeft, elTop, elRight, elBottom),
-					winTop,
-					winBottom,
-					includeVerticalOffsets=True,
+		def _openMenu(stillOnMessage):
+			if not stillOnMessage:
+				# The user moved on while the shortcut's keys were held.
+				log.debug(f"LINE: focus left the message before opening the menu for {labelKey}")
+				return
+			KeyboardInputGesture.fromName("shift+f10").send()
+			_runOnWorkerThread(
+				lambda: _chooseNativeMenuItem(
+					handler,
+					messageRuntimeId,
+					_lineLabels._MESSAGE_MENU_LABELS,
+					labelKey,
 				),
+				onDone=_afterChoice,
+				taskName="messageMenuChoice",
 			)
-			_attemptAtOffset(0)
 
-		def _attemptAtOffset(posIdx=0):
-			"""Right-click at clickPositions[posIdx] and find the menu item."""
-			clickPositions = state["clickPositions"]
-			if posIdx >= len(clickPositions):
-				ui.message(_("找不到「{actionName}」選項").format(actionName=actionName))
+		def _afterChoice(result):
+			status, itemName = result or (_MENU_NOT_OPENED, "")
+			if status == _MENU_ITEM_CLICKED:
+				# Drop the menu's own focus announcements; what LINE focuses
+				# next (the input after Reply, its dialog after Recall) follows.
+				speech.cancelSpeech()
+				ui.message(itemName)
+				if afterCallback:
+					core.callLater(500, afterCallback)
 				return
+			if status == _MENU_ITEM_NOT_FOUND:
+				KeyboardInputGesture.fromName("escape").send()
+			ui.message(_("找不到「{actionName}」選項").format(actionName=labelKey))
 
-			clickX, clickY, posLabel = clickPositions[posIdx]
-			log.info(
-				f"LINE: right-clicking message at ({clickX}, {clickY}) [{posLabel}] for {actionName}",
-			)
-			if not _messageProbePointHitsTargetElement(
-				UIAHandler.handler,
-				rawEl,
-				clickX,
-				clickY,
-				targetRuntimeId,
-			):
-				log.info(
-					f"LINE: skipping {actionName} probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
-				)
-				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
-				return
-			appModRef._rightClickAtPosition(
-				clickX,
-				clickY,
-				hwnd,
-			)
-
-			def _findAndClickMenuItem(retriesLeft=4):
-				"""Find the context menu popup and click the target item.
-
-				If the popup or menu items aren't found yet, retries up to
-				retriesLeft times with 200ms between attempts.
-				If the popup is found but has the wrong menu (target action
-				not present), dismisses it and tries the next click position.
-				"""
-				try:
-					uiaHandler = UIAHandler.handler
-					if not uiaHandler:
-						log.debug("LINE: no UIA handler")
-						return
-
-					import ctypes.wintypes as wintypes
-
-					# Find popup window via EnumThreadWindows
-					pid = wintypes.DWORD()
-					tid = ctypes.windll.user32.GetWindowThreadProcessId(
-						hwnd,
-						ctypes.byref(pid),
-					)
-					popupCandidates = []
-
-					WNDENUMPROC = ctypes.WINFUNCTYPE(
-						ctypes.c_bool,
-						wintypes.HWND,
-						wintypes.LPARAM,
-					)
-
-					def _enumCallback(enumHwnd, lParam):
-						if enumHwnd != hwnd and ctypes.windll.user32.IsWindowVisible(enumHwnd):
-							# Filter by window size to skip tooltips
-							wRect = wintypes.RECT()
-							ctypes.windll.user32.GetWindowRect(
-								enumHwnd,
-								ctypes.byref(wRect),
-							)
-							w = wRect.right - wRect.left
-							h = wRect.bottom - wRect.top
-							if w >= 50 and h >= 30:
-								popupCandidates.append(enumHwnd)
-							else:
-								log.debug(
-									f"LINE: skipping small window {enumHwnd}: {w}x{h}",
-								)
-						return True
-
-					ctypes.windll.user32.EnumThreadWindows(
-						tid,
-						WNDENUMPROC(_enumCallback),
-						0,
-					)
-
-					popupHwnd = None
-					if popupCandidates:
-						popupHwnd = popupCandidates[0]
-						log.debug(
-							f"LINE: found popup via EnumThreadWindows: "
-							f"hwnd {popupHwnd} "
-							f"(candidates: {len(popupCandidates)})",
-						)
-					else:
-						for dy in [0, -40, -80, 40, 80]:
-							pt = wintypes.POINT(clickX, clickY + dy)
-							candidateHwnd = ctypes.windll.user32.WindowFromPoint(pt)
-							if candidateHwnd and candidateHwnd != hwnd:
-								popupHwnd = candidateHwnd
-								log.debug(
-									f"LINE: found popup via WindowFromPoint offset dy={dy}: hwnd {popupHwnd}",
-								)
-								break
-
-					if not popupHwnd:
-						if retriesLeft > 0:
-							log.debug(
-								f"LINE: no popup window found, retrying ({retriesLeft} left)",
-							)
-							core.callLater(
-								200,
-								lambda: _findAndClickMenuItem(
-									retriesLeft - 1,
-								),
-							)
-							return
-						log.debug(
-							"LINE: no popup window found after all retries, trying next position",
-						)
-						core.callLater(
-							300,
-							lambda: _attemptAtOffset(
-								posIdx + 1,
-							),
-						)
-						return
-
-					log.debug(
-						f"LINE: using popup hwnd {popupHwnd}, LINE main hwnd = {hwnd}",
-					)
-
-					element = uiaHandler.clientObject.ElementFromHandle(
-						popupHwnd,
-					)
-					if not element:
-						if retriesLeft > 0:
-							log.debug(
-								f"LINE: ElementFromHandle returned nothing, retrying ({retriesLeft} left)",
-							)
-							core.callLater(
-								200,
-								lambda: _findAndClickMenuItem(
-									retriesLeft - 1,
-								),
-							)
-							return
-						log.debug(
-							"LINE: ElementFromHandle returned nothing",
-						)
-						return
-
-					# Validate popup is a real context menu,
-					# not a tooltip (ct=50033) or other junk
-					try:
-						ct = element.CurrentControlType
-						name = element.CurrentName or ""
-						eRect = element.CurrentBoundingRectangle
-						eW = int(eRect.right - eRect.left)
-						eH = int(eRect.bottom - eRect.top)
-						log.debug(
-							f"LINE: popup element: ct={ct}, "
-							f"name={name!r}, "
-							f"rect=({eRect.left},{eRect.top})-"
-							f"({eRect.right},{eRect.bottom}), "
-							f"{eW}x{eH}",
-						)
-						# Reject tooltips and tiny popups
-						if ct == 50033 or eW < 50 or eH < 30:
-							log.debug(
-								f"LINE: popup is not a context menu (ct={ct}, {eW}x{eH}), skipping",
-							)
-							# No real popup, go to next offset
-							core.callLater(
-								300,
-								lambda: _attemptAtOffset(
-									posIdx + 1,
-								),
-							)
-							return
-					except Exception:
-						pass
-
-					walker = uiaHandler.clientObject.RawViewWalker
-
-					def _getMenuItemText(item):
-						"""Extract text label from a menu item's children."""
-						try:
-							textChild = walker.GetFirstChildElement(item)
-							childIdx = 0
-							while textChild and childIdx < 10:
-								try:
-									n = textChild.CurrentName
-									if n and n.strip():
-										return n.strip()
-								except Exception:
-									pass
-								try:
-									gc = walker.GetFirstChildElement(
-										textChild,
-									)
-									gcIdx = 0
-									while gc and gcIdx < 5:
-										try:
-											gcN = gc.CurrentName
-											if gcN and gcN.strip():
-												return gcN.strip()
-										except Exception:
-											pass
-										try:
-											gc = walker.GetNextSiblingElement(
-												gc,
-											)
-										except Exception:
-											break
-										gcIdx += 1
-								except Exception:
-									pass
-								try:
-									textChild = walker.GetNextSiblingElement(
-										textChild,
-									)
-								except Exception:
-									break
-								childIdx += 1
-						except Exception:
-							pass
-						return ""
-
-					def _collectMenuItems(parent, depth=0, prefix=""):
-						"""Walk UIA tree and collect menu item elements."""
-						items = []
-						child = walker.GetFirstChildElement(parent)
-						idx = 0
-						while child and idx < 30:
-							try:
-								ct = child.CurrentControlType
-								childName = ""
-								try:
-									childName = child.CurrentName or ""
-								except Exception:
-									pass
-								childRect = child.CurrentBoundingRectangle
-								childH = int(
-									childRect.bottom - childRect.top,
-								)
-								childW = int(
-									childRect.right - childRect.left,
-								)
-								log.debug(
-									f"LINE: {prefix}child[{idx}] "
-									f"ct={ct}, name={childName!r}, "
-									f"rect=({childRect.left},"
-									f"{childRect.top})-"
-									f"({childRect.right},"
-									f"{childRect.bottom}), "
-									f"{childW}x{childH}",
-								)
-
-								if childW <= 0 or childH <= 0:
-									pass
-								elif 20 <= childH <= 80 and childW >= childH * 2:
-									itemText = _getMenuItemText(child)
-									log.debug(
-										f"LINE: {prefix}child[{idx}] menu item row, text={itemText!r}",
-									)
-									items.append((child, itemText))
-								elif childH > 80 and depth < 5:
-									log.debug(
-										f"LINE: {prefix}child[{idx}] large container, recursing",
-									)
-									subItems = _collectMenuItems(
-										child,
-										depth + 1,
-										prefix + "  ",
-									)
-									items.extend(subItems)
-								elif childH >= 20:
-									# Smaller items (e.g. 16px separators)
-									# are still big enough to detect but
-									# not clickable menu items.
-									itemText = _getMenuItemText(child)
-									items.append((child, itemText))
-							except Exception:
-								pass
-							try:
-								child = walker.GetNextSiblingElement(
-									child,
-								)
-							except Exception:
-								break
-							idx += 1
-						return items
-
-					menuItems = _collectMenuItems(element)
-					log.debug(
-						f"LINE: found {len(menuItems)} menu items: {[t for _, t in menuItems]}",
-					)
-
-					if not menuItems:
-						if retriesLeft > 0:
-							log.debug(
-								f"LINE: popup found but 0 menu items, retrying ({retriesLeft} left)",
-							)
-							core.callLater(
-								200,
-								lambda: _findAndClickMenuItem(
-									retriesLeft - 1,
-								),
-							)
-							return
-						log.debug(
-							"LINE: 0 menu items after all retries",
-						)
-
-					# Strategy 1: Match by UIA text label
-					targetItem = None
-					targetClickPoint = None
-					popupOcrResult = ""
-					for item, text in menuItems:
-						if text and actionName in text:
-							targetItem = item
-							log.info(
-								f"LINE: matched menu item '{actionName}' by UIA text: {text!r}",
-							)
-							break
-
-					# Strategy 2: OCR the entire popup window
-					# Run OCR BEFORE offset matching to verify the
-					# menu actually contains the target action.
-					if not targetItem and menuItems:
-						log.debug(
-							"LINE: no UIA text match, trying whole-popup OCR",
-						)
-						try:
-							popupRect = element.CurrentBoundingRectangle
-							popupW = int(popupRect.right - popupRect.left)
-							popupH = int(popupRect.bottom - popupRect.top)
-							if popupW > 0 and popupH > 0:
-								popupRectTuple = (
-									int(popupRect.left),
-									int(popupRect.top),
-									int(popupRect.right),
-									int(popupRect.bottom),
-								)
-								popupRowRects = _collectPopupMenuRowRects(
-									popupHwnd,
-									popupRectTuple,
-								)
-								ocrResult = appModRef._ocrWindowAreaResult(
-									popupHwnd,
-									region=(
-										int(popupRect.left),
-										int(popupRect.top),
-										popupW,
-										popupH,
-									),
-									sync=True,
-									timeout=3.0,
-								)
-								ocrText = ""
-								popupOcrLines = []
-								if ocrResult is not None and not isinstance(ocrResult, Exception):
-									ocrText = getattr(ocrResult, "text", "") or ""
-									ocrText = _removeCJKSpaces(ocrText.strip())
-									popupOcrLines = _extractOcrLines(ocrResult)
-								popupOcrResult = ocrText
-								log.debug(
-									f"LINE: popup OCR result: {ocrText!r}",
-								)
-								ocrTarget = _resolvePopupMenuLabelClickPoint(
-									actionName,
-									popupOcrLines,
-									popupRectTuple,
-									popupRowRects=popupRowRects,
-								)
-								if ocrTarget:
-									targetClickPoint = ocrTarget["clickPoint"]
-									log.info(
-										f"LINE: matched '{actionName}' via popup OCR rows, "
-										f"item {ocrTarget['index'] + 1}/{ocrTarget['count']}",
-									)
-						except Exception as e:
-							log.debug(
-								f"LINE: popup OCR failed: {e}",
-							)
-
-					# Strategy 1.5: Offset-based position matching
-					# Use reference offsets from the right-click point
-					# to estimate which menu item is the target,
-					# verified against actual UIA bounding rects.
-					# Only if OCR confirmed the action is in the menu.
-					if (
-						not targetItem
-						and not targetClickPoint
-						and menuItems
-						and len(menuItems) >= 3
-						and actionName in appModRef._MENU_OFFSETS
-						and popupOcrResult
-						and actionName in popupOcrResult
-					):
-						dx, dy = appModRef._MENU_OFFSETS[actionName]
-						scale = _getDpiScale(hwnd)
-						offsetX = clickX + int(dx * scale)
-						offsetY = clickY + int(dy * scale)
-						log.debug(
-							f"LINE: trying offset-based match "
-							f"for '{actionName}': click=("
-							f"{clickX},{clickY}) + "
-							f"offset({dx},{dy})*{scale:.2f} "
-							f"= ({offsetX},{offsetY})",
-						)
-						for item, text in menuItems:
-							try:
-								iR = item.CurrentBoundingRectangle
-								if iR.left <= offsetX <= iR.right and iR.top <= offsetY <= iR.bottom:
-									targetItem = item
-									log.info(
-										f"LINE: matched "
-										f"'{actionName}' by "
-										f"offset at "
-										f"({offsetX},"
-										f"{offsetY}) "
-										f"within rect "
-										f"({iR.left},"
-										f"{iR.top})-"
-										f"({iR.right},"
-										f"{iR.bottom})",
-									)
-									break
-							except Exception:
-								pass
-
-					if targetItem or targetClickPoint:
-						# Click the target item
-						if targetClickPoint:
-							itemCx, itemCy = targetClickPoint
-						else:
-							iRect = targetItem.CurrentBoundingRectangle
-							itemCx = int(
-								(iRect.left + iRect.right) / 2,
-							)
-							itemCy = int(
-								(iRect.top + iRect.bottom) / 2,
-							)
-						log.info(
-							f"LINE: clicking menu item '{actionName}' at ({itemCx}, {itemCy})",
-						)
-						_sendMouseClick(itemCx, itemCy)
-						log.info(
-							f"LINE: context menu '{actionName}' selected",
-						)
-						ui.message(actionName)
-						# Context menu auto-dismisses after
-						# clicking a menu item. No Escape needed.
-						if afterCallback:
-							core.callLater(500, afterCallback)
-					else:
-						# Wrong menu (target item not found).
-						# Dismiss the popup first.
-						log.debug(
-							f"LINE: wrong menu at [{posLabel}], dismissing",
-						)
-						from keyboardHandler import (
-							KeyboardInputGesture,
-						)
-
-						KeyboardInputGesture.fromName(
-							"escape",
-						).send()
-						# Got wrong menu (≤2 items = 全選 or
-						# 背景設定). After the dedicated edge/padding
-						# probes are exhausted, bail; otherwise try
-						# the next position.
-						isSelectAll = len(menuItems) <= 2
-						if isSelectAll and _hasExhaustedMessageBubbleFallbackProbes(
-							posIdx,
-							clickPositions,
-						):
-							log.info(
-								f"LINE: wrong menu (≤2) seen again at [{posLabel}], skipping to end",
-							)
-							core.callLater(
-								300,
-								lambda: _attemptAtOffset(
-									len(clickPositions),
-								),
-							)
-						else:
-							log.info(
-								f"LINE: '{actionName}' not found at [{posLabel}], trying next position",
-							)
-							core.callLater(
-								300,
-								lambda: _attemptAtOffset(
-									posIdx + 1,
-								),
-							)
-
-				except Exception as e:
-					log.debug(
-						f"LINE: context menu detection failed: {e}",
-						exc_info=True,
-					)
-					try:
-						from keyboardHandler import (
-							KeyboardInputGesture,
-						)
-
-						KeyboardInputGesture.fromName(
-							"escape",
-						).send()
-					except Exception:
-						pass
-
-			# Wait for context menu to appear, then find and click
-			core.callLater(300, _findAndClickMenuItem)
-
-		# Modifier-key wait + initial bubble OCR block for up to ~4 s total,
-		# so run them on a worker thread; resume the click chain on the main
-		# thread once they finish.
-		_runOnWorkerThread(_preamble, onDone=_afterPreamble, taskName="contextMenuPreamble")
+		_runOnWorkerThread(_waitUntilReady, onDone=_openMenu, taskName="messageMenuWait")
 
 	@script(
 		gesture="kb:NVDA+windows+r",
@@ -8845,8 +6487,8 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_replyMessage(self, gesture):
-		"""Reply to the current message via right-click context menu."""
-		self._contextMenuAction(0, "回覆")
+		"""Reply to the current message via LINE's context menu."""
+		self._nativeMessageMenuAction("回覆")
 
 	@script(
 		gesture="kb:control+c",
@@ -8854,28 +6496,25 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_copyMessage(self, gesture):
-		"""Copy the current message via right-click context menu.
+		"""Copy the current message via LINE's context menu.
 
-		Only activates in message list context.
-		In edit fields, passes Control+C through normally.
-
-		NOTE: We check the actual UIA focused element, not NVDA's
-		focus object (api.getFocusObject()).  LINE builds before
-		26.6.0.4004 did not fire UIA focus change events during
-		Tab/arrow navigation, so NVDA's focus object could be stale
-		there; the raw UIA focus is right on every version.
+		Edit fields and buttons (chat list items, toolbar buttons) get a normal
+		Control+C, as does everything while a file dialog has the add-on paused.
 		"""
+		if _suppressAddon:
+			gesture.send()
+			return
 		try:
-			handler = UIAHandler.handler
-			rawEl = handler.clientObject.GetFocusedElement()
-			if rawEl:
-				ct = rawEl.CurrentControlType
-				if ct == 50004:  # Edit control
-					gesture.send()
-					return
+			rawEl = UIAHandler.handler.clientObject.GetFocusedElement()
+			if rawEl and rawEl.CurrentControlType in (
+				_UIA_EDIT_CONTROL_TYPE_ID,
+				_UIA_BUTTON_CONTROL_TYPE_ID,
+			):
+				gesture.send()
+				return
 		except Exception:
 			pass
-		self._contextMenuAction(1, "複製")
+		self._nativeMessageMenuAction("複製")
 
 	@script(
 		gesture="kb:NVDA+windows+k",
@@ -8883,14 +6522,14 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_saveAsMessage(self, gesture):
-		"""Save the current message via right-click context menu (Save As)."""
+		"""Save the current message (file, image, voice) via LINE's context menu."""
 		if _suppressAddon:
 			return
 
 		def _afterSaveAs():
 			self._suppressAddonForFileDialog("Save As selected")
 
-		self._contextMenuAction(0, "另存新檔", afterCallback=_afterSaveAs)
+		self._nativeMessageMenuAction("另存新檔", afterCallback=_afterSaveAs)
 
 	@script(
 		gesture="kb:NVDA+windows+i",
@@ -9144,1493 +6783,12 @@ class AppModule(appModuleHandler.AppModule):
 		category=SCRIPT_CATEGORY,
 	)
 	def script_recallMessage(self, gesture):
-		"""Recall (unsend) the current message via right-click context menu.
+		"""Recall (unsend) the current message via LINE's context menu.
 
-		After selecting recall, LINE shows a confirmation dialog.
-		We speak a prompt and wait for user to press Y (recall),
-		N (cancel), or P (stealth recall, requires Premium).
+		LINE then shows its own confirmation dialog, which takes the focus and
+		is fully readable, so the add-on leaves it to NVDA.
 		"""
-		self._contextMenuAction(
-			3,
-			"收回",
-			afterCallback=self._watchForRecallConfirmationDialog,
-		)
-
-	def _getRecallConfirmationDialogRect(self, hwnd):
-		"""Return the centered screen rect that contains the LINE recall dialog."""
-		return self._getCenteredLineDialogRect(hwnd)
-
-	def _getCenteredLineDialogRect(self, hwnd):
-		"""Return a centered screen rect that covers LINE's modal dialogs."""
-		try:
-			winRect = ctypes.wintypes.RECT()
-			ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(winRect))
-			winW = int(winRect.right - winRect.left)
-			winH = int(winRect.bottom - winRect.top)
-			if winW <= 0 or winH <= 0:
-				return None
-
-			scale = _getDpiScale(hwnd)
-			dialogW = min(int(winW * 0.82), int(520 * scale))
-			dialogH = min(int(winH * 0.74), int(430 * scale))
-			dialogW = max(dialogW, int(min(winW, 320 * scale)))
-			dialogH = max(dialogH, int(min(winH, 180 * scale)))
-			dialogLeft = int(winRect.left + (winW - dialogW) / 2)
-			dialogTop = int(winRect.top + (winH - dialogH) / 2)
-			return (
-				dialogLeft,
-				dialogTop,
-				dialogLeft + dialogW,
-				dialogTop + dialogH,
-			)
-		except Exception as e:
-			log.debug(f"LINE: failed to calculate centered dialog rect: {e}", exc_info=True)
-			return None
-
-	def _getPhotoTextConsentDialogRect(self, hwnd):
-		"""Return the centered screen rect that contains the photo consent dialog."""
-		return self._getCenteredLineDialogRect(hwnd)
-
-	def _captureRecallConfirmationState(self):
-		"""Capture OCR and UIA state for the currently visible recall dialog."""
-		state = {
-			"hwnd": None,
-			"dialogRect": None,
-			"ocrText": "",
-			"actionLabels": [],
-			"targets": {},
-			"isModernDialog": False,
-		}
-		try:
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			if not hwnd:
-				return state
-
-			dialogRect = self._getRecallConfirmationDialogRect(hwnd)
-			if not dialogRect:
-				return state
-
-			left, top, right, bottom = dialogRect
-			ocrResult = self._ocrWindowAreaResult(
-				hwnd,
-				region=(left, top, right - left, bottom - top),
-				sync=True,
-				timeout=2.0,
-			)
-			ocrText = ""
-			ocrLines = []
-			if ocrResult is not None and not isinstance(ocrResult, Exception):
-				ocrText = _removeCJKSpaces(
-					(getattr(ocrResult, "text", "") or "").strip(),
-				)
-				ocrLines = _extractOcrLines(ocrResult)
-			actionLabels = _extractRecallDialogActionLabels(ocrText)
-			isModernDialog = _isModernRecallDialogText(ocrText, actionLabels)
-			ocrActionTargets = _extractRecallDialogActionClickPoints(ocrLines, dialogRect)
-
-			targetMatches = {}
-			handler = UIAHandler.handler
-			client = getattr(handler, "clientObject", None)
-			if client:
-				rootEl = client.ElementFromHandle(hwnd)
-				if rootEl:
-					allElements = self._collectAllElements(rootEl, handler)
-					dialogCenterY = (top + bottom) / 2
-					filteredElements = []
-					geometryCandidates = []
-
-					def _considerTarget(label, element, rectTuple):
-						rectWidth = rectTuple[2] - rectTuple[0]
-						rectHeight = rectTuple[3] - rectTuple[1]
-						if rectWidth <= 0 or rectHeight <= 0:
-							return
-
-						hasInvoke = 0
-						try:
-							hasInvoke = 1 if element.GetCurrentPattern(10000) else 0
-						except Exception:
-							pass
-
-						score = (
-							hasInvoke,
-							rectWidth * rectHeight,
-							-abs(((rectTuple[1] + rectTuple[3]) / 2) - dialogCenterY),
-						)
-						current = targetMatches.get(label)
-						if current is None or score > current["score"]:
-							targetMatches[label] = {
-								"score": score,
-								"element": element,
-								"rect": rectTuple,
-							}
-
-					for element in allElements:
-						try:
-							rect = element.CurrentBoundingRectangle
-							rectTuple = (
-								int(rect.left),
-								int(rect.top),
-								int(rect.right),
-								int(rect.bottom),
-							)
-						except Exception:
-							continue
-
-						if (
-							rectTuple[2] <= rectTuple[0]
-							or rectTuple[3] <= rectTuple[1]
-							or not _rectsIntersect(rectTuple, dialogRect)
-						):
-							continue
-
-						filteredElements.append(element)
-						controlType = 0
-						try:
-							controlType = element.CurrentControlType
-						except Exception:
-							pass
-						hasInvoke = False
-						try:
-							pattern = element.GetCurrentPattern(10000)
-							hasInvoke = bool(pattern)
-						except Exception:
-							pass
-						geometryCandidates.append(
-							{
-								"element": element,
-								"rect": rectTuple,
-								"controlType": controlType,
-								"hasInvoke": hasInvoke,
-							},
-						)
-						candidateTexts = []
-						try:
-							name = element.CurrentName or ""
-							if name:
-								candidateTexts.append(name)
-						except Exception:
-							pass
-						try:
-							helpText = str(element.GetCurrentPropertyValue(30048) or "")
-							if helpText:
-								candidateTexts.append(helpText)
-						except Exception:
-							pass
-						try:
-							autoId = element.CurrentAutomationId or ""
-							if autoId:
-								candidateTexts.append(autoId)
-						except Exception:
-							pass
-
-						for candidateText in candidateTexts:
-							label = _matchRecallDialogActionLabel(candidateText)
-							if label:
-								_considerTarget(label, element, rectTuple)
-								break
-
-					for label, includeKeywords, excludeKeywords in (
-						("無痕收回", ["無痕收回"], []),
-						("收回", ["收回"], ["無痕"]),
-						("取消", ["取消", "關閉", "关闭"], []),
-					):
-						if label in targetMatches or not filteredElements:
-							continue
-						element = self._findButtonByKeywords(
-							filteredElements,
-							includeKeywords,
-							excludeKeywords,
-						)
-						if not element:
-							continue
-						try:
-							rect = element.CurrentBoundingRectangle
-							rectTuple = (
-								int(rect.left),
-								int(rect.top),
-								int(rect.right),
-								int(rect.bottom),
-							)
-						except Exception:
-							continue
-						if _rectsIntersect(rectTuple, dialogRect):
-							_considerTarget(label, element, rectTuple)
-
-					for label, candidate in _inferRecallDialogTargetsByGeometry(
-						geometryCandidates,
-						dialogRect,
-						actionLabels,
-						isModernDialog=isModernDialog,
-					).items():
-						if label in targetMatches:
-							continue
-						targetMatches[label] = {
-							"score": candidate.get("score", ()),
-							"element": candidate["element"],
-							"rect": candidate["rect"],
-						}
-
-			stateTargets = {}
-			for label, target in targetMatches.items():
-				stateTargets[label] = {
-					"element": target["element"],
-					"rect": target["rect"],
-					"clickPoint": None,
-				}
-			for label, ocrTarget in ocrActionTargets.items():
-				targetInfo = stateTargets.setdefault(
-					label,
-					{
-						"element": None,
-						"rect": None,
-						"clickPoint": None,
-					},
-				)
-				if targetInfo.get("rect") is None and ocrTarget.get("rect") is not None:
-					targetInfo["rect"] = ocrTarget["rect"]
-				if ocrTarget.get("clickPoint") is not None:
-					targetInfo["clickPoint"] = ocrTarget["clickPoint"]
-
-			state.update(
-				{
-					"hwnd": hwnd,
-					"dialogRect": dialogRect,
-					"ocrText": ocrText,
-					"actionLabels": actionLabels,
-					"targets": stateTargets,
-					"isModernDialog": isModernDialog,
-				},
-			)
-			ocrTargetSummary = {
-				label: target["clickPoint"] for label, target in sorted(ocrActionTargets.items())
-			}
-			log.debug(
-				f"LINE: recall dialog state labels={actionLabels}, "
-				f"targets={sorted(state['targets'])}, "
-				f"ocrTargets={ocrTargetSummary}, "
-				f"modern={isModernDialog}",
-			)
-		except Exception as e:
-			log.debug(f"LINE: capture recall confirmation state failed: {e}", exc_info=True)
-
-		return state
-
-	def _refreshRecallConfirmationState(self):
-		"""Merge fresh recall-dialog state into the pending confirmation session."""
-		state = self._captureRecallConfirmationState()
-		storedActions = set(getattr(self, "_recallDialogActions", ()) or ())
-		storedTargets = dict(getattr(self, "_recallDialogTargets", {}) or {})
-		storedRect = getattr(self, "_recallDialogRect", None)
-		storedHwnd = getattr(self, "_recallDialogHwnd", None)
-		storedModern = bool(getattr(self, "_recallDialogIsModern", False))
-
-		mergedActions = storedActions | set(state["actionLabels"]) | set(state["targets"])
-		if state["targets"]:
-			for label, freshTarget in state["targets"].items():
-				mergedTarget = dict(storedTargets.get(label, {}) or {})
-				for key in ("element", "rect", "clickPoint"):
-					value = freshTarget.get(key)
-					if value is not None:
-						mergedTarget[key] = value
-				storedTargets[label] = mergedTarget
-
-		self._recallDialogActions = mergedActions
-		self._recallDialogTargets = storedTargets
-		self._recallDialogRect = state["dialogRect"] or storedRect
-		self._recallDialogHwnd = state["hwnd"] or storedHwnd
-		self._recallDialogIsModern = storedModern or state["isModernDialog"]
-
-		return {
-			"hwnd": self._recallDialogHwnd,
-			"dialogRect": self._recallDialogRect,
-			"ocrText": state["ocrText"],
-			"actionLabels": list(self._recallDialogActions),
-			"targets": self._recallDialogTargets,
-			"isModernDialog": self._recallDialogIsModern,
-		}
-
-	def _beginRecallConfirmation(self):
-		"""Ask for recall confirmation in a standard NVDA message dialog.
-
-		The dialog-state capture does screen OCR (seconds), so it runs on a
-		worker thread; showing the dialog continues on the main thread.
-		"""
-
-		def _afterState(state):
-			if not state:
-				return
-			from ._confirmationDialogs import openRecallConfirmationDialog
-
-			if not getattr(self, "_recallPending", False):
-				self._recallConfirmationToken = getattr(self, "_recallConfirmationToken", 0) + 1
-				self._recallPending = True
-			# When a second detection races the first, the dialog is already up;
-			# opening it again just raises and focuses it.
-			openRecallConfirmationDialog(
-				_getRecallConfirmationPrompt(
-					state["actionLabels"],
-					isModernDialog=state["isModernDialog"],
-				),
-				state["actionLabels"],
-				self._onRecallConfirmationChoice,
-				onFailed=self._onRecallConfirmationDialogFailed,
-			)
-
-		_runOnWorkerThread(
-			self._refreshRecallConfirmationState,
-			onDone=_afterState,
-			taskName="recallConfirmationState",
-		)
-
-	def _onRecallConfirmationChoice(self, actionName):
-		"""Act on the button the user chose in the recall confirmation dialog.
-
-		Acting on LINE's own dialog re-OCRs it, so let the screen repaint after
-		our dialog closes; otherwise the screenshot still has it covering LINE.
-		"""
-		core.callLater(150, lambda: self._endRecallConfirmation(actionName))
-
-	def _onRecallConfirmationDialogFailed(self):
-		"""Release the pending recall when its dialog could not be shown.
-
-		LINE's own dialog is left alone; the user can answer it directly. What
-		must not happen is the pending flag staying set, which would make every
-		later recall silently do nothing.
-		"""
-		self._clearRecallConfirmationState()
-		# Translators: Announced when the recall confirmation dialog cannot be opened.
-		ui.message(_("無法開啟收回確認對話框，請直接操作 LINE 的確認視窗"))
-
-	def _isRecallConfirmationDialogVisible(self):
-		"""Return True when the centered LINE recall confirmation dialog is visible."""
-		try:
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			if not hwnd:
-				return False
-
-			dialogRect = self._getRecallConfirmationDialogRect(hwnd)
-			if not dialogRect:
-				return False
-
-			dialogLeft, dialogTop, dialogRight, dialogBottom = dialogRect
-
-			ocrText = self._ocrWindowArea(
-				hwnd,
-				region=(
-					dialogLeft,
-					dialogTop,
-					dialogRight - dialogLeft,
-					dialogBottom - dialogTop,
-				),
-				sync=True,
-				timeout=2.0,
-			)
-			ocrText = _removeCJKSpaces((ocrText or "").strip())
-			normalizedLines = [line.replace(" ", "") for line in ocrText.splitlines() if line.strip()]
-			normalizedText = "".join(normalizedLines)
-			actionLabels = _extractRecallDialogActionLabels(ocrText)
-			actionSet = set(actionLabels)
-			isModernDialog = _isModernRecallDialogText(ocrText, actionLabels)
-			hasButtons = {"收回", "取消"}.issubset(actionSet) or (
-				"收回" in normalizedText and any(label in actionSet for label in {"取消", "無痕收回"})
-			)
-			hasRecallBody = any(
-				keyword in normalizedText
-				for keyword in (
-					"確定要收回訊息嗎",
-					"收回訊息",
-					"未讀訊息",
-					"任何提醒",
-					"可能無法",
-					"聊天室",
-					"對方",
-					"line版本",
-				)
-			)
-			looksLikeCompactDialog = len(normalizedLines) <= 4 and {"收回", "取消"}.issubset(actionSet)
-			log.debug(
-				f"LINE: recall confirmation OCR: text={ocrText!r}, "
-				f"normalizedLines={normalizedLines}, actions={actionLabels}, "
-				f"modern={isModernDialog}",
-			)
-			return hasButtons and (hasRecallBody or looksLikeCompactDialog or isModernDialog)
-		except Exception as e:
-			log.debug(f"LINE: recall confirmation detection failed: {e}", exc_info=True)
-			return False
-
-	def _watchForRecallConfirmationDialog(self, retriesLeft=6, delayMs=250):
-		"""Poll briefly for the LINE recall confirmation dialog, then ask for confirmation."""
-		watchId = getattr(self, "_recallDialogWatchId", 0) + 1
-		self._recallDialogWatchId = watchId
-
-		def _poll(remaining):
-			if watchId != getattr(self, "_recallDialogWatchId", 0):
-				return
-			if getattr(self, "_recallPending", False):
-				return
-			try:
-				foreground = api.getForegroundObject()
-				if not foreground or foreground.appModule.appName != "line":
-					return
-			except Exception:
-				return
-
-			def _afterVisible(visible):
-				if watchId != getattr(self, "_recallDialogWatchId", 0):
-					return
-				if getattr(self, "_recallPending", False):
-					return
-				if visible:
-					self._beginRecallConfirmation()
-					return
-				if remaining > 0:
-					core.callLater(delayMs, lambda: _poll(remaining - 1))
-
-			# The visibility check OCRs the dialog (up to 2 s); keep it off
-			# the main thread so polling never freezes NVDA.
-			_runOnWorkerThread(
-				self._isRecallConfirmationDialogVisible,
-				onDone=_afterVisible,
-				taskName="recallDialogVisibility",
-			)
-
-		core.callLater(delayMs, lambda: _poll(retriesLeft))
-
-	def _handleMessageContextMenuAction(self, actionName):
-		"""React to actions chosen from the message context virtual window."""
-		if actionName == "收回":
-			self._watchForRecallConfirmationDialog()
-		elif actionName == "轉為文字":
-			self._watchForPhotoTextConsentDialog()
-
-	def _clearRecallConfirmationState(self):
-		"""Clear the pending recall confirmation and its cached dialog state."""
-		self._recallPending = False
-		self._recallActionInProgress = False
-		self._recallDialogActions = set()
-		self._recallDialogTargets = {}
-		self._recallDialogRect = None
-		self._recallDialogHwnd = None
-		self._recallDialogIsModern = False
-
-	def _performRecallConfirmationAction(self, actionName):
-		"""Activate a specific action on the current recall confirmation dialog."""
-		state = self._refreshRecallConfirmationState()
-		targetInfo = state["targets"].get(actionName)
-		isCompactModernDialog = _isCompactModernRecallDialog(
-			state.get("actionLabels"),
-			isModernDialog=state["isModernDialog"],
-		)
-
-		def _clickFallbackPoint():
-			fallbackPoint = _getRecallDialogFallbackClickPoint(
-				actionName,
-				state["dialogRect"],
-				isModernDialog=state["isModernDialog"],
-				availableActions=state.get("actionLabels"),
-			)
-			if not fallbackPoint:
-				return False
-			self._clickAtPosition(
-				fallbackPoint[0],
-				fallbackPoint[1],
-				hwnd=state["hwnd"],
-			)
-			log.info(
-				f"LINE: fallback-clicking recall dialog action '{actionName}' "
-				f"at ({fallbackPoint[0]}, {fallbackPoint[1]})",
-			)
-			return True
-
-		if targetInfo:
-			clickPoint = targetInfo.get("clickPoint")
-			if clickPoint:
-				log.info(
-					f"LINE: OCR-clicking recall dialog action '{actionName}' "
-					f"at ({clickPoint[0]}, {clickPoint[1]})",
-				)
-				self._clickAtPosition(
-					clickPoint[0],
-					clickPoint[1],
-					hwnd=state["hwnd"],
-				)
-				return True
-			if isCompactModernDialog and actionName == "收回" and _clickFallbackPoint():
-				return True
-			element = targetInfo.get("element")
-			if element and self._invokeElement(element, actionName, announce=False):
-				return True
-			rect = targetInfo.get("rect")
-			if rect:
-				self._clickAtPosition(
-					int((rect[0] + rect[2]) / 2),
-					int((rect[1] + rect[3]) / 2),
-					hwnd=state["hwnd"],
-				)
-				return True
-
-		if _clickFallbackPoint():
-			return True
-
-		if actionName == "取消":
-			from keyboardHandler import KeyboardInputGesture
-
-			KeyboardInputGesture.fromName("escape").send()
-			return True
-
-		if actionName == "收回":
-			_queueUiMessage(_("找不到收回按鈕"))
-			return False
-
-		if actionName == "無痕收回":
-			_queueUiMessage(_("找不到無痕收回按鈕，需要 Premium"))
-			return False
-
-		return False
-
-	def _scheduleRecallCompletionAnnouncement(self, actionName, token):
-		"""Verify the dialog closed before announcing the recall result."""
-
-		def _finish():
-			if getattr(self, "_recallConfirmationToken", 0) != token:
-				return
-
-			def _afterVisible(stillVisible):
-				if getattr(self, "_recallConfirmationToken", 0) != token:
-					return
-				self._clearRecallConfirmationState()
-				if stillVisible:
-					if actionName == "無痕收回":
-						ui.message(_("無痕收回可能未成功"))
-					elif actionName == "收回":
-						ui.message(_("收回可能未成功"))
-					else:
-						ui.message(_("取消可能未成功"))
-					return
-
-				if actionName == "無痕收回":
-					ui.message(_("已無痕收回"))
-				elif actionName == "收回":
-					ui.message(_("已收回"))
-				else:
-					ui.message(_("已取消"))
-
-			# Visibility re-check OCRs the dialog; keep it off the main thread.
-			_runOnWorkerThread(
-				self._isRecallConfirmationDialogVisible,
-				onDone=_afterVisible,
-				taskName="recallCompletionCheck",
-			)
-
-		core.callLater(650, _finish)
-
-	def _endRecallConfirmation(self, actionName):
-		"""End the recall confirmation by activating the requested dialog action.
-
-		The action performer re-OCRs the dialog, so it runs on a worker
-		thread. A failure must never leave the pending flags stuck, or the next
-		recall attempt is ignored.
-		"""
-		if not getattr(self, "_recallPending", False) or getattr(self, "_recallActionInProgress", False):
-			return
-		self._recallActionInProgress = True
-
-		def _afterPerform(performed):
-			if performed is None:
-				# The worker raised; reset everything so recall works again.
-				self._clearRecallConfirmationState()
-				return
-			if not performed:
-				self._recallActionInProgress = False
-				return
-			token = getattr(self, "_recallConfirmationToken", 0)
-			self._scheduleRecallCompletionAnnouncement(actionName, token)
-
-		_runOnWorkerThread(
-			lambda: bool(self._performRecallConfirmationAction(actionName)),
-			onDone=_afterPerform,
-			taskName="recallConfirmationAction",
-		)
-
-	def _capturePhotoTextConsentState(self):
-		"""Capture OCR and UIA state for the first-run photo-to-text consent dialog."""
-		state = {
-			"hwnd": None,
-			"dialogRect": None,
-			"ocrText": "",
-			"actionLabels": [],
-			"targets": {},
-		}
-		try:
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-			if not hwnd:
-				return state
-
-			dialogRect = self._getPhotoTextConsentDialogRect(hwnd)
-			if not dialogRect:
-				return state
-
-			left, top, right, bottom = dialogRect
-			ocrResult = self._ocrWindowAreaResult(
-				hwnd,
-				region=(left, top, right - left, bottom - top),
-				sync=True,
-				timeout=2.0,
-			)
-			ocrText = ""
-			ocrLines = []
-			if ocrResult is not None and not isinstance(ocrResult, Exception):
-				ocrText = _removeCJKSpaces(
-					(getattr(ocrResult, "text", "") or "").strip(),
-				)
-				ocrLines = _extractOcrLines(ocrResult)
-			actionLabels = _extractPhotoTextConsentActionLabels(ocrText)
-			ocrActionTargets = _extractPhotoTextConsentActionClickPoints(
-				ocrLines,
-				dialogRect,
-			)
-
-			targetMatches = {}
-			handler = UIAHandler.handler
-			client = getattr(handler, "clientObject", None)
-			if client:
-				rootEl = client.ElementFromHandle(hwnd)
-				if rootEl:
-					allElements = self._collectAllElements(rootEl, handler)
-					dialogWidth = right - left
-					dialogHeight = bottom - top
-					expectedCenterY = top + (dialogHeight * 0.79)
-					preferredCenterX = {
-						"同意": left + (dialogWidth * 0.38),
-						"不同意": left + (dialogWidth * 0.62),
-					}
-					filteredElements = []
-
-					def _considerTarget(label, element, rectTuple):
-						rectWidth = rectTuple[2] - rectTuple[0]
-						rectHeight = rectTuple[3] - rectTuple[1]
-						if rectWidth <= 0 or rectHeight <= 0:
-							return
-
-						hasInvoke = 0
-						try:
-							hasInvoke = 1 if element.GetCurrentPattern(10000) else 0
-						except Exception:
-							pass
-
-						centerX = (rectTuple[0] + rectTuple[2]) / 2.0
-						centerY = (rectTuple[1] + rectTuple[3]) / 2.0
-						score = (
-							hasInvoke,
-							1 if centerY >= (top + (dialogHeight * 0.55)) else 0,
-							-abs(centerX - preferredCenterX[label]),
-							-abs(centerY - expectedCenterY),
-							rectWidth * rectHeight,
-						)
-						current = targetMatches.get(label)
-						if current is None or score > current["score"]:
-							targetMatches[label] = {
-								"score": score,
-								"element": element,
-								"rect": rectTuple,
-							}
-
-					for element in allElements:
-						try:
-							rect = element.CurrentBoundingRectangle
-							rectTuple = (
-								int(rect.left),
-								int(rect.top),
-								int(rect.right),
-								int(rect.bottom),
-							)
-						except Exception:
-							continue
-
-						if (
-							rectTuple[2] <= rectTuple[0]
-							or rectTuple[3] <= rectTuple[1]
-							or not _rectsIntersect(rectTuple, dialogRect)
-						):
-							continue
-
-						filteredElements.append(element)
-						candidateTexts = []
-						try:
-							name = element.CurrentName or ""
-							if name:
-								candidateTexts.append(name)
-						except Exception:
-							pass
-						try:
-							helpText = str(element.GetCurrentPropertyValue(30048) or "")
-							if helpText:
-								candidateTexts.append(helpText)
-						except Exception:
-							pass
-						try:
-							autoId = element.CurrentAutomationId or ""
-							if autoId:
-								candidateTexts.append(autoId)
-						except Exception:
-							pass
-
-						for candidateText in candidateTexts:
-							label = _matchPhotoTextConsentActionLabel(candidateText)
-							if label:
-								_considerTarget(label, element, rectTuple)
-								break
-
-					for label, includeKeywords, excludeKeywords in (
-						("同意", ["同意"], ["提供照片", "服務規定"]),
-						("不同意", ["不同意"], []),
-					):
-						if label in targetMatches or not filteredElements:
-							continue
-						element = self._findButtonByKeywords(
-							filteredElements,
-							includeKeywords,
-							excludeKeywords,
-						)
-						if not element:
-							continue
-						try:
-							rect = element.CurrentBoundingRectangle
-							rectTuple = (
-								int(rect.left),
-								int(rect.top),
-								int(rect.right),
-								int(rect.bottom),
-							)
-						except Exception:
-							continue
-						if _rectsIntersect(rectTuple, dialogRect):
-							_considerTarget(label, element, rectTuple)
-
-			stateTargets = {}
-			for label, target in targetMatches.items():
-				stateTargets[label] = {
-					"element": target["element"],
-					"rect": target["rect"],
-					"clickPoint": None,
-				}
-			for label, ocrTarget in ocrActionTargets.items():
-				targetInfo = stateTargets.setdefault(
-					label,
-					{
-						"element": None,
-						"rect": None,
-						"clickPoint": None,
-					},
-				)
-				if targetInfo.get("rect") is None and ocrTarget.get("rect") is not None:
-					targetInfo["rect"] = ocrTarget["rect"]
-				if ocrTarget.get("clickPoint") is not None:
-					targetInfo["clickPoint"] = ocrTarget["clickPoint"]
-
-			state.update(
-				{
-					"hwnd": hwnd,
-					"dialogRect": dialogRect,
-					"ocrText": ocrText,
-					"actionLabels": actionLabels,
-					"targets": stateTargets,
-				},
-			)
-			ocrTargetSummary = {
-				label: target["clickPoint"] for label, target in sorted(ocrActionTargets.items())
-			}
-			log.debug(
-				f"LINE: photo consent dialog state labels={actionLabels}, "
-				f"targets={sorted(state['targets'])}, "
-				f"ocrTargets={ocrTargetSummary}",
-			)
-		except Exception as e:
-			log.debug(f"LINE: capture photo consent dialog state failed: {e}", exc_info=True)
-
-		return state
-
-	def _refreshPhotoTextConsentState(self):
-		"""Merge fresh photo-consent dialog state into the pending session."""
-		state = self._capturePhotoTextConsentState()
-		storedActions = set(getattr(self, "_photoTextConsentDialogActions", ()) or ())
-		storedTargets = dict(getattr(self, "_photoTextConsentDialogTargets", {}) or {})
-		storedRect = getattr(self, "_photoTextConsentDialogRect", None)
-		storedHwnd = getattr(self, "_photoTextConsentDialogHwnd", None)
-
-		mergedActions = storedActions | set(state["actionLabels"]) | set(state["targets"])
-		if state["targets"]:
-			for label, freshTarget in state["targets"].items():
-				mergedTarget = dict(storedTargets.get(label, {}) or {})
-				for key in ("element", "rect", "clickPoint"):
-					value = freshTarget.get(key)
-					if value is not None:
-						mergedTarget[key] = value
-				storedTargets[label] = mergedTarget
-
-		self._photoTextConsentDialogActions = mergedActions
-		self._photoTextConsentDialogTargets = storedTargets
-		self._photoTextConsentDialogRect = state["dialogRect"] or storedRect
-		self._photoTextConsentDialogHwnd = state["hwnd"] or storedHwnd
-
-		return {
-			"hwnd": self._photoTextConsentDialogHwnd,
-			"dialogRect": self._photoTextConsentDialogRect,
-			"ocrText": state["ocrText"],
-			"actionLabels": list(self._photoTextConsentDialogActions),
-			"targets": self._photoTextConsentDialogTargets,
-		}
-
-	def _beginPhotoTextConsent(self):
-		"""Ask for photo upload consent in a standard NVDA message dialog.
-
-		The dialog-state capture does screen OCR (seconds), so it runs on a
-		worker thread; showing the dialog continues on the main thread.
-		"""
-
-		def _afterState(state):
-			from ._confirmationDialogs import openPhotoTextConsentDialog
-
-			if not getattr(self, "_photoTextConsentPending", False):
-				self._photoTextConsentToken = getattr(self, "_photoTextConsentToken", 0) + 1
-				self._photoTextConsentPending = True
-			# When a second detection races the first, the dialog is already up;
-			# opening it again just raises and focuses it.
-			openPhotoTextConsentDialog(
-				_getPhotoTextConsentPrompt(),
-				self._onPhotoTextConsentChoice,
-				onFailed=self._onPhotoTextConsentDialogFailed,
-			)
-
-		_runOnWorkerThread(
-			self._refreshPhotoTextConsentState,
-			onDone=_afterState,
-			taskName="photoConsentState",
-		)
-
-	def _onPhotoTextConsentChoice(self, actionName):
-		"""Act on the button the user chose in the photo consent dialog.
-
-		Acting on LINE's own dialog re-OCRs it, so let the screen repaint after
-		our dialog closes; otherwise the screenshot still has it covering LINE.
-		"""
-		core.callLater(150, lambda: self._endPhotoTextConsent(actionName))
-
-	def _onPhotoTextConsentDialogFailed(self):
-		"""Release the pending consent when its dialog could not be shown."""
-		self._clearPhotoTextConsentState()
-		# Translators: Announced when the photo consent dialog cannot be opened.
-		ui.message(_("無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"))
-
-	def _isPhotoTextConsentDialogVisible(self):
-		"""Return True when LINE's first-run photo consent dialog is visible."""
-		try:
-			state = self._capturePhotoTextConsentState()
-			if not state["dialogRect"]:
-				return False
-
-			actionLabels = set(state["actionLabels"]) | set(state["targets"])
-			isVisible = _isPhotoTextConsentDialogText(
-				state["ocrText"],
-				actionLabels,
-			)
-			log.debug(
-				f"LINE: photo consent OCR: text={state['ocrText']!r}, "
-				f"actions={sorted(actionLabels)}, visible={isVisible}",
-			)
-			return isVisible
-		except Exception as e:
-			log.debug(f"LINE: photo consent detection failed: {e}", exc_info=True)
-			return False
-
-	def _watchForPhotoTextConsentDialog(self, retriesLeft=8, delayMs=250):
-		"""Poll briefly for LINE's first-run photo consent dialog, then ask for consent."""
-		watchId = getattr(self, "_photoTextConsentWatchId", 0) + 1
-		self._photoTextConsentWatchId = watchId
-
-		def _poll(remaining):
-			if watchId != getattr(self, "_photoTextConsentWatchId", 0):
-				return
-			if getattr(self, "_photoTextConsentPending", False):
-				return
-			try:
-				foreground = api.getForegroundObject()
-				if not foreground or foreground.appModule.appName != "line":
-					return
-			except Exception:
-				return
-
-			def _afterVisible(visible):
-				if watchId != getattr(self, "_photoTextConsentWatchId", 0):
-					return
-				if getattr(self, "_photoTextConsentPending", False):
-					return
-				if visible:
-					self._beginPhotoTextConsent()
-					return
-				if remaining > 0:
-					core.callLater(delayMs, lambda: _poll(remaining - 1))
-
-			# The visibility check OCRs the dialog; keep it off the main thread.
-			_runOnWorkerThread(
-				self._isPhotoTextConsentDialogVisible,
-				onDone=_afterVisible,
-				taskName="photoConsentVisibility",
-			)
-
-		core.callLater(delayMs, lambda: _poll(retriesLeft))
-
-	def _clearPhotoTextConsentState(self):
-		"""Clear the pending photo consent and its cached dialog state."""
-		self._photoTextConsentPending = False
-		self._photoTextConsentActionInProgress = False
-		self._photoTextConsentDialogActions = set()
-		self._photoTextConsentDialogTargets = {}
-		self._photoTextConsentDialogRect = None
-		self._photoTextConsentDialogHwnd = None
-
-	def _performPhotoTextConsentAction(self, actionName):
-		"""Activate a specific action on the current photo consent dialog."""
-		state = self._refreshPhotoTextConsentState()
-		targetInfo = state["targets"].get(actionName)
-
-		def _clickFallbackPoint():
-			fallbackPoint = _getPhotoTextConsentDialogFallbackClickPoint(
-				actionName,
-				state["dialogRect"],
-			)
-			if not fallbackPoint:
-				return False
-			self._clickAtPosition(
-				fallbackPoint[0],
-				fallbackPoint[1],
-				hwnd=state["hwnd"],
-			)
-			log.info(
-				f"LINE: fallback-clicking photo consent action '{actionName}' "
-				f"at ({fallbackPoint[0]}, {fallbackPoint[1]})",
-			)
-			return True
-
-		if targetInfo:
-			clickPoint = targetInfo.get("clickPoint")
-			if clickPoint:
-				log.info(
-					f"LINE: OCR-clicking photo consent action '{actionName}' "
-					f"at ({clickPoint[0]}, {clickPoint[1]})",
-				)
-				self._clickAtPosition(
-					clickPoint[0],
-					clickPoint[1],
-					hwnd=state["hwnd"],
-				)
-				return True
-			element = targetInfo.get("element")
-			if element and self._invokeElement(element, actionName, announce=False):
-				return True
-			rect = targetInfo.get("rect")
-			if rect:
-				self._clickAtPosition(
-					int((rect[0] + rect[2]) / 2),
-					int((rect[1] + rect[3]) / 2),
-					hwnd=state["hwnd"],
-				)
-				return True
-
-		if _clickFallbackPoint():
-			return True
-
-		if actionName == "不同意":
-			from keyboardHandler import KeyboardInputGesture
-
-			KeyboardInputGesture.fromName("escape").send()
-			return True
-
-		if actionName == "同意":
-			ui.message(_("找不到同意按鈕"))
-			return False
-
-		ui.message(_("找不到不同意按鈕"))
-		return False
-
-	def _schedulePhotoTextConsentCompletionAnnouncement(self, actionName, token):
-		"""Verify the dialog closed before announcing the photo consent result."""
-
-		def _finish():
-			if getattr(self, "_photoTextConsentToken", 0) != token:
-				return
-
-			def _afterVisible(stillVisible):
-				if getattr(self, "_photoTextConsentToken", 0) != token:
-					return
-				self._clearPhotoTextConsentState()
-				if stillVisible:
-					if actionName == "同意":
-						ui.message(_("同意提供照片可能未成功"))
-					else:
-						ui.message(_("不同意提供照片可能未成功"))
-					return
-
-				if actionName == "同意":
-					ui.message(_("已同意提供照片"))
-				else:
-					ui.message(_("已不同意提供照片"))
-
-			# Visibility re-check OCRs the dialog; keep it off the main thread.
-			_runOnWorkerThread(
-				self._isPhotoTextConsentDialogVisible,
-				onDone=_afterVisible,
-				taskName="photoConsentCompletionCheck",
-			)
-
-		core.callLater(650, _finish)
-
-	def _endPhotoTextConsent(self, actionName):
-		"""End the photo consent flow by activating the requested dialog action."""
-		if not getattr(self, "_photoTextConsentPending", False) or getattr(
-			self,
-			"_photoTextConsentActionInProgress",
-			False,
-		):
-			return
-		self._photoTextConsentActionInProgress = True
-
-		def _afterPerform(performed):
-			if performed is None:
-				# Never leave the pending flags stuck, or the next "Convert to
-				# text" attempt is ignored.
-				self._clearPhotoTextConsentState()
-				return
-			if not performed:
-				self._photoTextConsentActionInProgress = False
-				return
-			token = getattr(self, "_photoTextConsentToken", 0)
-			self._schedulePhotoTextConsentCompletionAnnouncement(actionName, token)
-
-		# The action performer re-OCRs the dialog; run it off the main thread.
-		_runOnWorkerThread(
-			lambda: bool(self._performPhotoTextConsentAction(actionName)),
-			onDone=_afterPerform,
-			taskName="photoConsentAction",
-		)
-
-	@script(
-		gesture="kb:applications",
-		description=_("Open message context menu"),
-		category=SCRIPT_CATEGORY,
-	)
-	def script_messageContextMenu(self, gesture):
-		"""Right-click current message and open a virtual window for browsing the context menu."""
-		global _messageContextMenuRequestId
-		if _suppressAddon:
-			gesture.send()
-			return
-
-		try:
-			handler = UIAHandler.handler
-			rawEl = handler.clientObject.GetFocusedElement()
-			if rawEl:
-				ct = rawEl.CurrentControlType
-				if ct == 50004:  # Edit control
-					gesture.send()
-					return
-		except Exception:
-			pass
-
-		try:
-			handler = UIAHandler.handler
-			rawEl = handler.clientObject.GetFocusedElement()
-			if not rawEl:
-				ui.message(_("找不到目前的訊息"))
-				return
-
-			rect = rawEl.CurrentBoundingRectangle
-			cx = int((rect.left + rect.right) / 2)
-			cy = int((rect.top + rect.bottom) / 2)
-			elLeft = int(rect.left)
-			elRight = int(rect.right)
-			elTop = int(rect.top)
-			elBottom = int(rect.bottom)
-
-			if cx <= 0 or cy <= 0:
-				ui.message(_("找不到目前的訊息"))
-				return
-
-			hwnd = ctypes.windll.user32.GetForegroundWindow()
-
-			import ctypes.wintypes as wintypes
-
-			winRect = wintypes.RECT()
-			ctypes.windll.user32.GetWindowRect(
-				hwnd,
-				ctypes.byref(winRect),
-			)
-			winTop = int(winRect.top)
-			winBottom = int(winRect.bottom)
-		except Exception as e:
-			log.debug(f"LINE: messageContextMenu getElement failed: {e}")
-			ui.message(_("找不到目前的訊息"))
-			return
-
-		_messageContextMenuRequestId += 1
-		requestId = _messageContextMenuRequestId
-		targetRuntimeId = _getElementRuntimeId(rawEl)
-		import keyboardHandler
-
-		# keyCounter only counts real key presses (NVDA skips keys it injects
-		# for gesture.send), so a change means the user typed or navigated.
-		startKeyCount = keyboardHandler.keyCounter
-
-		def _isCurrentRequest():
-			if requestId != _messageContextMenuRequestId:
-				return False
-			try:
-				if ctypes.windll.user32.GetForegroundWindow() != hwnd:
-					return False
-			except Exception:
-				pass
-			if targetRuntimeId is None:
-				return True
-			currentRuntimeId = _getFocusedElementRuntimeId()
-			return currentRuntimeId is None or currentRuntimeId == targetRuntimeId
-
-		def _logAndAbortIfStale(stage):
-			if _isCurrentRequest():
-				return False
-			# Pull focus back only when one of our own probes moved it. If the
-			# user pressed a key (e.g. Tab or an arrow while OCR was running),
-			# focus is where they put it, so just abandon the request.
-			userPressedKey = keyboardHandler.keyCounter != startKeyCount
-			if (
-				requestId == _messageContextMenuRequestId
-				and not userPressedKey
-				and _shouldDismissMessageMenu(hwnd)
-			):
-				_restoreFocusToElement(rawEl, targetRuntimeId)
-			log.debug(
-				f"LINE: messageContextMenu abandoning stale request during "
-				f"{stage}; requestId={requestId}, currentRequestId={_messageContextMenuRequestId}, "
-				f"targetRuntimeId={targetRuntimeId}, currentRuntimeId={_getFocusedElementRuntimeId()}",
-			)
-			return True
-
-		appModRef = self
-		keyboardFallbackTried = [False]
-		state = {}
-
-		def _preamble():
-			"""Worker thread: OCR the bubble, then wait out modifier keys.
-
-			Both block, so they must stay off NVDA's main thread; rawEl is
-			only touched later on the main thread.
-			"""
-			ocrLines = []
-			try:
-				ocrResult = appModRef._ocrWindowAreaResult(
-					hwnd,
-					region=(
-						elLeft,
-						elTop,
-						max(elRight - elLeft, 0),
-						max(elBottom - elTop, 0),
-					),
-					sync=True,
-					timeout=2.0,
-				)
-				if ocrResult is not None and not isinstance(ocrResult, Exception):
-					ocrLines = _extractOcrLines(ocrResult)
-			except Exception as e:
-				log.debug(
-					f"LINE: failed to derive OCR bubble probes for message context menu: {e}",
-					exc_info=True,
-				)
-
-			VK_CONTROL = 0x11
-			VK_SHIFT = 0x10
-			VK_MENU = 0x12
-			GetAsyncKeyState = ctypes.windll.user32.GetAsyncKeyState
-			for _wait in range(40):
-				held = any(GetAsyncKeyState(vk) & 0x8000 for vk in (VK_CONTROL, VK_SHIFT, VK_MENU))
-				if not held:
-					break
-				time.sleep(0.05)
-			return ocrLines
-
-		def _afterPreamble(ocrLines):
-			ocrLines = ocrLines or []
-			ocrClickPositions = _buildMessageBubbleOcrClickPositions(
-				ocrLines,
-				(elLeft, elTop, elRight, elBottom),
-				winTop,
-				winBottom,
-			)
-			state["clickPositions"] = _mergeClickPositions(
-				ocrClickPositions,
-				_buildMessageBubbleClickPositions(
-					(elLeft, elTop, elRight, elBottom),
-					winTop,
-					winBottom,
-					includeVerticalOffsets=True,
-				),
-			)
-			_tryKeyboardFallback()
-
-		def _startMouseContextMenuProbes(reason):
-			if _logAndAbortIfStale(f"mouseContextMenuFallback:{reason}"):
-				return
-			log.info(
-				f"LINE: keyboard message context menu failed ({reason}); trying mouse probes",
-			)
-			core.callLater(300, lambda: _attemptAtOffset(0))
-
-		def _tryKeyboardFallback():
-			if _logAndAbortIfStale("keyboardFallback"):
-				return
-			if keyboardFallbackTried[0]:
-				ui.message(_("找不到訊息選單"))
-				return
-			keyboardFallbackTried[0] = True
-			log.info(
-				"LINE: trying keyboard message context menu before mouse probes",
-			)
-			try:
-				_sendGestureWithAddonSuppressed("applications")
-			except Exception as e:
-				log.debug(
-					f"LINE: keyboard fallback applications send failed: {e}",
-					exc_info=True,
-				)
-				_startMouseContextMenuProbes("applications send failed")
-				return
-
-			def _activateKeyboardFallback():
-				if _logAndAbortIfStale("keyboardFallbackActivate"):
-					return
-				self._activateMessageContextMenu(
-					onAction=self._handleMessageContextMenuAction,
-					onFailure=lambda: _startMouseContextMenuProbes(
-						"keyboard popup not found",
-					),
-					shouldAbort=lambda: _logAndAbortIfStale(
-						"keyboardFallbackPoll",
-					),
-				)
-
-			core.callLater(500, _activateKeyboardFallback)
-
-		def _attemptAtOffset(posIdx=0):
-			clickPositions = state["clickPositions"]
-			if _logAndAbortIfStale(f"attemptAtOffset[{posIdx}]"):
-				return
-			if posIdx >= len(clickPositions):
-				if keyboardFallbackTried[0]:
-					ui.message(_("找不到訊息選單"))
-				else:
-					_tryKeyboardFallback()
-				return
-
-			clickX, clickY, posLabel = clickPositions[posIdx]
-			log.info(
-				f"LINE: right-clicking message at ({clickX}, {clickY}) [{posLabel}] for context menu",
-			)
-			if not _messageProbePointHitsTargetElement(
-				UIAHandler.handler,
-				rawEl,
-				clickX,
-				clickY,
-				targetRuntimeId,
-			):
-				log.info(
-					f"LINE: skipping context menu probe over edit field at ({clickX}, {clickY}) [{posLabel}]",
-				)
-				core.callLater(50, lambda: _attemptAtOffset(posIdx + 1))
-				return
-			appModRef._rightClickAtPosition(clickX, clickY, hwnd)
-
-			def _findPopupAndActivate(retriesLeft=4):
-				if _logAndAbortIfStale(
-					f"findPopupAndActivate[{posIdx}] retriesLeft={retriesLeft}",
-				):
-					return
-				try:
-					import ctypes.wintypes as wintypes
-
-					pid = wintypes.DWORD()
-					tid = ctypes.windll.user32.GetWindowThreadProcessId(
-						hwnd,
-						ctypes.byref(pid),
-					)
-					popupCandidates = []
-
-					WNDENUMPROC = ctypes.WINFUNCTYPE(
-						ctypes.c_bool,
-						wintypes.HWND,
-						wintypes.LPARAM,
-					)
-
-					def _enumCallback(enumHwnd, lParam):
-						if enumHwnd != hwnd and ctypes.windll.user32.IsWindowVisible(enumHwnd):
-							wRect = wintypes.RECT()
-							ctypes.windll.user32.GetWindowRect(
-								enumHwnd,
-								ctypes.byref(wRect),
-							)
-							w = wRect.right - wRect.left
-							h = wRect.bottom - wRect.top
-							if w >= 50 and h >= 30:
-								popupCandidates.append(enumHwnd)
-						return True
-
-					ctypes.windll.user32.EnumThreadWindows(
-						tid,
-						WNDENUMPROC(_enumCallback),
-						0,
-					)
-
-					popupHwnd = None
-					if popupCandidates:
-						popupHwnd = popupCandidates[0]
-					else:
-						for dy in [0, -40, -80, 40, 80]:
-							pt = wintypes.POINT(clickX, clickY + dy)
-							candidateHwnd = ctypes.windll.user32.WindowFromPoint(pt)
-							if candidateHwnd and candidateHwnd != hwnd:
-								popupHwnd = candidateHwnd
-								break
-
-					if not popupHwnd:
-						if retriesLeft > 0:
-							core.callLater(
-								200,
-								lambda: _findPopupAndActivate(retriesLeft - 1),
-							)
-							return
-						core.callLater(
-							300,
-							lambda: _attemptAtOffset(posIdx + 1),
-						)
-						return
-
-					uiaHandler = UIAHandler.handler
-					element = uiaHandler.clientObject.ElementFromHandle(
-						popupHwnd,
-					)
-					if not element:
-						if retriesLeft > 0:
-							core.callLater(
-								200,
-								lambda: _findPopupAndActivate(retriesLeft - 1),
-							)
-							return
-						core.callLater(
-							300,
-							lambda: _attemptAtOffset(posIdx + 1),
-						)
-						return
-
-					try:
-						ct = element.CurrentControlType
-						eRect = element.CurrentBoundingRectangle
-						eW = int(eRect.right - eRect.left)
-						eH = int(eRect.bottom - eRect.top)
-						if ct == 50033 or eW < 50 or eH < 30:
-							core.callLater(
-								300,
-								lambda: _attemptAtOffset(posIdx + 1),
-							)
-							return
-					except Exception:
-						pass
-
-					# Check menu has enough items (≥3) to be a real context menu
-					walker = uiaHandler.clientObject.RawViewWalker
-					itemCount = 0
-					child = walker.GetFirstChildElement(element)
-					idx = 0
-					while child and idx < 30:
-						try:
-							childRect = child.CurrentBoundingRectangle
-							childH = int(childRect.bottom - childRect.top)
-							childW = int(childRect.right - childRect.left)
-							if 20 <= childH <= 80 and childW >= childH * 2:
-								itemCount += 1
-						except Exception:
-							pass
-						try:
-							child = walker.GetNextSiblingElement(child)
-						except Exception:
-							break
-						idx += 1
-
-					if itemCount < 3:
-						log.debug(
-							f"LINE: context menu has only {itemCount} UIA items; "
-							f"validating popup via OCR before dismissing",
-						)
-
-					eRect = element.CurrentBoundingRectangle
-					popupRect = (
-						int(eRect.left),
-						int(eRect.top),
-						int(eRect.right),
-						int(eRect.bottom),
-					)
-					if itemCount < 3 and not _popupLooksLikeMessageContextMenu(
-						appModRef,
-						hwnd,
-						popupRect,
-					):
-						# Wrong menu (e.g. 全選), dismiss and try next.
-						log.debug(
-							f"LINE: popup OCR did not confirm a message context menu "
-							f"at {popupRect}; dismissing and trying next position",
-						)
-						_sendGestureWithAddonSuppressed("escape")
-						core.callLater(
-							300,
-							lambda: _attemptAtOffset(posIdx + 1),
-						)
-						return
-
-					popupRowRects = _collectPopupMenuRowRects(
-						popupHwnd,
-						popupRect,
-					)
-					log.info(
-						f"LINE: message context menu popup found at {popupRect}",
-					)
-
-					from ._virtualWindows.messageContextMenu import MessageContextMenu
-
-					if _logAndAbortIfStale(
-						f"beforeVirtualWindow[{posIdx}]",
-					):
-						try:
-							_sendGestureWithAddonSuppressed("escape")
-						except Exception:
-							pass
-						return
-					VirtualWindow.currentWindow = MessageContextMenu(
-						popupRect,
-						rowRects=popupRowRects,
-						onAction=self._handleMessageContextMenuAction,
-					)
-
-				except Exception as e:
-					log.debug(
-						f"LINE: message context menu detection failed: {e}",
-						exc_info=True,
-					)
-					try:
-						_sendGestureWithAddonSuppressed("escape")
-					except Exception:
-						pass
-
-			core.callLater(300, _findPopupAndActivate)
-
-		# Bubble OCR + modifier-key wait block for up to ~4 s; run them on a
-		# worker thread, then resume the menu flow on the main thread.
-		_runOnWorkerThread(_preamble, onDone=_afterPreamble, taskName="messageContextMenuPreamble")
+		self._nativeMessageMenuAction("收回")
 
 	@script(
 		# Translators: Description of the script bound to control+shift+A during LINE calls
@@ -10795,7 +6953,6 @@ class AppModule(appModuleHandler.AppModule):
 		def _announceMicFromOcr(ocrText):
 			"""Detect mic on/off from OCR text and announce. Returns True if detected."""
 			import wx
-			from . import _lineLabels
 
 			# The control-bar tooltip shows the toggle action, so a "mute"
 			# label means the mic is currently ON, and vice-versa.
@@ -11144,12 +7301,7 @@ class AppModule(appModuleHandler.AppModule):
 
 	__gestures = {
 		"kb:control+o": "openFileDialog",
-		"kb:control+1": "switchTabAndAnnounce",
-		"kb:control+2": "switchTabAndAnnounce",
-		"kb:control+3": "switchTabAndAnnounce",
 		"kb:enter": "sendMessageAndPlaySound",
 		"kb:control+shift+a": "toggleMicAndAnnounce",
 		"kb:control+shift+v": "toggleCameraAndAnnounce",
-		"kb:shift+f10": "messageContextMenu",
-		"kb:applications": "messageContextMenu",
 	}

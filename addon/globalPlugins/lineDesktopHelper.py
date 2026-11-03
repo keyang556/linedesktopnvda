@@ -1062,8 +1062,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			ui.message(_("LINE 未執行"))
 			return
 		try:
-			if not lineApp._clickMoreOptionsButton():
-				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
+			lineApp.script_clickMoreOptions(None)
 		except Exception as e:
 			log.warning(f"LINE clickMoreOptions error: {e}", exc_info=True)
 			ui.message(_("更多選項功能錯誤: {error}").format(error=e))
