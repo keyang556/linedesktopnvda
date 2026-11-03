@@ -26,8 +26,8 @@ addon_info = AddonInfo(
 	addon_summary=_("LINE Desktop Accessibility"),
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-on store
-	addon_description=_("""Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list and messages natively.
-Adds calls, incoming call handling, message actions and confirmation dialogs, message export reading, and AI image description with follow-up questions."""),
+	addon_description=_("""Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list, messages, menus, and dialogs natively.
+Adds calls, incoming call handling, message shortcuts, message export reading, and AI image description with follow-up questions."""),
 	# version
 	addon_version="1.4.0-beta1",
 	# Brief changelog for this version
@@ -35,7 +35,12 @@ Adds calls, incoming call handling, message actions and confirmation dialogs, me
 	addon_changelog=_("""LINE 26.6.0.4004 or later is now recommended. It exposes the chat list, messages, tabs, buttons, and edit fields to NVDA, so NVDA reads them natively as you press Tab or the arrow keys.
 The add-on no longer intercepts Tab and the arrow keys, and no longer right-clicks messages, uses the clipboard, or runs OCR to read them. This removes double speech, the synthetic Tab presses in the chat list, and the OCR sound.
 The background chat cache (NVDA+Windows+U) has been removed; it only existed to correct OCR-read messages.
-Control+C no longer falls back to OCR when LINE's Copy menu item cannot be found; it reports the problem instead."""),
+Control+C no longer falls back to OCR when LINE's Copy menu item cannot be found; it reports the problem instead.
+Shift+F10 and the Applications key now open LINE's own readable context menu; the add-on's OCR virtual message menu has been removed.
+LINE's own recall confirmation and "Convert to text" photo notice are used instead of the add-on's Y/N/P and A/D dialogs.
+Control+1, Control+2, and Control+3 go straight to LINE, without the add-on speaking a second, fixed tab name.
+NVDA+Windows+R, K, Delete and Control+C now pick their item from LINE's own Shift+F10 menu by name instead of right-clicking and reading the menu with OCR.
+NVDA+Windows+O opens LINE's own More options menu, and the message reader picks Save chat from it by name."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support
