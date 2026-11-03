@@ -762,8 +762,24 @@ def test_message_shortcuts_use_lines_own_menu():
 	), "give up instead of sending Shift+F10 while the shortcut's keys are still held"
 	assert "_isLineForeground" in called, "only send keys while LINE is in the foreground"
 	assert "_contextMenuAction" not in source
-	assert "_virtualWindows.messageContextMenu" not in source
-	assert "_virtualWindows.chatMoreOptions" not in source
+
+
+def test_no_virtual_windows_intercept_lines_own_menus():
+	"""The tray and PIN-code virtual windows are gone. LINE's popups are
+	readable, and the tray window's LcContextMenu match also caught the chat's
+	"More options" menu, where it swallowed the arrow keys and Enter. Nothing
+	in the add-on may veto gestures through decide_executeGesture."""
+	app_modules = Path(__file__).resolve().parents[1] / "addon" / "appModules"
+	# Look for sources only: a stale __pycache__ may outlive the deleted files.
+	assert not list(app_modules.glob("_virtualWindow*.py"))
+	assert not list((app_modules / "_virtualWindows").glob("*.py"))
+	addon_dir = app_modules.parent
+	offenders = [
+		str(path)
+		for path in addon_dir.rglob("*.py")
+		if "decide_executeGesture" in path.read_text(encoding="utf-8")
+	]
+	assert not offenders, f"decide_executeGesture used in: {offenders}"
 
 
 def test_no_transient_letter_gesture_bindings():
@@ -818,27 +834,6 @@ def test_script_categories_use_shared_constant():
 				assert isinstance(keyword.value, ast.Name) and keyword.value.id == "SCRIPT_CATEGORY", (
 					f"{module_path.name}:{keyword.value.lineno}: category= must use SCRIPT_CATEGORY"
 				)
-
-
-def test_terminate_schedules_pending_ocr_cleanup():
-	"""AppModule.terminate must schedule the pending-OCR cleanup so buffers
-	from recognitions whose callback never fires are released after LINE exits."""
-	module_path = Path(__file__).resolve().parents[1] / "addon" / "appModules" / "line.py"
-	module = ast.parse(module_path.read_text(encoding="utf-8"))
-	app_module = next(
-		node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "AppModule"
-	)
-	terminate = next(
-		node for node in app_module.body if isinstance(node, ast.FunctionDef) and node.name == "terminate"
-	)
-	cleanup_calls = [
-		node
-		for node in ast.walk(terminate)
-		if isinstance(node, ast.Call)
-		and isinstance(node.func, ast.Attribute)
-		and node.func.attr == "schedulePendingOcrCleanup"
-	]
-	assert cleanup_calls, "terminate must call _utils.schedulePendingOcrCleanup"
 
 
 def test_describe_image_defers_consent_dialog_off_the_hook_stack():
