@@ -14,6 +14,7 @@
 - Removed debug-only event handlers that read an object's name on every selection, state, or name change in LINE, each costing a cross-process call.
 - `NVDA+Windows+R` (reply), `NVDA+Windows+K` (save as), `NVDA+Windows+Delete` (recall), and `Control+C` (copy) now open LINE's own context menu with `Shift+F10` and choose the item by its name, instead of right-clicking several spots on the message and reading the popup with OCR. They wait until you release the shortcut's keys first. If LINE's menu has no such item for that message (for example recall on someone else's message), the add-on closes the menu and says so. `Control+C` now also passes through normally on buttons and chat list items.
 - `NVDA+Windows+O` now opens LINE's own "More options" menu, which NVDA reads directly, instead of an OCR-based virtual menu. The message reader (`NVDA+Windows+J`) chooses "Save chat" from that same menu by name.
+- The virtual windows for LINE's tray menu and the PC verification code screen have been removed. NVDA reads LINE's tray menu directly. The tray virtual window also took over the chat's "More options" menu, saying "Line menu" and swallowing the arrow keys and `Enter`; that no longer happens. The verification code shown on first login is no longer read with OCR and is left to LINE and NVDA.
 - The readmes, the website, and the add-on description now recommend LINE 26.6.0.4004 or later instead of LINE MR. If you also use LINE MR, do not enable both add-ons at the same time.
 
 ### 繁體中文
@@ -30,6 +31,7 @@
 - 移除僅供除錯的事件處理。它們會在 LINE 每次選取、狀態或名稱變更時讀取物件名稱，每個事件都多一次跨程序呼叫。
 - `NVDA+Windows+R`（回覆）、`NVDA+Windows+K`（另存新檔）、`NVDA+Windows+Delete`（收回）與 `Control+C`（複製）改為用 `Shift+F10` 開啟 LINE 本身的右鍵選單，再依名稱選擇項目，不再對訊息的多個位置按右鍵並用 OCR 辨識彈出選單。執行前會先等您放開快速鍵的按鍵。若該訊息的選單沒有這個項目（例如收回別人的訊息），附加元件會關閉選單並告知。在按鈕與聊天清單項目上按 `Control+C` 也會照常傳給 LINE。
 - `NVDA+Windows+O` 改為開啟 LINE 本身的「其他功能」選單，由 NVDA 直接讀出，不再使用 OCR 虛擬選單。訊息閱讀器 (`NVDA+Windows+J`) 也從同一個選單依名稱選擇「儲存聊天」。
+- 移除 LINE 系統匣選單與電腦版認證畫面的虛擬視窗。LINE 的系統匣選單由 NVDA 直接讀出。原本系統匣虛擬視窗也會攔下聊天室的「其他功能」選單，念出「Line 功能表」並吞掉方向鍵與 `Enter`，現在不會再發生。首次登入時顯示的認證碼不再用 OCR 讀取，改由 LINE 與 NVDA 處理。
 - 說明文件、網站與附加元件描述改為建議使用 LINE 26.6.0.4004 以上版本，不再推薦 LINE MR。若同時安裝了 LINE MR，請勿同時啟用兩個附加元件。
 
 ### 日本語
@@ -46,6 +48,7 @@
 - LINE で選択・状態・名前が変わるたびにオブジェクト名を読み取っていた、デバッグ専用のイベント処理を削除しました。イベントごとにプロセス間呼び出しが発生していました。
 - `NVDA+Windows+R`（返信）、`NVDA+Windows+K`（名前を付けて保存）、`NVDA+Windows+Delete`（取り消し）、`Control+C`（コピー）は、`Shift+F10` で LINE 自体のコンテキストメニューを開き、名前で項目を選ぶようになりました。メッセージの複数の位置を右クリックしてポップアップを OCR で読み取ることはなくなりました。実行前にショートカットのキーが離されるのを待ちます。そのメッセージのメニューに該当する項目がない場合（他人のメッセージの取り消しなど）、アドオンはメニューを閉じてその旨をお知らせします。ボタンやチャットリストの項目では `Control+C` が通常どおり LINE に渡されます。
 - `NVDA+Windows+O` は OCR による仮想メニューではなく、NVDA が直接読み上げる LINE 自体の「その他」メニューを開くようになりました。メッセージリーダー (`NVDA+Windows+J`) も同じメニューから名前で「トーク保存」を選びます。
+- LINE のシステムトレイメニューと PC 版認証画面の仮想ウィンドウを削除しました。LINE のシステムトレイメニューは NVDA が直接読み上げます。トレイの仮想ウィンドウはトークの「その他」メニューも横取りし、「Line メニュー」と読み上げて矢印キーと `Enter` を奪っていましたが、これはなくなりました。初回ログイン時に表示される認証コードは OCR で読み取らず、LINE と NVDA に任せます。
 - ドキュメント、Web サイト、アドオンの説明は、LINE MR ではなく LINE 26.6.0.4004 以降を推奨するようになりました。LINE MR も使用している場合は、両アドオンを同時に有効化しないでください。
 
 ### ภาษาไทย
@@ -62,4 +65,5 @@
 - นำตัวจัดการเหตุการณ์สำหรับดีบักออก ซึ่งอ่านชื่อวัตถุทุกครั้งที่มีการเลือก สถานะ หรือชื่อเปลี่ยนใน LINE ทำให้เกิดการเรียกข้ามโปรเซสทุกเหตุการณ์
 - `NVDA+Windows+R` (ตอบกลับ), `NVDA+Windows+K` (บันทึกเป็น), `NVDA+Windows+Delete` (เรียกคืน) และ `Control+C` (คัดลอก) จะเปิดเมนูคลิกขวาของ LINE เองด้วย `Shift+F10` แล้วเลือกรายการตามชื่อ แทนการคลิกขวาหลายตำแหน่งบนข้อความและอ่านเมนูด้วย OCR โดยจะรอให้คุณปล่อยปุ่มของคีย์ลัดก่อน หากเมนูของข้อความนั้นไม่มีรายการดังกล่าว (เช่น เรียกคืนข้อความของผู้อื่น) ส่วนเสริมจะปิดเมนูและแจ้งให้ทราบ นอกจากนี้ `Control+C` บนปุ่มและรายการในรายการแชทจะส่งต่อให้ LINE ตามปกติ
 - `NVDA+Windows+O` จะเปิดเมนู "ตัวเลือกเพิ่มเติม" ของ LINE เองซึ่ง NVDA อ่านได้โดยตรง แทนเมนูเสมือนที่ใช้ OCR และโปรแกรมอ่านข้อความ (`NVDA+Windows+J`) ก็เลือก "บันทึกแชท" จากเมนูเดียวกันตามชื่อ
+- ลบหน้าต่างเสมือนของเมนูถาดระบบ LINE และหน้าจอยืนยันตัวตนสำหรับเวอร์ชันคอมพิวเตอร์ออกแล้ว NVDA อ่านเมนูถาดระบบของ LINE ได้โดยตรง หน้าต่างเสมือนของถาดระบบเคยแทรกเข้าไปในเมนู "ตัวเลือกเพิ่มเติม" ของแชทด้วย โดยพูดว่า "เมนู Line" และกินปุ่มลูกศรกับ `Enter` ซึ่งจะไม่เกิดขึ้นอีก รหัสยืนยันที่แสดงตอนเข้าสู่ระบบครั้งแรกไม่อ่านด้วย OCR อีกต่อไป แต่ปล่อยให้ LINE และ NVDA จัดการ
 - เอกสาร เว็บไซต์ และคำอธิบายส่วนเสริมแนะนำ LINE 26.6.0.4004 หรือใหม่กว่าแทน LINE MR หากคุณใช้ LINE MR ด้วย อย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน

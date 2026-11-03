@@ -66,32 +66,6 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Settings**: Open "NVDA Menu -> Preferences -> Settings -> LINE Desktop" to choose the image-description service, API key, model, and prompt. Leaving the API key or prompt blank uses the configured default.
 * **Privacy Reminder**: Image description sends the captured message image to the selected cloud AI service. The first time you use the feature with a given service, a consent dialog naming that service appears; nothing is uploaded unless you agree. This applies whether the request uses the add-on's bundled shared key or your own API key, because the question is which company receives your screenshot. Consent is remembered per service, so switching to a different service asks again. Use a provider and prompt appropriate for the content you are describing.
 
-## Virtual Windows
-
-### What are Virtual Windows?
-
-Virtual Windows are special interfaces provided by this add-on to improve access to certain LINE features that are difficult to access through standard accessibility APIs. When one of those LINE screens appears, the add-on creates a virtual menu or dialog box, allowing you to operate these features more conveniently.
-
-### Types of Virtual Windows
-
-This add-on currently provides the following virtual windows:
-
-1. **Verification Code Window**: Reads out the verification code when logging into LINE for the first time; enter this code on your mobile device
-2. **System Tray Menu**: Used to access LINE options in the system tray
-
-### How to Use Virtual Windows
-
-1. **Open Virtual Window**: It opens by itself when the verification code screen or LINE's tray menu appears
-2. **Navigate Options**: Use the up and down arrow keys to move between options
-3. **Select Option**: Press `Enter` to execute the selected option
-4. **Close Window**: Press `Escape` to close the virtual window
-
-### Notes
-
-- Virtual windows are simulated interfaces; actual operations are still performed by the add-on through coordinate automation
-- Some virtual window options may vary depending on the LINE version or interface state
-- If a virtual window does not work properly, ensure your LINE window is in a normal state and not obscured by other windows
-
 ## Keyboard Shortcuts
 
 > [!NOTE]

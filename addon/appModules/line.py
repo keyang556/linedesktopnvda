@@ -23,7 +23,6 @@ import threading
 import time
 import configparser
 import winreg
-from ._virtualWindow import VirtualWindow
 from ._utils import pickOcrLanguage, setPreferredOcrLanguage
 from . import _lineLabels
 import addonHandler
@@ -1085,8 +1084,8 @@ def _sendMouseClick(x, y, button="left"):
 
 	The whole sequence runs under mouseHandler.ignoreInjection() so NVDA's
 	mouse hook does not react to the synthetic move/click (e.g. speaking the
-	object under the mouse), and the cursor is restored afterwards like
-	_virtualWindow.VirtualWindow.click does. The injected events are queued
+	object under the mouse), and the cursor is restored afterwards. The
+	injected events are queued
 	in order, so restoring immediately after SendInput cannot retarget the
 	click.
 	"""
@@ -3889,7 +3888,6 @@ class AppModule(appModuleHandler.AppModule):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
-		VirtualWindow.initialize()
 		# Read and cache LINE installation info
 		self._lineVersion = _readLineVersion()
 		self._lineLanguage = _readLineLanguage()
@@ -3929,16 +3927,9 @@ class AppModule(appModuleHandler.AppModule):
 			# polls by process ID, which Windows can recycle for the next LINE
 			# session).
 			AppModule._fileDialogWaitToken += 1
-			VirtualWindow.currentWindow = None
 			self._inCallOcrRecognizer = None
 			self._inCallOcrPixels = None
 			self._inCallOcrImgInfo = None
-			try:
-				from . import _utils
-
-				_utils.schedulePendingOcrCleanup()
-			except Exception:
-				pass
 		except Exception:
 			log.debugWarning("LINE AppModule terminate cleanup failed", exc_info=True)
 		super().terminate()
@@ -3971,15 +3962,6 @@ class AppModule(appModuleHandler.AppModule):
 					clsList.insert(0, LineToolbarButton)
 			except Exception:
 				clsList.insert(0, LineToolbarButton)
-
-	def event_gainFocus(self, obj, nextHandler):
-		"""Let open virtual windows react to focus leaving them."""
-		try:
-			VirtualWindow.onFocusChanged(obj)
-		except Exception:
-			# A broken virtual window must never break the focus event itself.
-			log.debugWarning("VirtualWindow focus handling failed", exc_info=True)
-		nextHandler()
 
 	@script(
 		# Translators: Description of a debug script that logs UIA tree info
