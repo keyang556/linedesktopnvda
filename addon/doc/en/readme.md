@@ -11,13 +11,13 @@
 This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface, messages, menus, and dialogs natively; the add-on adds calls, message shortcuts, a chat-history reader, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
 
 > [!IMPORTANT]
-> Call windows still rely on OCR, so their recognition may not be 100% accurate. Reading messages, the message shortcuts, and reading the chat room name do not use OCR (the chat room name falls back to OCR only when LINE's interface language is not Traditional Chinese).
+> Call windows still rely on OCR, so their recognition may not be 100% accurate. Reading messages and the message shortcuts do not use OCR. The chat room name comes from LINE itself and falls back to OCR only when its title button cannot be identified (for example when LINE's interface language is not Traditional Chinese).
 
 ## Features
 
 * **Voice and Video Calls**: Initiate calls directly from the friends tab.
 * **Incoming Call Handling**: Answer and reject incoming calls, and check caller information.
-* **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows. The chat room name comes from LINE's chat header and falls back to OCR only when LINE's interface language is not Traditional Chinese.
+* **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows. The chat room name comes from LINE's chat header and falls back to OCR only when the title button cannot be identified, for example in other interface languages.
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
 * **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
 * **AI Image Description**: Describe the focused image or sticker message with a configurable AI service, then ask follow-up questions in an accessible dialog.

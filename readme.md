@@ -36,7 +36,7 @@ Detailed documentation is available in the following languages:
 - 支援 AI 圖片描述，可描述圖片或貼圖訊息並在對話視窗追問 (`NVDA+Windows+I`)。
 - 可在 LINE Desktop 設定面板選擇圖片描述服務、API Key、模型與提示詞。
 - 通話中麥克風與相機狀態播報。
-- 聊天清單、訊息、`Shift+F10` 右鍵選單與收回確認對話框都由 NVDA 直接讀取（需 LINE 26.6.0.4004 以上）；訊息快速鍵也改用 LINE 的選單；OCR 只用於通話視窗（LINE 介面語言不是繁體中文時，聊天室名稱也會改用 OCR）。
+- 聊天清單、訊息、`Shift+F10` 右鍵選單與收回確認對話框都由 NVDA 直接讀取（需 LINE 26.6.0.4004 以上）；訊息快速鍵也改用 LINE 的選單；OCR 只用於通話視窗（聊天室名稱只在找不到標題按鈕時才改用 OCR，例如 LINE 介面語言不是繁體中文）。
 - **注意**：OCR 並非 100% 準確。
 
 ### English
@@ -48,7 +48,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - AI Image Description for images and stickers, with follow-up questions in a dialog (`NVDA+Windows+I`).
 - LINE Desktop settings for image-description service, API key, model, and prompt.
 - Microphone and camera status announcements during calls.
-- The chat list, messages, the `Shift+F10` context menu, and the recall confirmation are read by NVDA directly (LINE 26.6.0.4004 or later required); the message shortcuts use LINE's own menus too; OCR is only used for call windows (and for the chat room name when LINE's interface language is not Traditional Chinese).
+- The chat list, messages, the `Shift+F10` context menu, and the recall confirmation are read by NVDA directly (LINE 26.6.0.4004 or later required); the message shortcuts use LINE's own menus too; OCR is only used for call windows (and for the chat room name when its title button cannot be identified, for example in other interface languages).
 - **Note**: OCR is not perfectly accurate.
 
 ### Japanese (日本語)
@@ -60,7 +60,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - 画像やスタンプを説明し、ダイアログで追加質問できる AI 画像説明 (`NVDA+Windows+I`)。
 - LINE Desktop 設定パネルで画像説明サービス、API Key、モデル、プロンプトを設定。
 - 通話中のマイクとカメラの状態読み上げ。
-- チャットリスト、メッセージ、`Shift+F10` のコンテキストメニュー、取り消しの確認ダイアログは NVDA が直接読み上げます（LINE 26.6.0.4004 以降が必要）。メッセージ用ショートカットも LINE のメニューを使い、OCR は通話ウィンドウにのみ使用します（LINE の表示言語が繁体字中国語でない場合は、チャットルーム名にも使用します）。
+- チャットリスト、メッセージ、`Shift+F10` のコンテキストメニュー、取り消しの確認ダイアログは NVDA が直接読み上げます（LINE 26.6.0.4004 以降が必要）。メッセージ用ショートカットも LINE のメニューを使い、OCR は通話ウィンドウにのみ使用します。チャットルーム名は、タイトルのボタンを特定できない場合（他の表示言語など）にのみ OCR を使用します。
 - **注意**: OCR は完全に正確ではありません。
 
 ### Thai (ภาษาไทย)
@@ -72,7 +72,7 @@ This add-on enhances LINE Desktop accessibility, featuring:
 - อธิบายรูปภาพหรือสติกเกอร์ด้วย AI และถามต่อในหน้าต่างโต้ตอบ (`NVDA+Windows+I`)
 - ตั้งค่าบริการอธิบายรูปภาพ API Key โมเดล และพรอมต์ได้ในแผง LINE Desktop
 - แจ้งสถานะไมโครโฟนและกล้องระหว่างการโทร
-- NVDA อ่านรายการแชท ข้อความ เมนูคลิกขวา `Shift+F10` และกล่องโต้ตอบยืนยันการเรียกคืนได้โดยตรง (ต้องใช้ LINE 26.6.0.4004 หรือใหม่กว่า) คีย์ลัดสำหรับข้อความก็ใช้เมนูของ LINE เช่นกัน ใช้ OCR เฉพาะหน้าต่างการโทร (และชื่อห้องแชทเมื่อภาษาของ LINE ไม่ใช่ภาษาจีนตัวเต็ม)
+- NVDA อ่านรายการแชท ข้อความ เมนูคลิกขวา `Shift+F10` และกล่องโต้ตอบยืนยันการเรียกคืนได้โดยตรง (ต้องใช้ LINE 26.6.0.4004 หรือใหม่กว่า) คีย์ลัดสำหรับข้อความก็ใช้เมนูของ LINE เช่นกัน ใช้ OCR เฉพาะหน้าต่างการโทร (และชื่อห้องแชทเมื่อระบุปุ่มชื่อห้องแชทไม่ได้ เช่น ในภาษาอื่น)
 - **หมายเหตุ**: OCR ไม่ถูกต้อง 100%
 
 ---
