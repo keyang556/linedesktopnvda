@@ -811,6 +811,7 @@ _UIA_EDIT_CONTROL_TYPE_ID = 50004
 _MENU_ITEM_CLICKED = "clicked"
 _MENU_ITEM_NOT_FOUND = "notFound"  # the expected menu opened without that item
 _MENU_NOT_OPENED = "noMenu"
+_MENU_ABANDONED = "abandoned"  # LINE lost the foreground; nothing was clicked
 
 
 def _waitForModifierRelease(timeoutSec=2.0):
@@ -828,6 +829,16 @@ def _waitForModifierRelease(timeoutSec=2.0):
 			return True
 		time.sleep(0.05)
 	return False
+
+
+def _isLineForeground(processId):
+	"""True when the foreground window belongs to the LINE process ``processId``."""
+	hwnd = ctypes.windll.user32.GetForegroundWindow()
+	if not hwnd:
+		return False
+	foregroundProcessId = ctypes.wintypes.DWORD()
+	ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(foregroundProcessId))
+	return foregroundProcessId.value == processId
 
 
 def _clickElementCenter(element):
@@ -869,14 +880,19 @@ def _findNamedButton(handler, hwnd, names):
 	return None
 
 
-def _waitForFocusedMenuItem(handler, previousRuntimeId, timeoutSec=1.5):
-	"""Return the button that takes the focus once a popup menu opens, or None."""
+def _waitForFocusedMenuItem(handler, processId, previousRuntimeId, timeoutSec=1.5):
+	"""Return the LINE button that takes the focus once a popup menu opens, or None.
+
+	Only buttons of the LINE process ``processId`` count, so a button focused
+	in another application the user switched to is never taken for the menu.
+	"""
 	deadline = time.monotonic() + timeoutSec
 	while time.monotonic() < deadline:
 		try:
 			element = handler.clientObject.GetFocusedElement()
 			if (
 				element
+				and element.CurrentProcessId == processId
 				and element.CurrentControlType == _UIA_BUTTON_CONTROL_TYPE_ID
 				and _getElementRuntimeId(element) != previousRuntimeId
 			):
@@ -922,21 +938,36 @@ def _findMenuItem(handler, focusedItem, table, key):
 	return None, isKnownMenu
 
 
-def _chooseNativeMenuItem(handler, previousRuntimeId, table, key):
+def _chooseNativeMenuItem(handler, processId, previousRuntimeId, table, key):
 	"""Worker thread: click ``key``'s item in the LINE popup menu that is opening.
 
-	Returns ``(status, itemName)``: _MENU_ITEM_CLICKED with the name LINE gives
-	the item, _MENU_ITEM_NOT_FOUND when the expected menu opened without that
-	item (it is still open), or _MENU_NOT_OPENED when no button took the focus
-	in time or the menu is not one ``table`` describes (left open for the user).
+	``processId`` is LINE's; nothing outside that process is searched or
+	clicked. Returns ``(status, itemName)``: _MENU_ITEM_CLICKED with the name
+	LINE gives the item, _MENU_ITEM_NOT_FOUND when the expected menu opened
+	without that item (it is still open), _MENU_NOT_OPENED when no LINE button
+	took the focus in time or the menu is not one ``table`` describes (left open
+	for the user), or _MENU_ABANDONED when LINE lost the foreground, e.g. the
+	user switched applications meanwhile.
 	"""
-	focusedItem = _waitForFocusedMenuItem(handler, previousRuntimeId)
+	focusedItem = _waitForFocusedMenuItem(handler, processId, previousRuntimeId)
 	if focusedItem is None:
-		return _MENU_NOT_OPENED, ""
+		return (_MENU_NOT_OPENED if _isLineForeground(processId) else _MENU_ABANDONED), ""
 	item, isKnownMenu = _findMenuItem(handler, focusedItem, table, key)
 	if item is None:
 		return (_MENU_ITEM_NOT_FOUND if isKnownMenu else _MENU_NOT_OPENED), ""
 	itemName = item.CurrentName or key
+	# The search took a moment; make sure the menu is still LINE's active
+	# popup before moving the mouse there.
+	try:
+		stillInLine = (
+			_isLineForeground(processId)
+			and item.CurrentProcessId == processId
+			and handler.clientObject.GetFocusedElement().CurrentProcessId == processId
+		)
+	except Exception:
+		stillInLine = False
+	if not stillInLine:
+		return _MENU_ABANDONED, ""
 	if not _clickElementCenter(item):
 		return _MENU_ITEM_NOT_FOUND, ""
 	return _MENU_ITEM_CLICKED, itemName
@@ -5787,10 +5818,11 @@ class AppModule(appModuleHandler.AppModule):
 		UIA finds it, otherwise the header icon at its usual position. Returns
 		``(clicked, runtimeId)``, where ``runtimeId`` is the element that had the
 		focus before the click, so a caller can wait for the menu to take it.
+		Nothing is clicked unless a LINE window is in the foreground.
 		"""
 		handler = UIAHandler.handler
 		hwnd = ctypes.windll.user32.GetForegroundWindow()
-		if not handler or not hwnd:
+		if not handler or not hwnd or not _isLineForeground(self.processID):
 			return False, None
 		try:
 			previousRuntimeId = _getElementRuntimeId(handler.clientObject.GetFocusedElement())
@@ -6079,6 +6111,7 @@ class AppModule(appModuleHandler.AppModule):
 				return None
 			return _chooseNativeMenuItem(
 				UIAHandler.handler,
+				self.processID,
 				previousRuntimeId,
 				_lineLabels._MORE_OPTIONS_LABELS,
 				"儲存聊天",
@@ -6093,7 +6126,10 @@ class AppModule(appModuleHandler.AppModule):
 			if result is None:
 				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
 				return
-			if result[0] == _MENU_ITEM_NOT_FOUND:
+			if result[0] == _MENU_ABANDONED:
+				log.debug("LINE: message reader stopped; LINE lost the foreground")
+				return
+			if result[0] == _MENU_ITEM_NOT_FOUND and _isLineForeground(self.processID):
 				from keyboardHandler import KeyboardInputGesture
 
 				KeyboardInputGesture.fromName("escape").send()
@@ -6442,21 +6478,26 @@ class AppModule(appModuleHandler.AppModule):
 		messageRuntimeId = _getElementRuntimeId(message)
 
 		def _waitUntilReady():
-			_waitForModifierRelease()
+			if not _waitForModifierRelease():
+				# Still held after the wait: Shift+F10 would reach LINE combined
+				# with them (e.g. Windows+Shift+F10), so do nothing instead.
+				return False
 			try:
 				return _getElementRuntimeId(handler.clientObject.GetFocusedElement()) == messageRuntimeId
 			except Exception:
 				return False
 
-		def _openMenu(stillOnMessage):
-			if not stillOnMessage:
-				# The user moved on while the shortcut's keys were held.
-				log.debug(f"LINE: focus left the message before opening the menu for {labelKey}")
+		def _openMenu(ready):
+			if not ready or not _isLineForeground(self.processID):
+				log.debug(
+					f"LINE: not opening the menu for {labelKey}; keys still held or focus left the message",
+				)
 				return
 			KeyboardInputGesture.fromName("shift+f10").send()
 			_runOnWorkerThread(
 				lambda: _chooseNativeMenuItem(
 					handler,
+					self.processID,
 					messageRuntimeId,
 					_lineLabels._MESSAGE_MENU_LABELS,
 					labelKey,
@@ -6475,7 +6516,10 @@ class AppModule(appModuleHandler.AppModule):
 				if afterCallback:
 					core.callLater(500, afterCallback)
 				return
-			if status == _MENU_ITEM_NOT_FOUND:
+			if status == _MENU_ABANDONED:
+				log.debug(f"LINE: menu action {labelKey} stopped; LINE lost the foreground")
+				return
+			if status == _MENU_ITEM_NOT_FOUND and _isLineForeground(self.processID):
 				KeyboardInputGesture.fromName("escape").send()
 			ui.message(_("找不到「{actionName}」選項").format(actionName=labelKey))
 

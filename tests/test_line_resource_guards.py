@@ -556,9 +556,11 @@ def test_label_key_of_matches_whole_uia_names_only():
 
 
 class _FakeUIAElement:
-	def __init__(self, name="", hwnd=0, parent=None, buttons=(), clickable=True):
+	def __init__(self, name="", hwnd=0, parent=None, buttons=(), clickable=True, processId=7001):
 		self.CurrentName = name
 		self.CurrentNativeWindowHandle = hwnd
+		self.CurrentProcessId = processId
+		self.CurrentControlType = 50000
 		self.parent = parent
 		self.buttons = list(buttons)
 		self.clickable = clickable
@@ -588,8 +590,14 @@ def _load_native_menu_symbols(namespace=None):
 			"_MENU_ITEM_CLICKED",
 			"_MENU_ITEM_NOT_FOUND",
 			"_MENU_NOT_OPENED",
+			"_MENU_ABANDONED",
 		},
-		function_names={"_findMenuItem", "_chooseNativeMenuItem", "_waitForModifierRelease"},
+		function_names={
+			"_findMenuItem",
+			"_chooseNativeMenuItem",
+			"_waitForFocusedMenuItem",
+			"_waitForModifierRelease",
+		},
 		namespace={
 			"_lineLabels": _load_line_labels(),
 			"UIAHandler": SimpleNamespace(TreeScope_Descendants=4),
@@ -618,26 +626,70 @@ def test_find_menu_item_searches_only_the_popup_window():
 	assert ns["_findMenuItem"](handler, reply, labels._MORE_OPTIONS_LABELS, "儲存聊天") == (None, False)
 
 
+LINE_PID = 7001
+
+
 def test_choose_native_menu_item_reports_each_outcome():
 	ns = _load_native_menu_symbols()
 	labels = ns["_lineLabels"]
 	save = _FakeUIAElement("Save chat")
 	failing = _FakeUIAElement("儲存聊天", clickable=False)
+	elsewhere = _FakeUIAElement("儲存聊天", processId=9999)
 	focused = _FakeUIAElement("關閉提醒")
-	ns["_clickElementCenter"] = lambda element: element.clickable
+	clicked = []
+	ns["_clickElementCenter"] = lambda element: clicked.append(element) or element.clickable
+	state = {"foreground": True}
+	ns["_isLineForeground"] = lambda processId: processId == LINE_PID and state["foreground"]
+	handler = SimpleNamespace(clientObject=SimpleNamespace(GetFocusedElement=lambda: focused))
 
-	def choose(menu, key="儲存聊天"):
+	def choose(menu, foreground=True):
+		state["foreground"] = foreground
 		ns["_waitForFocusedMenuItem"] = (
-			lambda handler, previousRuntimeId: focused if menu is not None else None
+			lambda handler, processId, previousRuntimeId: focused if menu is not None else None
 		)
 		ns["_findMenuItem"] = lambda handler, item, table, wanted: menu
-		return ns["_chooseNativeMenuItem"](None, None, labels._MORE_OPTIONS_LABELS, key)
+		return ns["_chooseNativeMenuItem"](handler, LINE_PID, None, labels._MORE_OPTIONS_LABELS, "儲存聊天")
 
 	assert choose(None) == ("noMenu", "")
+	assert choose(None, foreground=False) == ("abandoned", "")
 	assert choose((None, True)) == ("notFound", "")
 	assert choose((None, False)) == ("noMenu", "")
 	assert choose((save, True)) == ("clicked", "Save chat")
 	assert choose((failing, True)) == ("notFound", "")
+	clicked.clear()
+	# The user switched applications while the menu was opening, or the item
+	# found is not LINE's: nothing may be clicked.
+	assert choose((save, True), foreground=False) == ("abandoned", "")
+	assert choose((elsewhere, True)) == ("abandoned", "")
+	assert clicked == []
+
+
+def test_wait_for_focused_menu_item_ignores_other_applications():
+	"""A button focused in another application must never be taken for LINE's
+	menu, or the shortcut could click "Reply"/"Copy" there."""
+	clock = {"now": 0.0}
+
+	def sleep(seconds):
+		clock["now"] += seconds
+
+	ns = _load_native_menu_symbols(
+		{
+			"time": SimpleNamespace(monotonic=lambda: clock["now"], sleep=sleep),
+			"_getElementRuntimeId": lambda element: id(element),
+		},
+	)
+	otherApp = _FakeUIAElement("Reply", processId=9999)
+	lineItem = _FakeUIAElement("回覆")
+	focusSequence = [otherApp, otherApp, lineItem]
+
+	def focusedElement():
+		return focusSequence.pop(0) if len(focusSequence) > 1 else focusSequence[0]
+
+	handler = SimpleNamespace(clientObject=SimpleNamespace(GetFocusedElement=focusedElement))
+	assert ns["_waitForFocusedMenuItem"](handler, LINE_PID, None) is lineItem
+
+	focusSequence[:] = [otherApp]
+	assert ns["_waitForFocusedMenuItem"](handler, LINE_PID, None, timeoutSec=0.2) is None
 
 
 def test_modifier_wait_includes_the_windows_key():
@@ -700,6 +752,15 @@ def test_message_shortcuts_use_lines_own_menu():
 		if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
 	}
 	assert "_waitForModifierRelease" in called, "wait for the shortcut's keys before sending Shift+F10"
+	assert any(
+		isinstance(node, ast.If)
+		and isinstance(node.test, ast.UnaryOp)
+		and isinstance(node.test.op, ast.Not)
+		and isinstance(node.test.operand, ast.Call)
+		and getattr(node.test.operand.func, "id", None) == "_waitForModifierRelease"
+		for node in ast.walk(menu_action)
+	), "give up instead of sending Shift+F10 while the shortcut's keys are still held"
+	assert "_isLineForeground" in called, "only send keys while LINE is in the foreground"
 	assert "_contextMenuAction" not in source
 	assert "_virtualWindows.messageContextMenu" not in source
 	assert "_virtualWindows.chatMoreOptions" not in source
