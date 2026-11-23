@@ -41,7 +41,8 @@ LINE's own recall confirmation and "Convert to text" photo notice are used inste
 Control+1, Control+2, and Control+3 go straight to LINE, without the add-on speaking a second, fixed tab name.
 NVDA+Windows+R, K, Delete and Control+C now pick their item from LINE's own Shift+F10 menu by name instead of right-clicking and reading the menu with OCR.
 NVDA+Windows+O opens LINE's own More options menu, and the message reader picks Save chat from it by name.
-NVDA+Windows+T reads the chat room name from LINE's chat header instead of OCR, which is kept only as a fallback."""),
+NVDA+Windows+T reads the chat room name from LINE's chat header instead of OCR, which is kept only as a fallback.
+Compatible with NVDA 2027.1, which previously disabled the add-on as incompatible."""),
 	# Author(s)
 	addon_author="張可揚 <lindsay714322@gmail.com>; 洪鳳恩 <kittyhong0208@gmail.com>; 蔡頭 <tommytsaitou>",
 	# URL for the add-on documentation support
@@ -57,7 +58,11 @@ NVDA+Windows+T reads the chat room name from LINE's chat header instead of OCR, 
 	# enums (2021.2) used throughout.
 	addon_minimumNVDAVersion="2025.1",
 	# Last NVDA version supported/tested (e.g. "2024.4.0", ideally more recent than minimum version)
-	addon_lastTestedNVDAVersion="2026.2",
+	# 2027.1 is an add-on API breaking release (addonAPIVersion.BACK_COMPAT_TO = 2027.1):
+	# NVDA 2027.x disables any add-on whose last tested version is older.
+	# The add-on uses none of the APIs 2027.1 removed (config.isAppX, winKernel.PROCESS_*,
+	# wxWidgets 3.0 compatibility APIs dropped by wxPython 4.3), so the floor above is unchanged.
+	addon_lastTestedNVDAVersion="2027.1",
 	# Add-on update channel (default is None, denoting stable releases,
 	# and for development releases, use "dev".)
 	# Do not change unless you know what you are doing!

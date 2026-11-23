@@ -17,6 +17,7 @@
 - The virtual windows for LINE's tray menu and the PC verification code screen have been removed. NVDA reads LINE's tray menu directly. The tray virtual window also took over the chat's "More options" menu, saying "Line menu" and swallowing the arrow keys and `Enter`; that no longer happens. The verification code shown on first login is no longer read with OCR and is left to LINE and NVDA.
 - `NVDA+Windows+T` now reads the chat room name from the button LINE shows in the chat header (for a group, the name and member count) instead of running OCR on the header. OCR is only used when that button cannot be identified, for example when LINE's interface language is not Traditional Chinese.
 - The readmes, the website, and the add-on description now recommend LINE 26.6.0.4004 or later instead of LINE MR. If you also use LINE MR, do not enable both add-ons at the same time.
+- Compatible with NVDA 2027.1. NVDA 2027.1 is an add-on API breaking release and disabled the add-on as incompatible because it was only marked as tested up to 2026.2. NVDA 2025.1 is still the minimum.
 
 ### 繁體中文
 
@@ -35,6 +36,7 @@
 - 移除 LINE 系統匣選單與電腦版認證畫面的虛擬視窗。LINE 的系統匣選單由 NVDA 直接讀出。原本系統匣虛擬視窗也會攔下聊天室的「其他功能」選單，念出「Line 功能表」並吞掉方向鍵與 `Enter`，現在不會再發生。首次登入時顯示的認證碼不再用 OCR 讀取，改由 LINE 與 NVDA 處理。
 - `NVDA+Windows+T` 改為直接讀出 LINE 聊天室標題按鈕的名稱（群組會包含人數，例如「視障電腦群組, 410人」），不再對標題區域做 OCR。只有在找不到這個按鈕時（例如 LINE 介面語言不是繁體中文）才會改用 OCR。
 - 說明文件、網站與附加元件描述改為建議使用 LINE 26.6.0.4004 以上版本，不再推薦 LINE MR。若同時安裝了 LINE MR，請勿同時啟用兩個附加元件。
+- 支援 NVDA 2027.1。NVDA 2027.1 是附加元件 API 不相容的版本，先前因為附加元件只標示測試到 2026.2，會被 NVDA 判定為不相容而停用。最低版本仍為 NVDA 2025.1。
 
 ### 日本語
 
@@ -53,6 +55,7 @@
 - LINE のシステムトレイメニューと PC 版認証画面の仮想ウィンドウを削除しました。LINE のシステムトレイメニューは NVDA が直接読み上げます。トレイの仮想ウィンドウはトークの「その他」メニューも横取りし、「Line メニュー」と読み上げて矢印キーと `Enter` を奪っていましたが、これはなくなりました。初回ログイン時に表示される認証コードは OCR で読み取らず、LINE と NVDA に任せます。
 - `NVDA+Windows+T` は、ヘッダーを OCR で読み取る代わりに、LINE がチャットのヘッダーに表示するチャットルーム名のボタンの名前を読み上げるようになりました（グループではメンバー数も含まれます）。このボタンを特定できない場合（LINE の表示言語が繁体字中国語でない場合など）にのみ OCR を使用します。
 - ドキュメント、Web サイト、アドオンの説明は、LINE MR ではなく LINE 26.6.0.4004 以降を推奨するようになりました。LINE MR も使用している場合は、両アドオンを同時に有効化しないでください。
+- NVDA 2027.1 に対応しました。NVDA 2027.1 はアドオン API の互換性がなくなるリリースで、これまでアドオンは 2026.2 までの動作確認としか記載されていなかったため、互換性なしとして無効化されていました。最小バージョンは引き続き NVDA 2025.1 です。
 
 ### ภาษาไทย
 
@@ -71,3 +74,4 @@
 - ลบหน้าต่างเสมือนของเมนูถาดระบบ LINE และหน้าจอยืนยันตัวตนสำหรับเวอร์ชันคอมพิวเตอร์ออกแล้ว NVDA อ่านเมนูถาดระบบของ LINE ได้โดยตรง หน้าต่างเสมือนของถาดระบบเคยแทรกเข้าไปในเมนู "ตัวเลือกเพิ่มเติม" ของแชทด้วย โดยพูดว่า "เมนู Line" และกินปุ่มลูกศรกับ `Enter` ซึ่งจะไม่เกิดขึ้นอีก รหัสยืนยันที่แสดงตอนเข้าสู่ระบบครั้งแรกไม่อ่านด้วย OCR อีกต่อไป แต่ปล่อยให้ LINE และ NVDA จัดการ
 - `NVDA+Windows+T` จะอ่านชื่อห้องแชทจากปุ่มที่ LINE แสดงในส่วนหัวของแชทโดยตรง (สำหรับกลุ่มจะรวมจำนวนสมาชิกด้วย) แทนการใช้ OCR กับส่วนหัว และจะใช้ OCR เฉพาะเมื่อระบุปุ่มนี้ไม่ได้ เช่น เมื่อภาษาของ LINE ไม่ใช่ภาษาจีนตัวเต็ม
 - เอกสาร เว็บไซต์ และคำอธิบายส่วนเสริมแนะนำ LINE 26.6.0.4004 หรือใหม่กว่าแทน LINE MR หากคุณใช้ LINE MR ด้วย อย่าเปิดใช้ทั้งสองส่วนเสริมพร้อมกัน
+- รองรับ NVDA 2027.1 แล้ว NVDA 2027.1 เป็นรุ่นที่ API ของส่วนเสริมเข้ากันไม่ได้กับรุ่นก่อน ก่อนหน้านี้ NVDA จึงปิดใช้งานส่วนเสริมนี้เพราะระบุว่าทดสอบถึงแค่ 2026.2 เวอร์ชันขั้นต่ำยังคงเป็น NVDA 2025.1
