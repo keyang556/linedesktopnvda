@@ -22,7 +22,6 @@ import re
 import threading
 import time
 import configparser
-import winreg
 from ._utils import pickOcrLanguage, setPreferredOcrLanguage
 from . import _lineLabels
 import addonHandler
@@ -35,8 +34,14 @@ SCRIPT_CATEGORY = _("LINE Desktop")
 
 
 # ---------------------------------------------------------------------------
-# LINE installation info — version detection and window type classification
+# LINE installation info — version detection
 # ---------------------------------------------------------------------------
+
+# LINE.ini records the version of each plugin LINE has started as
+# executed_plugin_version_<name>. LINE downloads a plugin the first time it is
+# needed: LineCall runs voice and video calls, LineMediaPlayer plays videos.
+_LINE_PLUGIN_VERSION_PREFIX = "executed_plugin_version_"
+_LINE_PLUGIN_COMPONENTS = ("LineCall", "LineMediaPlayer")
 
 
 def _getLineDataDir():
@@ -50,23 +55,46 @@ def _getLineDataDir():
 	return None
 
 
-def _readLineVersion():
-	"""Read the installed LINE version from LINE.ini.
+def _readLineIniGlobal():
+	"""Return the ``[global]`` section of LINE.ini as a dict, or {} if unreadable.
 
-	Returns the version string (e.g. '26.1.0.3865') or None.
+	Keys keep their case (``executed_plugin_version_LineCall``). Interpolation
+	is off because LINE stores URL-encoded keys that contain ``%``.
 	"""
 	dataDir = _getLineDataDir()
 	if not dataDir:
-		return None
+		return {}
 	iniPath = os.path.join(dataDir, "LINE.ini")
 	if not os.path.isfile(iniPath):
-		return None
+		return {}
 	try:
-		parser = configparser.ConfigParser()
+		parser = configparser.ConfigParser(interpolation=None, strict=False)
+		parser.optionxform = str
 		parser.read(iniPath, encoding="utf-8")
-		return parser.get("global", "last_updated_version", fallback=None)
+		if not parser.has_section("global"):
+			return {}
+		return dict(parser.items("global"))
 	except Exception:
-		return None
+		log.debug("LINE: reading LINE.ini failed", exc_info=True)
+		return {}
+
+
+def _readLineVersion():
+	"""Return the installed LINE version (e.g. '26.6.0.4004') from LINE.ini, or None."""
+	return _readLineIniGlobal().get("last_updated_version") or None
+
+
+def _readLineComponentVersions():
+	"""Return ``[(component, version or None), …]`` for LINE and its plugins.
+
+	LINE comes first, then each plugin in _LINE_PLUGIN_COMPONENTS. A plugin's
+	version is None until LINE has started that plugin at least once.
+	"""
+	values = _readLineIniGlobal()
+	components = [("LINE", values.get("last_updated_version") or None)]
+	for name in _LINE_PLUGIN_COMPONENTS:
+		components.append((name, values.get(_LINE_PLUGIN_VERSION_PREFIX + name) or None))
+	return components
 
 
 def _readLineLanguage():
@@ -86,164 +114,6 @@ def _readLineLanguage():
 		return parser.get("General", "installLang", fallback=None)
 	except Exception:
 		return None
-
-
-# ---------------------------------------------------------------------------
-# Qt accessibility environment variable management
-# ---------------------------------------------------------------------------
-
-_QT_ACCESSIBILITY_ENV_NAME = "QT_ACCESSIBILITY"
-_HWND_BROADCAST = 0xFFFF
-_WM_SETTINGCHANGE = 0x001A
-_SMTO_ABORTIFHUNG = 0x0002
-
-
-def _isQtAccessibleSet():
-	"""Check if QT_ACCESSIBILITY=1 is set in user environment variables.
-
-	Returns True if the variable is set to '1', False otherwise.
-	"""
-	try:
-		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER,
-			"Environment",
-			0,
-			winreg.KEY_READ,
-		) as key:
-			value, _ = winreg.QueryValueEx(key, _QT_ACCESSIBILITY_ENV_NAME)
-			return str(value) == "1"
-	except FileNotFoundError:
-		return False
-	except Exception:
-		log.debugWarning("Failed to read QT_ACCESSIBILITY from registry", exc_info=True)
-		return False
-
-
-def _setQtAccessible(enable=True):
-	"""Set or remove QT_ACCESSIBILITY in user environment variables.
-
-	Writes to HKCU\\Environment so the setting persists across reboots.
-	Broadcasts WM_SETTINGCHANGE so new processes pick up the change.
-	Returns True on success, False on failure.
-	"""
-	try:
-		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER,
-			"Environment",
-			0,
-			winreg.KEY_SET_VALUE | winreg.KEY_READ,
-		) as key:
-			if enable:
-				winreg.SetValueEx(
-					key,
-					_QT_ACCESSIBILITY_ENV_NAME,
-					0,
-					winreg.REG_SZ,
-					"1",
-				)
-				log.info("QT_ACCESSIBILITY=1 set in user environment")
-			else:
-				try:
-					winreg.DeleteValue(key, _QT_ACCESSIBILITY_ENV_NAME)
-					log.info("QT_ACCESSIBILITY removed from user environment")
-				except FileNotFoundError:
-					pass
-		# Broadcast environment change to all windows
-		ctypes.windll.user32.SendMessageTimeoutW(
-			_HWND_BROADCAST,
-			_WM_SETTINGCHANGE,
-			0,
-			"Environment",
-			_SMTO_ABORTIFHUNG,
-			5000,
-			None,
-		)
-		return True
-	except Exception:
-		log.warning("Failed to set QT_ACCESSIBILITY in registry", exc_info=True)
-		return False
-
-
-# Window type classification —
-# LINE has two main window modes:
-#   "AllInOneWindow" — sidebar (chat list) + chat area in one window
-#   "ChatWindow" — standalone chat window (no sidebar)
-# In ChatWindow mode, all list items are message items (no sidebar heuristic needed).
-
-# Cache to avoid repeated window classification within the same focus cycle.
-_windowTypeCache = {
-	"hwnd": None,
-	"type": None,  # "allinone", "chat", or "unknown"
-	"expiresAt": 0.0,
-}
-_WINDOW_TYPE_CACHE_TTL = 2.0  # seconds
-
-
-def _classifyLineWindow(hwnd=None):
-	"""Classify the current LINE window as 'allinone', 'chat', or 'unknown'.
-
-	Uses window dimensions as heuristic:
-	  - AllInOneWindow is wider (has sidebar ~250-350px + chat area)
-	  - ChatWindow is narrower (chat area only, typically < 500px wide)
-	Also checks UIA tree for sidebar list presence as a secondary signal.
-	"""
-	global _windowTypeCache
-
-	if hwnd is None:
-		hwnd = ctypes.windll.user32.GetForegroundWindow()
-	if not hwnd:
-		return "unknown"
-
-	now = time.monotonic()
-	cache = _windowTypeCache
-	if cache["hwnd"] == int(hwnd) and cache["expiresAt"] > now:
-		return cache["type"]
-
-	windowType = "unknown"
-	try:
-		rect = ctypes.wintypes.RECT()
-		ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-		winWidth = rect.right - rect.left
-
-		# AllInOneWindow typically has sidebar (~250-350px) + chat area (~400px+)
-		# so total width >= ~600px. ChatWindow is standalone chat, narrower.
-		# However, users can resize. Use a soft threshold + child window count.
-		if winWidth >= 600:
-			# Likely AllInOneWindow, but could be a wide ChatWindow.
-			# Check for the presence of multiple pane children (sidebar + chat)
-			# via quick UIA check.
-			try:
-				handler = UIAHandler.handler
-				if handler:
-					_walker = handler.clientObject.RawViewWalker
-					rootCond = handler.clientObject.CreatePropertyCondition(
-						30003,
-						50033,  # ControlType == Pane
-					)
-					rootEl = handler.clientObject.ElementFromHandle(hwnd)
-					if rootEl:
-						panes = rootEl.FindAll(2, rootCond)  # TreeScope.Children=2
-						paneCount = panes.Length if panes else 0
-						if paneCount >= 2:
-							windowType = "allinone"
-						else:
-							# Single pane or no panes — could be ChatWindow
-							# at larger size
-							windowType = "allinone" if winWidth >= 700 else "chat"
-			except Exception:
-				# Fallback: wide window is likely AllInOneWindow
-				windowType = "allinone"
-		else:
-			windowType = "chat"
-
-	except Exception:
-		log.debug("_classifyLineWindow failed", exc_info=True)
-
-	cache["hwnd"] = int(hwnd)
-	cache["type"] = windowType
-	cache["expiresAt"] = now + _WINDOW_TYPE_CACHE_TTL
-	log.debug(f"LINE: window type classified as '{windowType}' (hwnd={hwnd})")
-	return windowType
 
 
 # Sound file to play after a message is successfully sent
@@ -1230,14 +1100,12 @@ _suppressAddon = False
 
 # Image description backend providers exposed in the settings panel.
 _IMAGE_DESCRIPTION_PROVIDER_GOOGLE = "google"
-_IMAGE_DESCRIPTION_PROVIDER_OLLAMA = "ollama"
 _IMAGE_DESCRIPTION_PROVIDER_NVIDIA = "nvidia"
 _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS = "pollinations"
 _IMAGE_DESCRIPTION_PROVIDER_OPENAI = "openai"
 _IMAGE_DESCRIPTION_PROVIDER_MISTRAL = "mistral"
 _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE,
-	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 	_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
@@ -1246,7 +1114,6 @@ _IMAGE_DESCRIPTION_AVAILABLE_PROVIDERS = (
 _IMAGE_DESCRIPTION_DEFAULT_PROVIDER = _IMAGE_DESCRIPTION_PROVIDER_GOOGLE
 _IMAGE_DESCRIPTION_PROVIDER_LABELS = {
 	_IMAGE_DESCRIPTION_PROVIDER_GOOGLE: "Google AI",
-	_IMAGE_DESCRIPTION_PROVIDER_OLLAMA: "Ollama Cloud",
 	_IMAGE_DESCRIPTION_PROVIDER_NVIDIA: "NVIDIA NIM",
 	_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS: "Pollinations.AI",
 	_IMAGE_DESCRIPTION_PROVIDER_OPENAI: "OpenAI",
@@ -1267,7 +1134,6 @@ _IMAGE_DESCRIPTION_USER_PROVIDER_FILENAME = "line_desktop_image_provider.txt"
 _IMAGE_DESCRIPTION_DEFAULT_KEY_BLOB = (
 	"g+Ku1l+8YmbpO4/JPwy+ZyMlZw4Nfm9gO5bbn8K/vPkz7VFoMRpiFsx2hgfKpUqbxmWqQGo2h8Ph7YjZljEEFkmc3+HlxuE="
 )
-_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB = "oLtfHW4hFhTMLQ0mKKcEqd70nU8Z9EsEjjSKfueLCUCnJD9oee2CTd3GtTi0LyS6ZJMuee/jIxFiXDH9kzdyFOMVRfIjMRxJzqZxnccS+p5B1gjbWxYyMLY="
 _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_KEY_BLOB = "z4L9t8i44kXzffkss7ukUYezYDRvTRxxgKURaLeyOl2Ea8kLN4dNweWybeuf4F8SD6I8ArEWqbvry5BB2o4MxerrJgd0OZD8pQNm9Nw6P7RE2mDI1xktlM4bj6XpwU9G/0wFnMMn"
 _IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_KEY_BLOB = (
 	"9djyxTd4B3//wSRROFV/x5bpuusesK71/tOYdrtn4jf6YeRcniZVExF4//O0M+0G61hO0fkmB99ToQl9b3awbnwgPw=="
@@ -1281,13 +1147,11 @@ _IMAGE_DESCRIPTION_MISTRAL_DEFAULT_KEY_BLOB = (
 	"gv024MC6257LD65vvtsLcSv06bdTsV1dCeRDwhaaob/PHZFHRusKQixxW1RHSFIDfJRfF937g9Z7Df1VLkazZg=="
 )
 _IMAGE_DESCRIPTION_USER_KEY_FILENAME = "line_desktop_image_api_key.dat"
-_IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME = "line_desktop_ollama_api_key.dat"
 _IMAGE_DESCRIPTION_USER_NVIDIA_KEY_FILENAME = "line_desktop_nvidia_api_key.dat"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_KEY_FILENAME = "line_desktop_pollinations_api_key.dat"
 _IMAGE_DESCRIPTION_USER_OPENAI_KEY_FILENAME = "line_desktop_openai_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MISTRAL_KEY_FILENAME = "line_desktop_mistral_api_key.dat"
 _IMAGE_DESCRIPTION_USER_MODEL_FILENAME = "line_desktop_image_model.txt"
-_IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME = "line_desktop_ollama_model.txt"
 _IMAGE_DESCRIPTION_USER_NVIDIA_MODEL_FILENAME = "line_desktop_nvidia_model.txt"
 _IMAGE_DESCRIPTION_USER_POLLINATIONS_MODEL_FILENAME = "line_desktop_pollinations_model.txt"
 _IMAGE_DESCRIPTION_USER_OPENAI_MODEL_FILENAME = "line_desktop_openai_model.txt"
@@ -1296,8 +1160,6 @@ _IMAGE_DESCRIPTION_USER_PROMPT_FILENAME = "line_desktop_image_prompt.txt"
 _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt"
 # Default Google model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-flash-lite-latest"
-# Default Ollama Cloud model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL = "gemma4:31b-cloud"
 # Default NVIDIA NIM model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "google/diffusiongemma-26b-a4b-it"
 # Models exposed in the settings panel dropdown. The order here is the order
@@ -1318,9 +1180,6 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 	"gemma-4-26b-a4b-it",
 	"gemma-4-31b-it",
 )
-# Vision-capable models commonly available on Ollama Cloud. Users can pick
-# whichever they have access to; unavailable IDs surface as an HTTP error.
-_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS = ("gemma4:31b-cloud",)
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
@@ -1414,7 +1273,6 @@ _IMAGE_DESCRIPTION_MISTRAL_AVAILABLE_MODELS = (
 _IMAGE_DESCRIPTION_ENDPOINT = (
 	"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 )
-_IMAGE_DESCRIPTION_OLLAMA_ENDPOINT = "https://ollama.com/api/chat"
 _IMAGE_DESCRIPTION_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
 _IMAGE_DESCRIPTION_POLLINATIONS_ENDPOINT = "https://gen.pollinations.ai/v1/chat/completions"
 _IMAGE_DESCRIPTION_OPENAI_ENDPOINT = "https://api.openai.com/v1/chat/completions"
@@ -1441,13 +1299,11 @@ _NOT_COMPUTED = object()
 # Populated once at AppModule.__init__ via _initEffectiveImageApiKey().
 # After that, _getEffectiveImageApiKey() is a pure memory read (no PBKDF2).
 _cachedEffectiveImageApiKey = _NOT_COMPUTED
-_cachedEffectiveOllamaApiKey = _NOT_COMPUTED
 _cachedEffectiveNvidiaApiKey = _NOT_COMPUTED
 _cachedEffectivePollinationsApiKey = _NOT_COMPUTED
 _cachedEffectiveOpenaiApiKey = _NOT_COMPUTED
 _cachedEffectiveMistralApiKey = _NOT_COMPUTED
 _cachedEffectiveImageProvider = _NOT_COMPUTED
-_cachedEffectiveOllamaModel = _NOT_COMPUTED
 _cachedEffectiveNvidiaModel = _NOT_COMPUTED
 _cachedEffectivePollinationsModel = _NOT_COMPUTED
 _cachedEffectiveOpenaiModel = _NOT_COMPUTED
@@ -1579,71 +1435,6 @@ def _getEffectiveImageApiKey():
 	if _cachedEffectiveImageApiKey is _NOT_COMPUTED:
 		_initEffectiveImageApiKey()
 	return _cachedEffectiveImageApiKey
-
-
-def _getOllamaApiKeyStorePath():
-	"""Return the filesystem path for the user-supplied Ollama API key file."""
-	try:
-		import globalVars
-
-		configPath = globalVars.appArgs.configPath
-	except Exception:
-		return None
-	if not configPath:
-		return None
-	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OLLAMA_KEY_FILENAME)
-
-
-def getUserOllamaApiKey():
-	"""Return the plain Ollama API key previously set by the user, or None."""
-	path = _getOllamaApiKeyStorePath()
-	if not path or not os.path.isfile(path):
-		return None
-	try:
-		with open(path, "r", encoding="utf-8") as f:
-			blob = f.read().strip()
-	except Exception as e:
-		log.debug(f"LINE: failed to read user Ollama API key: {e}", exc_info=True)
-		return None
-	return _deobfuscateImageApiKey(blob)
-
-
-def setUserOllamaApiKey(plain):
-	"""Persist a user-supplied Ollama API key (obfuscated). Empty/None clears it."""
-	global _cachedEffectiveOllamaApiKey
-	path = _getOllamaApiKeyStorePath()
-	if not path:
-		return False
-	try:
-		if not plain:
-			if os.path.isfile(path):
-				os.remove(path)
-			_cachedEffectiveOllamaApiKey = _deobfuscateImageApiKey(_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB)
-		else:
-			blob = _obfuscateImageApiKey(plain)
-			with open(path, "w", encoding="utf-8") as f:
-				f.write(blob)
-			_cachedEffectiveOllamaApiKey = plain
-		return True
-	except Exception as e:
-		log.warning(f"LINE: failed to save user Ollama API key: {e}", exc_info=True)
-		return False
-
-
-def _initEffectiveOllamaApiKey():
-	"""Decrypt and cache the effective Ollama API key."""
-	global _cachedEffectiveOllamaApiKey
-	userKey = getUserOllamaApiKey()
-	_cachedEffectiveOllamaApiKey = userKey or _deobfuscateImageApiKey(
-		_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_KEY_BLOB,
-	)
-
-
-def _getEffectiveOllamaApiKey():
-	"""Return the cached Ollama API key; falls back to lazy init if not yet computed."""
-	if _cachedEffectiveOllamaApiKey is _NOT_COMPUTED:
-		_initEffectiveOllamaApiKey()
-	return _cachedEffectiveOllamaApiKey
 
 
 def _getNvidiaApiKeyStorePath():
@@ -2164,70 +1955,6 @@ def _getEffectiveImageModel():
 	if _cachedEffectiveImageModel is _NOT_COMPUTED:
 		_cachedEffectiveImageModel = getUserImageModel() or _IMAGE_DESCRIPTION_DEFAULT_MODEL
 	return _cachedEffectiveImageModel
-
-
-def _getOllamaModelStorePath():
-	"""Return the filesystem path for the user-selected Ollama model preference."""
-	try:
-		import globalVars
-
-		configPath = globalVars.appArgs.configPath
-	except Exception:
-		return None
-	if not configPath:
-		return None
-	return os.path.join(configPath, _IMAGE_DESCRIPTION_USER_OLLAMA_MODEL_FILENAME)
-
-
-def getUserOllamaModel():
-	"""Return the Ollama model ID previously chosen by the user, or None."""
-	path = _getOllamaModelStorePath()
-	if not path or not os.path.isfile(path):
-		return None
-	try:
-		with open(path, "r", encoding="utf-8") as f:
-			value = f.read().strip()
-	except Exception as e:
-		log.debug(f"LINE: failed to read user Ollama model: {e}", exc_info=True)
-		return None
-	if not value:
-		return None
-	if value not in _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS:
-		log.debug(f"LINE: stored Ollama model {value!r} is not in the allowed list")
-		return None
-	return value
-
-
-def setUserOllamaModel(name):
-	"""Persist a user-selected Ollama model. Empty/None or default clears the file."""
-	global _cachedEffectiveOllamaModel
-	path = _getOllamaModelStorePath()
-	if not path:
-		return False
-	try:
-		if not name or name == _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL:
-			if os.path.isfile(path):
-				os.remove(path)
-			_cachedEffectiveOllamaModel = _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
-			return True
-		if name not in _IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS:
-			log.warning(f"LINE: refusing to save unknown Ollama model {name!r}")
-			return False
-		with open(path, "w", encoding="utf-8") as f:
-			f.write(name)
-		_cachedEffectiveOllamaModel = name
-		return True
-	except Exception as e:
-		log.warning(f"LINE: failed to save user Ollama model: {e}", exc_info=True)
-		return False
-
-
-def _getEffectiveOllamaModel():
-	"""Return the cached Ollama model ID; lazily resolved from disk on first call."""
-	global _cachedEffectiveOllamaModel
-	if _cachedEffectiveOllamaModel is _NOT_COMPUTED:
-		_cachedEffectiveOllamaModel = getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
-	return _cachedEffectiveOllamaModel
 
 
 def _getNvidiaModelStorePath():
@@ -2798,7 +2525,7 @@ def _callImageDescriptionApi(contents, timeout=None):
 	provider is resolved at call time, so changing the setting mid-conversation
 	switches subsequent turns to the new backend. When ``timeout`` is None,
 	each backend uses its own appropriate default (30 s for Google, 60 s for
-	Ollama Cloud which typically needs more time).
+	the other providers, which typically need more time).
 	"""
 	provider = _getEffectiveImageProvider()
 	if not _hasAiConsent(provider):
@@ -2808,11 +2535,6 @@ def _callImageDescriptionApi(contents, timeout=None):
 		# mid-conversation cannot inherit the previous provider's consent.
 		# Translators: Error when image description is attempted without AI consent
 		return None, _("尚未同意將圖片傳送給第三方 AI 服務")
-	if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-		return _callOllamaImageDescriptionApi(
-			contents,
-			timeout=timeout if timeout is not None else 60.0,
-		)
 	if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 		return _callNvidiaImageDescriptionApi(
 			contents,
@@ -2906,103 +2628,6 @@ def _callGoogleImageDescriptionApi(contents, timeout=30.0):
 			exc_info=True,
 		)
 	return None, _("圖片描述失敗")
-
-
-def _geminiContentsToOllamaMessages(contents):
-	"""Convert the canonical Gemini-shaped contents into Ollama chat messages.
-
-	The dialog stores history as Gemini turns ({"role": "user"|"model",
-	"parts": [{"text": ...}, {"inline_data": {...}}]}). Ollama's /api/chat
-	expects {"role": "user"|"assistant", "content": str, "images": [b64]}.
-	"""
-	messages = []
-	for turn in contents or []:
-		role = turn.get("role") if isinstance(turn, dict) else None
-		ollamaRole = "assistant" if role == "model" else "user"
-		texts = []
-		images = []
-		for part in (turn.get("parts") or []) if isinstance(turn, dict) else []:
-			if not isinstance(part, dict):
-				continue
-			if "text" in part and part["text"]:
-				texts.append(part["text"])
-			elif "inline_data" in part:
-				inline = part.get("inline_data") or {}
-				data = inline.get("data")
-				if data:
-					images.append(data)
-		message = {"role": ollamaRole, "content": "\n".join(texts)}
-		if images:
-			message["images"] = images
-		messages.append(message)
-	return messages
-
-
-def _callOllamaImageDescriptionApi(contents, timeout=60.0):
-	"""Send the canonical contents to Ollama Cloud's /api/chat endpoint.
-
-	Returns (text, None) on success or (None, error_msg) on failure. Uses a
-	longer default timeout because cloud-hosted vision models can take noticeably
-	longer than Google's flash variants to produce a first response.
-	"""
-	try:
-		import json
-		import urllib.request
-		import urllib.error
-
-		apiKey = _getEffectiveOllamaApiKey()
-		if not apiKey:
-			log.warning("LINE: no Ollama Cloud API key available")
-			return None, _("未設定 API Key")
-		messages = _geminiContentsToOllamaMessages(contents)
-		body = {
-			"model": _getEffectiveOllamaModel(),
-			"messages": messages,
-			"stream": False,
-		}
-		req = urllib.request.Request(
-			_IMAGE_DESCRIPTION_OLLAMA_ENDPOINT,
-			data=json.dumps(body).encode("utf-8"),
-			headers={
-				"Content-Type": "application/json",
-				"Authorization": f"Bearer {apiKey}",
-				"Accept": "application/json",
-			},
-			method="POST",
-		)
-		try:
-			with urllib.request.urlopen(req, timeout=timeout) as resp:
-				raw = resp.read()
-		except urllib.error.HTTPError as e:
-			errBody = e.read().decode("utf-8", errors="replace")
-			log.warning(
-				f"LINE: Ollama image description HTTP {e.code} {e.reason}: {errBody[:500]}",
-			)
-			return None, _("圖片描述失敗 (HTTP {code})").format(code=e.code)
-		except Exception as e:
-			log.warning(f"LINE: Ollama image description network error: {e}", exc_info=True)
-			return None, _("圖片描述失敗 (網路錯誤)")
-		data = json.loads(raw.decode("utf-8", errors="replace"))
-	except Exception as e:
-		log.warning(
-			f"LINE: Ollama image description request failed: {e}",
-			exc_info=True,
-		)
-		return None, _("圖片描述失敗")
-
-	try:
-		message = data.get("message") if isinstance(data, dict) else None
-		if isinstance(message, dict):
-			text = message.get("content")
-			if text:
-				return text.strip(), None
-		log.info(f"LINE: Ollama image description returned no content: {data!r}")
-	except Exception as e:
-		log.warning(
-			f"LINE: Ollama image description response parse failed: {e}",
-			exc_info=True,
-		)
-	return None, _("圖片描述失敗 (無回應)")
 
 
 def _geminiContentsToNvidiaMessages(contents):
@@ -3976,11 +3601,9 @@ class AppModule(appModuleHandler.AppModule):
 		self._lineLanguage = _readLineLanguage()
 		# Let OCR follow LINE's UI language (falls back to zh-Hant first).
 		setPreferredOcrLanguage(self._lineLanguage)
-		self._qtAccessibleSet = _isQtAccessibleSet()
 		# Decrypt the image API keys once at startup so PBKDF2 never runs
 		# during an actual image-description request.
 		_initEffectiveImageApiKey()
-		_initEffectiveOllamaApiKey()
 		_initEffectiveNvidiaApiKey()
 		_initEffectivePollinationsApiKey()
 		_initEffectiveOpenaiApiKey()
@@ -3989,8 +3612,7 @@ class AppModule(appModuleHandler.AppModule):
 			f"LINE AppModule loaded for process: {self.processID}, "
 			f"exe: {self.appName}, "
 			f"lineVersion: {self._lineVersion}, "
-			f"lineLanguage: {self._lineLanguage}, "
-			f"qtAccessible: {self._qtAccessibleSet}",
+			f"lineLanguage: {self._lineLanguage}",
 		)
 
 	def terminate(self):
@@ -5975,57 +5597,35 @@ class AppModule(appModuleHandler.AppModule):
 			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
 
 	@script(
-		# Translators: Description of a script to report LINE version and window type
-		description=_("報告 LINE 版本與視窗類型"),
-		gesture="kb:NVDA+shift+v",
+		# Translators: Description of the script that opens a read-only window with
+		# the versions of LINE, its components and this add-on
+		description=_("在唯讀視窗中開啟 LINE 各元件與附加元件的版本資訊"),
+		gesture="kb:NVDA+alt+v",
 		category=SCRIPT_CATEGORY,
-		speakOnDemand=True,
 	)
-	def script_reportLineInfo(self, gesture):
-		"""Report LINE version, language, and current window type."""
-		parts = []
-		ver = self._lineVersion
-		if ver:
-			# Translators: Reported LINE version
-			parts.append(_("LINE 版本: {version}").format(version=ver))
-		else:
-			parts.append(_("LINE 版本: 未知"))
-		lang = self._lineLanguage
-		if lang:
-			parts.append(_("語言: {language}").format(language=lang))
-		winType = _classifyLineWindow()
-		typeNames = {
-			"allinone": _("主視窗（含側邊欄）"),
-			"chat": _("獨立聊天視窗"),
-			"unknown": _("未知視窗"),
-		}
-		# Translators: Reported LINE window type
-		parts.append(
-			_("視窗類型: {type}").format(
-				type=typeNames.get(winType, winType),
-			),
-		)
-		qtA11y = _isQtAccessibleSet()
-		parts.append(
-			_("Qt 無障礙: 已啟用") if qtA11y else _("Qt 無障礙: 未啟用"),
-		)
-		msg = ", ".join(parts)
-		ui.message(msg)
-		log.info(f"LINE info: {msg}")
+	def script_showVersionInfo(self, gesture):
+		"""Open the versions of LINE, its plugins and this add-on in a read-only window."""
+		# Translators: Shown in the version information window when a version cannot be read
+		unknown = _("未知")
+		lines = [
+			# Translators: One line of the version information window. {component} is
+			# a LINE component such as LINE, LineCall or LineMediaPlayer.
+			_("{component} 版本: {version}").format(component=name, version=version or unknown)
+			for name, version in _readLineComponentVersions()
+		]
+		# Translators: Line of the version information window naming LINE's UI language
+		lines.append(_("LINE 語言: {language}").format(language=_readLineLanguage() or unknown))
+		try:
+			addonVersion = addonHandler.getCodeAddon().manifest["version"]
+		except Exception:
+			log.debug("LINE: reading the add-on version failed", exc_info=True)
+			addonVersion = None
+		# Translators: Line of the version information window naming this add-on's version
+		lines.append(_("LINE Desktop 附加元件版本: {version}").format(version=addonVersion or unknown))
+		from ._textWindow import showTextWindow
 
-	def script_toggleQtAccessible(self, gesture):
-		"""Toggle QT_ACCESSIBILITY=1 user environment variable."""
-		currentlySet = _isQtAccessibleSet()
-		if currentlySet:
-			if _setQtAccessible(False):
-				ui.message(_("已移除 QT_ACCESSIBILITY 環境變數，重啟 LINE 後生效"))
-			else:
-				ui.message(_("移除 QT_ACCESSIBILITY 環境變數失敗"))
-		else:
-			if _setQtAccessible(True):
-				ui.message(_("已設定 QT_ACCESSIBILITY=1，重啟 LINE 後生效"))
-			else:
-				ui.message(_("設定 QT_ACCESSIBILITY 環境變數失敗"))
+		# Translators: Title of the read-only version information window
+		showTextWindow("\n".join(lines), _("LINE Desktop 版本資訊"))
 
 	def _lineFileDialogExists(self):
 		"""True if a #32770 dialog owned by LINE's process is currently open.
@@ -6133,276 +5733,6 @@ class AppModule(appModuleHandler.AppModule):
 			log.info("LINE: file dialog closed, addon resumed")
 
 		_runOnWorkerThread(_waitForDialogGone, onDone=_resume, taskName="fileDialogWatch")
-
-	def script_openMessageReader(self, gesture):
-		"""Open message reader: choose "Save chat" in LINE's More options menu, parse, and display."""
-		if getattr(self, "_messageReaderPending", False):
-			ui.message(_("訊息閱讀器正在執行中，請稍候"))
-			return
-		ui.message(_("正在開啟訊息閱讀器…"))
-		self._messageReaderPending = True
-
-		def _openAndChooseSaveChat():
-			opened, previousRuntimeId = self._openChatMoreOptionsMenu()
-			if not opened:
-				return None
-			return _chooseNativeMenuItem(
-				UIAHandler.handler,
-				self.processID,
-				previousRuntimeId,
-				_lineLabels._MORE_OPTIONS_LABELS,
-				"儲存聊天",
-			)
-
-		def _afterChoice(result):
-			if result and result[0] == _MENU_ITEM_CLICKED:
-				speech.cancelSpeech()
-				core.callLater(800, self._messageReaderHandleSaveDialog)
-				return
-			self._messageReaderPending = False
-			if result is None:
-				ui.message(_("找不到 LINE 視窗，請先開啟聊天室"))
-				return
-			if result[0] == _MENU_ABANDONED:
-				log.debug("LINE: message reader stopped; LINE lost the foreground")
-				return
-			if result[0] == _MENU_ITEM_NOT_FOUND and _isLineForeground(self.processID):
-				from keyboardHandler import KeyboardInputGesture
-
-				KeyboardInputGesture.fromName("escape").send()
-			ui.message(_("找不到儲存聊天選項"))
-
-		_runOnWorkerThread(_openAndChooseSaveChat, onDone=_afterChoice, taskName="messageReaderSaveChat")
-
-	def _messageReaderHandleSaveDialog(self, retriesLeft=10):
-		"""Find the Save As dialog, set filename to temp folder, and save."""
-		import ctypes
-		import ctypes.wintypes as wintypes
-		import tempfile
-
-		lineProcessId = self.processID
-		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-		dialogHwnd = None
-
-		def _enumCallback(hwnd, lParam):
-			nonlocal dialogHwnd
-			buf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
-			if buf.value == "#32770":
-				pid = wintypes.DWORD()
-				ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-				if pid.value == lineProcessId:
-					if ctypes.windll.user32.IsWindowVisible(hwnd):
-						dialogHwnd = hwnd
-						return False
-			return True
-
-		ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enumCallback), 0)
-
-		if not dialogHwnd:
-			if retriesLeft > 0:
-				core.callLater(300, lambda: self._messageReaderHandleSaveDialog(retriesLeft - 1))
-			else:
-				self._messageReaderPending = False
-				ui.message(_("未偵測到儲存對話框"))
-			return
-
-		# Find the filename edit control in the Save dialog
-		# The file dialog has a ComboBoxEx32 > ComboBox > Edit hierarchy
-		editHwnd = self._findSaveDialogEdit(dialogHwnd)
-		if not editHwnd:
-			self._messageReaderPending = False
-			ui.message(_("無法操作儲存對話框"))
-			return
-
-		# Build temp file path (use system temp dir to avoid locking the addon folder).
-		savePath = os.path.join(tempfile.gettempdir(), "lineDesktop_chat_export.txt")
-		self._messageReaderSavePath = savePath
-
-		# Pre-delete existing file to suppress the overwrite confirmation dialog
-		try:
-			if os.path.isfile(savePath):
-				os.remove(savePath)
-		except Exception as e:
-			log.warning(f"LINE: could not pre-delete chat export: {e}")
-
-		# Set the filename
-		WM_SETTEXT = 0x000C
-		pathBuffer = ctypes.create_unicode_buffer(savePath)
-		ctypes.windll.user32.SendMessageW(
-			editHwnd,
-			WM_SETTEXT,
-			0,
-			pathBuffer,
-		)
-
-		# Press Enter to save (send BN_CLICKED to Save button, or press Enter)
-		core.callLater(200, lambda: self._messageReaderPressSave(dialogHwnd))
-
-	def _findSaveDialogEdit(self, dialogHwnd):
-		"""Find the filename Edit control inside a standard Windows Save dialog.
-
-		Uses EnumChildWindows to recursively search all descendants, looking for
-		an Edit inside a ComboBoxEx32 > ComboBox chain (the filename field).
-		Falls back to the first visible+enabled Edit control found.
-		"""
-		import ctypes
-		import ctypes.wintypes as wintypes
-
-		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-		foundEdit = [None]
-
-		# Primary: find Edit inside any ComboBoxEx32 > ComboBox (filename field)
-		def _searchComboBoxEx(hwnd, lParam):
-			buf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
-			if buf.value == "ComboBoxEx32":
-				combo = ctypes.windll.user32.FindWindowExW(hwnd, None, "ComboBox", None)
-				if combo:
-					edit = ctypes.windll.user32.FindWindowExW(combo, None, "Edit", None)
-					if edit and ctypes.windll.user32.IsWindowVisible(edit):
-						foundEdit[0] = edit
-						return False  # stop enumeration
-			return True
-
-		ctypes.windll.user32.EnumChildWindows(
-			dialogHwnd,
-			WNDENUMPROC(_searchComboBoxEx),
-			0,
-		)
-		if foundEdit[0]:
-			log.debug(f"LINE: found save dialog Edit in ComboBoxEx32: {foundEdit[0]}")
-			return foundEdit[0]
-
-		# Fallback: first visible+enabled Edit control in the dialog
-		def _searchFirstEdit(hwnd, lParam):
-			buf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
-			if buf.value == "Edit":
-				if ctypes.windll.user32.IsWindowVisible(hwnd) and ctypes.windll.user32.IsWindowEnabled(hwnd):
-					foundEdit[0] = hwnd
-					return False
-			return True
-
-		ctypes.windll.user32.EnumChildWindows(
-			dialogHwnd,
-			WNDENUMPROC(_searchFirstEdit),
-			0,
-		)
-		if foundEdit[0]:
-			log.debug(f"LINE: found save dialog Edit (fallback): {foundEdit[0]}")
-		else:
-			log.debug("LINE: could not find Edit in save dialog")
-		return foundEdit[0]
-
-	def _messageReaderPressSave(self, dialogHwnd):
-		"""Press Enter in the Save dialog to trigger save, then wait for file."""
-		import ctypes
-		import ctypes.wintypes as wintypes
-
-		# Find the Save/存檔 button and click it
-		WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-		saveBtn = [None]
-
-		def _findSaveBtn(hwnd, lParam):
-			buf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
-			if buf.value == "Button":
-				titleBuf = ctypes.create_unicode_buffer(64)
-				ctypes.windll.user32.GetWindowTextW(hwnd, titleBuf, 64)
-				title = titleBuf.value
-				if any(k in title for k in ("存", "Save", "儲存")):
-					if ctypes.windll.user32.IsWindowVisible(hwnd):
-						saveBtn[0] = hwnd
-						return False
-			return True
-
-		ctypes.windll.user32.EnumChildWindows(dialogHwnd, WNDENUMPROC(_findSaveBtn), 0)
-
-		BM_CLICK = 0x00F5
-		if saveBtn[0]:
-			log.debug(f"LINE: clicking Save button hwnd={saveBtn[0]}")
-			ctypes.windll.user32.SendMessageW(saveBtn[0], BM_CLICK, 0, 0)
-		else:
-			# Fallback: send Enter to the dialog
-			log.debug("LINE: Save button not found, sending Enter to dialog")
-			WM_KEYDOWN = 0x0100
-			WM_KEYUP = 0x0101
-			VK_RETURN = 0x0D
-			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYDOWN, VK_RETURN, 0)
-			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYUP, VK_RETURN, 0)
-
-		# Handle possible "overwrite?" confirmation dialog
-		core.callLater(500, self._messageReaderHandleOverwrite)
-
-	def _messageReaderHandleOverwrite(self, retriesLeft=5):
-		"""Handle the overwrite confirmation dialog if it appears, then read the file."""
-		import ctypes
-		import ctypes.wintypes as wintypes
-
-		lineProcessId = self.processID
-		WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-		dialogHwnd = None
-
-		def _enumCallback(hwnd, lParam):
-			nonlocal dialogHwnd
-			buf = ctypes.create_unicode_buffer(256)
-			ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
-			if buf.value == "#32770":
-				pid = wintypes.DWORD()
-				ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-				if pid.value == lineProcessId:
-					if ctypes.windll.user32.IsWindowVisible(hwnd):
-						dialogHwnd = hwnd
-						return False
-			return True
-
-		ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enumCallback), 0)
-
-		if dialogHwnd:
-			# There's still a dialog — might be overwrite confirmation
-			# Try clicking Yes / pressing Enter
-			WM_KEYDOWN = 0x0100
-			WM_KEYUP = 0x0101
-			VK_RETURN = 0x0D
-			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYDOWN, VK_RETURN, 0)
-			ctypes.windll.user32.SendMessageW(dialogHwnd, WM_KEYUP, VK_RETURN, 0)
-			# Check again after a delay
-			if retriesLeft > 0:
-				core.callLater(500, lambda: self._messageReaderHandleOverwrite(retriesLeft - 1))
-			return
-
-		# No dialog — file should be saved, read it
-		core.callLater(300, self._messageReaderOpenFile)
-
-	def _messageReaderOpenFile(self):
-		"""Read the saved chat file and open the reader."""
-		savePath = getattr(self, "_messageReaderSavePath", None)
-		if not savePath or not os.path.isfile(savePath):
-			ui.message(_("找不到儲存的聊天紀錄檔案"))
-			self._messageReaderPending = False
-			return
-
-		try:
-			from ._chatParser import parseChatFile
-
-			messages = parseChatFile(savePath)
-			if not messages:
-				ui.message(_("聊天紀錄中沒有訊息"))
-				self._messageReaderPending = False
-				return
-
-			from ._messageReader import openMessageReader
-
-			log.info(
-				f"LINE: message reader parsed {len(messages)} messages from {savePath}",
-			)
-			openMessageReader(messages, cleanupPath=savePath)
-			self._messageReaderPending = False
-		except Exception as e:
-			log.warning(f"LINE: message reader parse error: {e}", exc_info=True)
-			ui.message(_("訊息閱讀器開啟錯誤"))
-			self._messageReaderPending = False
 
 	@script(
 		# Translators: Description of the script bound to control+O in LINE

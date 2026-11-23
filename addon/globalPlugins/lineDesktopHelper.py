@@ -11,7 +11,6 @@ from gui import guiHelper
 from gui.message import DefaultButton, DialogType, MessageDialog
 from gui.settingsDialogs import SettingsPanel
 import wx
-import winreg
 import ctypes
 import addonHandler
 
@@ -20,71 +19,6 @@ addonHandler.initTranslation()
 # Translators: The single category under which all of this add-on's scripts
 # appear in NVDA's Input Gestures dialog (kept in sync with line.py).
 SCRIPT_CATEGORY = _("LINE Desktop")
-
-
-# ---------------------------------------------------------------------------
-# Qt accessibility environment variable helpers (duplicated from line.py
-# so the global plugin can toggle the setting even when LINE is not running)
-# ---------------------------------------------------------------------------
-
-_QT_ACCESSIBILITY_ENV_NAME = "QT_ACCESSIBILITY"
-_HWND_BROADCAST = 0xFFFF
-_WM_SETTINGCHANGE = 0x001A
-_SMTO_ABORTIFHUNG = 0x0002
-
-
-def _isQtAccessibleSet():
-	"""Check if QT_ACCESSIBILITY=1 is set in user environment variables."""
-	try:
-		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER,
-			"Environment",
-			0,
-			winreg.KEY_READ,
-		) as key:
-			value, _ = winreg.QueryValueEx(key, _QT_ACCESSIBILITY_ENV_NAME)
-			return str(value) == "1"
-	except FileNotFoundError:
-		return False
-	except Exception:
-		return False
-
-
-def _setQtAccessible(enable=True):
-	"""Set or remove QT_ACCESSIBILITY in user environment variables."""
-	try:
-		with winreg.OpenKey(
-			winreg.HKEY_CURRENT_USER,
-			"Environment",
-			0,
-			winreg.KEY_SET_VALUE | winreg.KEY_READ,
-		) as key:
-			if enable:
-				winreg.SetValueEx(
-					key,
-					_QT_ACCESSIBILITY_ENV_NAME,
-					0,
-					winreg.REG_SZ,
-					"1",
-				)
-			else:
-				try:
-					winreg.DeleteValue(key, _QT_ACCESSIBILITY_ENV_NAME)
-				except FileNotFoundError:
-					pass
-		ctypes.windll.user32.SendMessageTimeoutW(
-			_HWND_BROADCAST,
-			_WM_SETTINGCHANGE,
-			0,
-			"Environment",
-			_SMTO_ABORTIFHUNG,
-			5000,
-			None,
-		)
-		return True
-	except Exception:
-		log.warning("Failed to set QT_ACCESSIBILITY in registry", exc_info=True)
-		return False
 
 
 def _getLineAppModule():
@@ -119,11 +53,6 @@ class LineDesktopSettingsPanel(SettingsPanel):
 
 	def makeSettings(self, settingsSizer):
 		sHelper = guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-
-		# Translators: Checkbox label in LINE Desktop settings panel
-		qtLabel = _("啟用 Qt 無障礙環境變數 QT_ACCESSIBILITY=1 (&Q)")
-		self._qtCheck = sHelper.addItem(wx.CheckBox(self, label=qtLabel))
-		self._qtCheck.SetValue(_isQtAccessibleSet())
 
 		providerOptions = self._loadProviderOptions()
 		self._providerIds = tuple(opt[0] for opt in providerOptions)
@@ -308,19 +237,15 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
-				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserMistralApiKey,
 				getUserNvidiaApiKey,
-				getUserOllamaApiKey,
 				getUserOpenaiApiKey,
 				getUserPollinationsApiKey,
 			)
 
-			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-				return getUserOllamaApiKey() or ""
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return getUserNvidiaApiKey() or ""
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
@@ -343,24 +268,19 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
-				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
-				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserMistralModel,
 				getUserNvidiaModel,
-				getUserOllamaModel,
 				getUserOpenaiModel,
 				getUserPollinationsModel,
 			)
 
-			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-				return getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
@@ -395,8 +315,6 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
-				_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
-				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OPENAI_AVAILABLE_MODELS,
 				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_AVAILABLE_MODELS,
@@ -404,17 +322,10 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_POLLINATIONS_MODEL_LABELS,
 				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
-				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 			)
 
-			if provider == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-				return (
-					_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
-					_IMAGE_DESCRIPTION_OLLAMA_AVAILABLE_MODELS,
-					_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
-				)
 			if provider == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 				return (
 					_IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS,
@@ -491,16 +402,6 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			return ""
 
 	def onSave(self):
-		# Qt accessibility env var
-		wantSet = bool(self._qtCheck.GetValue())
-		if wantSet != _isQtAccessibleSet():
-			if not _setQtAccessible(wantSet):
-				_showSettingsError(
-					self,
-					# Translators: Error shown when writing Qt accessibility env var fails
-					_("設定 Qt 無障礙環境變數失敗，請確認系統權限。"),
-				)
-
 		# Capture pending edits for the currently visible provider before saving.
 		activeProvider = self._currentSelectedProviderId() or _safeDefaultProvider()
 		if activeProvider in self._pendingApiKey:
@@ -533,28 +434,22 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			from appModules.line import (
 				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
-				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageApiKey,
 				getUserMistralApiKey,
 				getUserNvidiaApiKey,
-				getUserOllamaApiKey,
 				getUserOpenaiApiKey,
 				getUserPollinationsApiKey,
 				setUserImageApiKey,
 				setUserMistralApiKey,
 				setUserNvidiaApiKey,
-				setUserOllamaApiKey,
 				setUserOpenaiApiKey,
 				setUserPollinationsApiKey,
 			)
 
 			for providerId, pendingKey in self._pendingApiKey.items():
-				if providerId == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-					currentKey = getUserOllamaApiKey() or ""
-					setter = setUserOllamaApiKey
-				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
+				if providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 					currentKey = getUserNvidiaApiKey() or ""
 					setter = setUserNvidiaApiKey
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
@@ -593,24 +488,20 @@ class LineDesktopSettingsPanel(SettingsPanel):
 				_IMAGE_DESCRIPTION_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_MISTRAL_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL,
-				_IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_OPENAI_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_POLLINATIONS_DEFAULT_MODEL,
 				_IMAGE_DESCRIPTION_PROVIDER_MISTRAL,
 				_IMAGE_DESCRIPTION_PROVIDER_NVIDIA,
-				_IMAGE_DESCRIPTION_PROVIDER_OLLAMA,
 				_IMAGE_DESCRIPTION_PROVIDER_OPENAI,
 				_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS,
 				getUserImageModel,
 				getUserMistralModel,
 				getUserNvidiaModel,
-				getUserOllamaModel,
 				getUserOpenaiModel,
 				getUserPollinationsModel,
 				setUserImageModel,
 				setUserMistralModel,
 				setUserNvidiaModel,
-				setUserOllamaModel,
 				setUserOpenaiModel,
 				setUserPollinationsModel,
 			)
@@ -618,10 +509,7 @@ class LineDesktopSettingsPanel(SettingsPanel):
 			for providerId, pendingModel in self._pendingModel.items():
 				if not pendingModel:
 					continue
-				if providerId == _IMAGE_DESCRIPTION_PROVIDER_OLLAMA:
-					currentModel = getUserOllamaModel() or _IMAGE_DESCRIPTION_OLLAMA_DEFAULT_MODEL
-					setter = setUserOllamaModel
-				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
+				if providerId == _IMAGE_DESCRIPTION_PROVIDER_NVIDIA:
 					currentModel = getUserNvidiaModel() or _IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL
 					setter = setUserNvidiaModel
 				elif providerId == _IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS:
@@ -818,11 +706,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# Translators: Menu item for clicking more options button
 				_("更多選項(&O)") + "\tNVDA+Windows+O",
 			)
-			self._messageReaderItem = self._lineSubMenu.Append(
-				wx.ID_ANY,
-				# Translators: Menu item for opening the message reader
-				_("訊息閱讀器(&J)") + "\tNVDA+Windows+J",
-			)
 			self._readChatNameItem = self._lineSubMenu.Append(
 				wx.ID_ANY,
 				# Translators: Menu item for reading chat room name
@@ -898,11 +781,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				wx.EVT_MENU,
 				self._onMoreOptions,
 				self._moreOptionsItem,
-			)
-			gui.mainFrame.sysTrayIcon.Bind(
-				wx.EVT_MENU,
-				self._onMessageReader,
-				self._messageReaderItem,
 			)
 			gui.mainFrame.sysTrayIcon.Bind(
 				wx.EVT_MENU,
@@ -1034,22 +912,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE makeVideoCall error: {e}", exc_info=True)
 			ui.message(_("視訊通話功能錯誤: {error}").format(error=e))
-
-	def _onMessageReader(self, evt):
-		wx.CallAfter(self._doMessageReader)
-
-	def _doMessageReader(self):
-		import ui
-
-		lineApp = _getLineAppModule()
-		if not lineApp:
-			ui.message(_("LINE 未執行"))
-			return
-		try:
-			lineApp.script_openMessageReader(None)
-		except Exception as e:
-			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
-			ui.message(_("訊息閱讀器功能錯誤: {error}").format(error=e))
 
 	def _onMoreOptions(self, evt):
 		wx.CallAfter(self._doMoreOptions)
@@ -1296,25 +1158,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		except Exception as e:
 			log.warning(f"LINE readChatRoomName error: {e}", exc_info=True)
 			ui.message(_("讀取聊天室名稱錯誤: {error}").format(error=e))
-
-	@script(
-		# Translators: Description of a script to open the message reader
-		description=_("LINE: 開啟訊息閱讀器"),
-		gesture="kb:NVDA+windows+j",
-		category=SCRIPT_CATEGORY,
-	)
-	def script_openMessageReader(self, gesture):
-		import ui
-
-		lineApp = _getLineAppModule()
-		if not lineApp:
-			ui.message(_("LINE 未執行"))
-			return
-		try:
-			lineApp.script_openMessageReader(gesture)
-		except Exception as e:
-			log.warning(f"LINE openMessageReader error: {e}", exc_info=True)
-			ui.message(_("訊息閱讀器功能錯誤: {error}").format(error=e))
 
 	@script(
 		# Translators: Description of a script to click the more options button

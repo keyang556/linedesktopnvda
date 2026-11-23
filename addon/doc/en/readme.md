@@ -8,7 +8,7 @@
 
 ## Overview
 
-This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface, messages, menus, and dialogs natively; the add-on adds calls, message shortcuts, a chat-history reader, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
+This add-on enhances the NVDA screen reader's support for the LINE Desktop application on Windows (Qt6 version). NVDA reads LINE's interface, messages, menus, and dialogs natively; the add-on adds calls, message shortcuts, and optional AI image description on top, using OCR (Optical Character Recognition) and coordinate-based automation where LINE does not expose the information yet.
 
 > [!IMPORTANT]
 > Call windows still rely on OCR, so their recognition may not be 100% accurate. Reading messages and the message shortcuts do not use OCR. The chat room name comes from LINE itself and falls back to OCR only when its title button cannot be identified (for example when LINE's interface language is not Traditional Chinese).
@@ -19,7 +19,6 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Incoming Call Handling**: Answer and reject incoming calls, and check caller information.
 * **OCR Assistance**: Used only where LINE does not expose text yet, such as call windows. The chat room name comes from LINE's chat header and falls back to OCR only when the title button cannot be identified, for example in other interface languages.
 * **Debug Tools**: Provides shortcuts to inspect the UI structure, making troubleshooting easier.
-* **Accessible Message Reader**: Export the current chat and browse it in a simple reader dialog.
 * **AI Image Description**: Describe the focused image or sticker message with a configurable AI service, then ask follow-up questions in an accessible dialog.
 * **Status Feedback**: Announces microphone/camera state during calls, and plays a short sound after a message is actually sent.
 
@@ -50,10 +49,9 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 * **Reading Messages**: With LINE 26.6.0.4004 or later, NVDA reads each message itself as you move through the message list with the arrow keys, including the sender, the quoted original of a reply, the time, and the read count. The add-on no longer right-clicks messages or runs OCR to read them, and your clipboard is left untouched.
 * **Copying Messages**: Press `Control+C` in the message list, and the add-on chooses "Copy" from LINE's own context menu for the focused message. If that menu has no "Copy" item, the add-on says so.
 
-## Message Reader and Context Menus
+## Context Menus and Saving Chats
 
-* **Message Reader (`NVDA+Windows+J`)**: The add-on opens the chat room's "More options" menu, chooses "Save chat", parses the exported text, and opens an accessible reader dialog.
-* **Reader Navigation**: Use `UpArrow` / `DownArrow` to move one entry, `PageUp` / `PageDown` to jump ten entries, `Ctrl+Home` / `Ctrl+End` to reach the first / last entry, and `Escape` to close the window. Date separators are preserved, and the current position is announced.
+* **Save or Export a Chat**: The add-on no longer has a separate message reader, because LINE's messages are read directly. To keep a whole chat, use LINE's own save chat or export chat feature: press `NVDA+Windows+O` to open the chat room's More options menu, then choose the item.
 * **Message Context Menu (`Applications` / `Shift+F10`)**: In the message list, these keys open LINE's own context menu for the focused message (reply, copy, share, recall, translate, "Convert to text", and more), and NVDA reads it directly: use `UpArrow` / `DownArrow` to move, `Enter` to choose, and `Escape` to close. The add-on no longer replaces it with an OCR-based virtual menu.
 * **Message Shortcuts**: `NVDA+Windows+R` (reply), `NVDA+Windows+K` (save as), `NVDA+Windows+Delete` (recall), and `Control+C` (copy) open that same menu and choose the item for you, so they work only where LINE's menu offers the item.
 * **Recall Confirmation**: After you choose recall (from that menu or with `NVDA+Windows+Delete`), LINE shows its own confirmation dialog and NVDA reads it: press `Tab` to hear the question and reach the **Recall** button, then press `Space` or `Enter`. The add-on no longer opens a dialog of its own for this.
@@ -134,7 +132,6 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 | Shortcut | Category | Action |
 |---|---|---|
 | **Enter** | LINE | Send message; the add-on plays a sound only when sending succeeds |
-| **NVDA+Windows+J** | Add-on | Open the message reader |
 | **NVDA+Windows+O** | Add-on | Open the chat room's More options menu (LINE's own menu) |
 | **Shift+Enter** | LINE | New line |
 | **Ctrl+F** | LINE | Search |
@@ -190,7 +187,7 @@ This add-on enhances the NVDA screen reader's support for the LINE Desktop appli
 | Shortcut | Category | Action |
 |---|---|---|
 | **NVDA+Shift+K** | Add-on | Debug: Check UIA and OCR (contents dumped to clipboard) |
-| **NVDA+Shift+V** | Add-on | Report LINE version, language, window type, and Qt accessibility status |
+| **NVDA+Alt+V** | Add-on | Open the versions of LINE and its components (LineCall, LineMediaPlayer), LINE's UI language, and the add-on version in a read-only window |
 | **NVDA+Shift+J** | Global | Report information about the currently focused app and process |
 
 ## Community and Support

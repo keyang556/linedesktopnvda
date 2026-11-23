@@ -102,26 +102,6 @@ msgstr "LINE: 點擊更多選項按鈕"
 msgid "讀出目前聊天室名稱"
 msgstr "讀出目前聊天室名稱"
 
-#: addon\appModules\line.py:8357
-msgid "主視窗（含側邊欄）"
-msgstr "主視窗（含側邊欄）"
-
-#: addon\appModules\line.py:8358
-msgid "獨立聊天視窗"
-msgstr "獨立聊天視窗"
-
-#: addon\appModules\line.py:8359
-msgid "未知視窗"
-msgstr "未知視窗"
-
-#: addon\appModules\line.py:8339
-msgid "報告 LINE 版本與視窗類型"
-msgstr "報告 LINE 版本與視窗類型"
-
-#: addon\appModules\line.py:8468
-msgid "正在開啟訊息閱讀器…"
-msgstr "正在開啟訊息閱讀器…"
-
 #: addon\appModules\line.py:8494
 msgid "正在儲存聊天到背景…"
 msgstr "正在儲存聊天到背景…"
@@ -205,36 +185,6 @@ msgstr "找不到 LINE 視窗"
 msgid "無法取得聊天室標題區域"
 msgstr "無法取得聊天室標題區域"
 
-#: addon\appModules\line.py:8351
-msgid "LINE 版本: 未知"
-msgstr "LINE 版本: 未知"
-
-#: addon\appModules\line.py:8369
-msgid "Qt 無障礙: 已啟用"
-msgstr "Qt 無障礙: 已啟用"
-
-#: addon\appModules\line.py:8369
-msgid "Qt 無障礙: 未啟用"
-msgstr "Qt 無障礙: 未啟用"
-
-#: addon\appModules\line.py:8466
-#: addon\appModules\line.py:8492
-msgid "訊息閱讀器正在執行中，請稍候"
-msgstr "訊息閱讀器正在執行中，請稍候"
-
-#: addon\appModules\line.py:8538
-#: addon\appModules\line.py:8523
-msgid "找不到儲存聊天選項"
-msgstr "找不到儲存聊天選項"
-
-#: addon\appModules\line.py:8580
-msgid "無法操作儲存對話框"
-msgstr "無法操作儲存對話框"
-
-#: addon\appModules\line.py:8794
-msgid "找不到儲存的聊天紀錄檔案"
-msgstr "找不到儲存的聊天紀錄檔案"
-
 #: addon\appModules\line.py:9902
 #: addon\appModules\line.py:9109
 #: addon\appModules\line.py:9119
@@ -295,41 +245,9 @@ msgstr "找不到 LINE 視窗，請先開啟聊天室"
 msgid "無法讀取聊天室名稱"
 msgstr "無法讀取聊天室名稱"
 
-#: addon\appModules\line.py:8363
-msgid "視窗類型: {type}"
-msgstr "視窗類型: {type}"
-
-#: addon\appModules\line.py:8380
-msgid "已移除 QT_ACCESSIBILITY 環境變數，重啟 LINE 後生效"
-msgstr "已移除 QT_ACCESSIBILITY 環境變數，重啟 LINE 後生效"
-
-#: addon\appModules\line.py:8382
-msgid "移除 QT_ACCESSIBILITY 環境變數失敗"
-msgstr "移除 QT_ACCESSIBILITY 環境變數失敗"
-
-#: addon\appModules\line.py:8385
-msgid "已設定 QT_ACCESSIBILITY=1，重啟 LINE 後生效"
-msgstr "已設定 QT_ACCESSIBILITY=1，重啟 LINE 後生效"
-
-#: addon\appModules\line.py:8387
-msgid "設定 QT_ACCESSIBILITY 環境變數失敗"
-msgstr "設定 QT_ACCESSIBILITY 環境變數失敗"
-
-#: addon\appModules\line.py:8481
-msgid "訊息閱讀器功能錯誤"
-msgstr "訊息閱讀器功能錯誤"
-
 #: addon\appModules\line.py:8507
 msgid "背景快取功能錯誤"
 msgstr "背景快取功能錯誤"
-
-#: addon\appModules\line.py:8571
-msgid "未偵測到儲存對話框"
-msgstr "未偵測到儲存對話框"
-
-#: addon\appModules\line.py:8804
-msgid "聊天紀錄中沒有訊息"
-msgstr "聊天紀錄中沒有訊息"
 
 #: addon\appModules\line.py:8823
 msgid "聊天已快取到背景，瀏覽訊息時將直接讀取（離開聊天室後清除）"
@@ -379,21 +297,9 @@ msgstr "通話視窗（無法辨識內容）"
 msgid "通話視窗"
 msgstr "通話視窗"
 
-#: addon\appModules\line.py:8349
-msgid "LINE 版本: {version}"
-msgstr "LINE 版本: {version}"
-
-#: addon\appModules\line.py:8354
-msgid "語言: {language}"
-msgstr "語言: {language}"
-
 #: addon\appModules\line.py:8837
 msgid "背景快取開啟錯誤"
 msgstr "背景快取開啟錯誤"
-
-#: addon\appModules\line.py:8837
-msgid "訊息閱讀器開啟錯誤"
-msgstr "訊息閱讀器開啟錯誤"
 
 #: addon\appModules\line.py:10620
 msgid "無痕收回可能未成功"
@@ -552,29 +458,9 @@ msgstr "回答失敗"
 msgid "錯誤"
 msgstr "錯誤"
 
-#: addon\appModules\_messageReader.py:16
-msgid "訊息閱讀器"
-msgstr "訊息閱讀器"
-
-#: addon\appModules\_messageReader.py:79
-msgid "沒有訊息"
-msgstr "沒有訊息"
-
-#: addon\appModules\_messageReader.py:120
-msgid "已經是第一項"
-msgstr "已經是第一項"
-
-#: addon\appModules\_messageReader.py:129
-msgid "已經是最後一項"
-msgstr "已經是最後一項"
-
 #: addon\globalPlugins\lineDesktopHelper.py:101
 msgid "LINE Desktop"
 msgstr "LINE Desktop"
-
-#: addon\globalPlugins\lineDesktopHelper.py:107
-msgid "啟用 Qt 無障礙環境變數 QT_ACCESSIBILITY=1 (&Q)"
-msgstr "啟用 Qt 無障礙環境變數 QT_ACCESSIBILITY=1 (&Q)"
 
 #: addon\globalPlugins\lineDesktopHelper.py:115
 msgid "圖片描述服務 (&D)"
@@ -616,10 +502,6 @@ msgstr "LINE: 跳到通話視窗"
 msgid "LINE: 讀出目前聊天室名稱"
 msgstr "LINE: 讀出目前聊天室名稱"
 
-#: addon\globalPlugins\lineDesktopHelper.py:1101
-msgid "LINE: 開啟訊息閱讀器"
-msgstr "LINE: 開啟訊息閱讀器"
-
 #: addon\globalPlugins\lineDesktopHelper.py:1120
 msgid "LINE: 將聊天快取到背景供訊息列表直接讀取"
 msgstr "LINE: 將聊天快取到背景供訊息列表直接讀取"
@@ -650,10 +532,6 @@ msgstr "LINE: 跳到官方帳號"
 #. plus 21 more location(s)
 msgid "LINE 未執行"
 msgstr "LINE 未執行"
-
-#: addon\globalPlugins\lineDesktopHelper.py:320
-msgid "設定 Qt 無障礙環境變數失敗，請確認系統權限。"
-msgstr "設定 Qt 無障礙環境變數失敗，請確認系統權限。"
 
 #: addon\globalPlugins\lineDesktopHelper.py:322
 #: addon\globalPlugins\lineDesktopHelper.py:390
@@ -697,10 +575,6 @@ msgstr "視訊通話(&V)"
 #: addon\globalPlugins\lineDesktopHelper.py:573
 msgid "更多選項(&O)"
 msgstr "更多選項(&O)"
-
-#: addon\globalPlugins\lineDesktopHelper.py:578
-msgid "訊息閱讀器(&J)"
-msgstr "訊息閱讀器(&J)"
 
 #: addon\globalPlugins\lineDesktopHelper.py:583
 msgid "讀出聊天室名稱(&T)"
@@ -796,11 +670,6 @@ msgstr "儲存圖片描述模型失敗，請重試。"
 msgid "切換分頁錯誤: {error}"
 msgstr "切換分頁錯誤: {error}"
 
-#: addon\globalPlugins\lineDesktopHelper.py:806
-#: addon\globalPlugins\lineDesktopHelper.py:1116
-msgid "訊息閱讀器功能錯誤: {error}"
-msgstr "訊息閱讀器功能錯誤: {error}"
-
 #: addon\globalPlugins\lineDesktopHelper.py:855
 msgid "圖片描述功能錯誤: {error}"
 msgstr "圖片描述功能錯誤: {error}"
@@ -825,10 +694,10 @@ msgstr "LINE 電腦版無障礙增強"
 #: buildVars.py:24
 msgid ""
 "Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list, messages, menus, and dialogs natively.\n"
-"Adds calls, incoming call handling, message shortcuts, message export reading, and AI image description with follow-up questions."
+"Adds calls, incoming call handling, message shortcuts, and AI image description with follow-up questions."
 msgstr ""
 "增強 NVDA 對 Windows 上 LINE 電腦版的無障礙支援。建議使用 LINE 26.6.0.4004 以上版本：NVDA 可直接讀取聊天清單、訊息、選單與對話框。\n"
-"提供通話、來電處理、訊息快速鍵、訊息匯出閱讀，以及可追問的 AI 圖片描述。"
+"提供通話、來電處理、訊息快速鍵，以及可追問的 AI 圖片描述。"
 
 #: buildVars.py:31
 msgid ""
@@ -925,3 +794,27 @@ msgstr "無法開啟收回確認對話框，請直接操作 LINE 的確認視窗
 #: addon\appModules\line.py:13083
 msgid "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
 msgstr "無法開啟照片授權對話框，請直接操作 LINE 的確認視窗"
+
+#. Translators: Description of the script that opens a read-only window with the versions of LINE, its components and this add-on
+msgid "在唯讀視窗中開啟 LINE 各元件與附加元件的版本資訊"
+msgstr "在唯讀視窗中開啟 LINE 各元件與附加元件的版本資訊"
+
+#. Translators: Shown in the version information window when a version cannot be read
+msgid "未知"
+msgstr "未知"
+
+#. Translators: One line of the version information window. {component} is a LINE component such as LINE, LineCall or LineMediaPlayer.
+msgid "{component} 版本: {version}"
+msgstr "{component} 版本: {version}"
+
+#. Translators: Line of the version information window naming LINE's UI language
+msgid "LINE 語言: {language}"
+msgstr "LINE 語言: {language}"
+
+#. Translators: Line of the version information window naming this add-on's version
+msgid "LINE Desktop 附加元件版本: {version}"
+msgstr "LINE Desktop 附加元件版本: {version}"
+
+#. Translators: Title of the read-only version information window
+msgid "LINE Desktop 版本資訊"
+msgstr "LINE Desktop 版本資訊"

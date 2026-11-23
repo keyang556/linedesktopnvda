@@ -1107,3 +1107,77 @@ def test_terminate_invalidates_file_dialog_watch_token():
 		and node.target.attr == "_fileDialogWaitToken"
 	]
 	assert token_bumps, "terminate must invalidate the file-dialog watch token"
+
+
+def _load_line_version_symbols(data_dir):
+	import configparser
+	import os
+
+	return _load_line_symbols(
+		assignment_names={"_LINE_PLUGIN_VERSION_PREFIX", "_LINE_PLUGIN_COMPONENTS"},
+		function_names={"_readLineIniGlobal", "_readLineComponentVersions"},
+		namespace={
+			"configparser": configparser,
+			"os": os,
+			"log": _Log(),
+			"_getLineDataDir": lambda: data_dir,
+		},
+	)
+
+
+def test_line_component_versions_come_from_line_ini(tmp_path):
+	"""NVDA+Alt+V lists LINE and the plugins LINE has started. LINE.ini also
+	holds URL-encoded keys with % and backslashes, which must not break parsing,
+	and plugin keys keep their case."""
+	(tmp_path / "LINE.ini").write_text(
+		"[global]\n"
+		"language=zh-TW\n"
+		"last_updated_version=26.6.0.4004\n"
+		"executed_plugin_version_LineMediaPlayer=1.2.0.662\n"
+		"window_rect_GroupHomeWindow_E4UG%2B5eI\\zH=@Rect(752 3 327 611)\n"
+		"progress=100%\n"
+		"[PZ22ZnXj0tJsc4uWy]\n",
+		encoding="utf-8",
+	)
+	ns = _load_line_version_symbols(str(tmp_path))
+	assert ns["_readLineComponentVersions"]() == [
+		("LINE", "26.6.0.4004"),
+		("LineCall", None),
+		("LineMediaPlayer", "1.2.0.662"),
+	]
+
+
+def test_line_component_versions_without_line_ini(tmp_path):
+	ns = _load_line_version_symbols(str(tmp_path))
+	assert ns["_readLineComponentVersions"]() == [
+		("LINE", None),
+		("LineCall", None),
+		("LineMediaPlayer", None),
+	]
+	ns = _load_line_version_symbols(None)
+	assert ns["_readLineComponentVersions"]()[0] == ("LINE", None)
+
+
+def test_version_info_moved_to_nvda_alt_v():
+	"""Version information opens in a read-only window on NVDA+Alt+V, as in
+	UnigramPlus; NVDA+Shift+V is no longer bound."""
+	bound_keys = _app_module_bound_keys()
+	assert "kb:nvda+alt+v" in bound_keys
+	assert "kb:nvda+shift+v" not in bound_keys
+
+
+def test_removed_features_stay_removed():
+	"""Ollama Cloud image description, the message reader (LINE reads its chats
+	natively; Save chat / Export chat replace it) and the QT_ACCESSIBILITY
+	setting (LINE detects screen readers itself) are gone for good."""
+	root = Path(__file__).resolve().parents[1]
+	app_modules = root / "addon" / "appModules"
+	assert not (app_modules / "_messageReader.py").exists()
+	assert not (app_modules / "_chatParser.py").exists()
+	offenders = []
+	for path in (root / "addon").rglob("*.py"):
+		text = path.read_text(encoding="utf-8")
+		for needle in ("ollama", "qt_accessibility", "messagereader"):
+			if needle in text.lower():
+				offenders.append(f"{path.name}: {needle}")
+	assert not offenders, offenders
