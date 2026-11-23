@@ -143,7 +143,6 @@ def _make_namespace(provider="google"):
 				"mistral": "Mistral AI",
 			},
 			"_IMAGE_DESCRIPTION_PROVIDER_GOOGLE": "google",
-			"_IMAGE_DESCRIPTION_PROVIDER_OLLAMA": "ollama",
 			"_IMAGE_DESCRIPTION_PROVIDER_NVIDIA": "nvidia",
 			"_IMAGE_DESCRIPTION_PROVIDER_POLLINATIONS": "pollinations",
 			"_IMAGE_DESCRIPTION_PROVIDER_OPENAI": "openai",
@@ -238,7 +237,6 @@ def test_declining_for_new_provider_does_not_revoke_the_previous_one(tmp_path):
 def _stub_provider_backends(ns, provider_calls):
 	for name in (
 		"_callGoogleImageDescriptionApi",
-		"_callOllamaImageDescriptionApi",
 		"_callNvidiaImageDescriptionApi",
 		"_callPollinationsImageDescriptionApi",
 		"_callOpenaiImageDescriptionApi",

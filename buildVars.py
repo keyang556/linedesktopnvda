@@ -27,7 +27,7 @@ addon_info = AddonInfo(
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-on store
 	addon_description=_("""Enhances NVDA accessibility support for LINE Desktop on Windows. LINE 26.6.0.4004 or later is recommended: NVDA reads its chat list, messages, menus, and dialogs natively.
-Adds calls, incoming call handling, message shortcuts, message export reading, and AI image description with follow-up questions."""),
+Adds calls, incoming call handling, message shortcuts, and AI image description with follow-up questions."""),
 	# version
 	addon_version="1.4.0-beta1",
 	# Brief changelog for this version
@@ -40,7 +40,11 @@ Shift+F10 and the Applications key now open LINE's own readable context menu; th
 LINE's own recall confirmation and "Convert to text" photo notice are used instead of the add-on's Y/N/P and A/D dialogs.
 Control+1, Control+2, and Control+3 go straight to LINE, without the add-on speaking a second, fixed tab name.
 NVDA+Windows+R, K, Delete and Control+C now pick their item from LINE's own Shift+F10 menu by name instead of right-clicking and reading the menu with OCR.
-NVDA+Windows+O opens LINE's own More options menu, and the message reader picks Save chat from it by name.
+NVDA+Windows+O opens LINE's own More options menu.
+The message reader (NVDA+Windows+J) has been removed: LINE reads chat messages itself, and LINE's own save chat and export chat keep a whole chat.
+Ollama Cloud has been removed from image description because its free API quota ended; the other services are unchanged.
+The QT_ACCESSIBILITY=1 option has been removed; LINE's default settings detect the screen reader.
+NVDA+Shift+V is now NVDA+Alt+V and opens the versions of LINE, LineCall, LineMediaPlayer and the add-on in a read-only window.
 NVDA+Windows+T reads the chat room name from LINE's chat header instead of OCR, which is kept only as a fallback.
 Compatible with NVDA 2027.1, which previously disabled the add-on as incompatible."""),
 	# Author(s)
