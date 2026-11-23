@@ -1161,7 +1161,7 @@ _IMAGE_DESCRIPTION_USER_MAX_TOKENS_FILENAME = "line_desktop_image_max_tokens.txt
 # Default Google model used when the user has not picked one in the settings panel.
 _IMAGE_DESCRIPTION_DEFAULT_MODEL = "gemini-flash-lite-latest"
 # Default NVIDIA NIM model used when the user has not picked one in the settings panel.
-_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "google/diffusiongemma-26b-a4b-it"
+_IMAGE_DESCRIPTION_NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 # Models exposed in the settings panel dropdown. The order here is the order
 # the user sees. Strings are the actual model IDs sent to the API endpoint.
 # VERIFY all IDs against: GET https://generativelanguage.googleapis.com/v1beta/models
@@ -1183,11 +1183,11 @@ _IMAGE_DESCRIPTION_AVAILABLE_MODELS = (
 # Vision-capable models exposed for NVIDIA NIM. Users can pick whichever they have
 # access to; unavailable IDs surface as an HTTP error.
 _IMAGE_DESCRIPTION_NVIDIA_AVAILABLE_MODELS = (
-	"deepseek-ai/deepseek-v4.1-flash",
 	"google/gemma-4-31b-it",
-	"google/diffusiongemma-26b-a4b-it",
 	"meta/muse-glimmer-30b",
 	"minimaxai/minimax-m3.1-flash",
+	"mistralai/mistral-large-4-1t-a52b",
+	"moonshotai/kimi-k3.1-pro",
 	"nvidia/ising-calibration-1.5-31b",
 	"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
 	"nvidia/nemotron-3.5-super-vl-120b-a12b",
